@@ -1,0 +1,5 @@
+Experiment ID: 6
+Experiment Name: sentiment
+Model Type: elasticnet
+Num Variables: 3
+Variables: ['stocktwits_attention', 'stocktwits_sentiment', 'stocktwits_sentcount']

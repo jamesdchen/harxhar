@@ -1,0 +1,5 @@
+Experiment ID: 2
+Experiment Name: microstructure
+Model Type: elasticnet
+Num Variables: 8
+Variables: ['sumret', 'sumabsret', 'sumret2', 'sumret3', 'sumret4', 'sumpret2', 'sumbipow', 'sumautocov']
