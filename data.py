@@ -111,23 +111,17 @@ def load_and_prep_data_strided(hparams, input_file):
     
     data['t'] = pd.to_datetime(data['t'])
     
-    # --- NEW: FILTER DATES (Post-2004 & Weekdays Only) ---
-    print("Filtering data: Keeping 2004+ and Weekdays (Mon-Fri) only...")
-    
-    # 1. Cut pre-2004
+    # --- DEDUPLICATE (Critical for Reindexing) ---
+    if data['t'].duplicated().any():
+        print(f"Warning: Dropping {data['t'].duplicated().sum()} duplicate timestamps.")
+        data = data.drop_duplicates(subset=['t'], keep='last')
+
+    # Filter Dates
     data = data[data['t'] >= '2004-01-01']
-    
-    # 2. Cut Weekends (Saturday=5, Sunday=6)
     data = data[data['t'].dt.dayofweek < 5]
     
-    data = data.copy() # De-fragment frame
-    
-    if data.empty:
-        raise ValueError("Data is empty after filtering for dates.")
-    
-    # --- CRITICAL FIX: REINDEX TO FULL GRID ---
-    print("Aligning to full market grid (48 periods/day)...")
-    
+    # Align to full grid
+    print("Aligning to full market grid...")
     dates = data['t'].dt.date.unique()
     all_slots = []
     for d in dates:
@@ -135,84 +129,89 @@ def load_and_prep_data_strided(hparams, input_file):
         all_slots.append(day_slots)
         
     full_grid = pd.DatetimeIndex(np.concatenate(all_slots)).sort_values()
-    
     data = data.set_index('t').reindex(full_grid)
     data.index.name = 't'
     data = data.reset_index()
 
-    # --- CRITICAL FIX: FILL GAPS ---
-    # 1. Fill Target: Nighttime Volatility is effectively 0
+    # Fill Gaps & Winsorize (Standard Pre-processing)
     data['RV'] = data['RV'].fillna(0.0)
     
-    # 2. Parse Exog Columns EARLY
-    exog_col_names = []
-    if hparams.get("exog_cols") and str(hparams["exog_cols"]).lower() != "none":
-        sep = '|' if '|' in hparams["exog_cols"] else ','
-        raw_exog_list = hparams["exog_cols"].split(sep)
-        exog_col_names = [c.strip() for c in raw_exog_list if c.strip() in data.columns]
-        
-        # --- FIX: FORCE NUMERIC CONVERSION ---
-        # This converts strings like "100" to 100.0, and "NULL"/"Error" to NaN
-        for col in exog_col_names:
-            data[col] = pd.to_numeric(data[col], errors='coerce')
-
-        # 3. Fill Exog: Forward Fill 
-        if exog_col_names:
-            print(f"Filling gaps for exogenous cols: {exog_col_names}")
-            data[exog_col_names] = data[exog_col_names].fillna(method='ffill').fillna(0.0)
-
-    # --- ROLLING WINSORIZATION (1-99%) ---
     w_window = hparams.get('winsor_window', 240) 
-    print(f"Applying Rolling Winsorization (Window={w_window}, 1%-99%)...")
-    
-    # 1. Winsorize Target (RV)
     rv_lower = data['RV'].rolling(window=w_window, min_periods=1).quantile(0.01)
     rv_upper = data['RV'].rolling(window=w_window, min_periods=1).quantile(0.99)
     data['RV'] = data['RV'].clip(lower=rv_lower, upper=rv_upper)
-    
-    # 2. Winsorize Exogenous Columns
-    for col in exog_col_names:
-        # Now safe because data[col] is guaranteed numeric
-        ex_lower = data[col].rolling(window=w_window, min_periods=1).quantile(0.01)
-        ex_upper = data[col].rolling(window=w_window, min_periods=1).quantile(0.99)
-        data[col] = data[col].clip(lower=ex_lower, upper=ex_upper)
 
     data['time_of_day'] = data['t'].dt.time
     
     # 2. Process Target (RV) -> adj_log_RV
     print("Applying Robust Diurnal Adj to Target (RV)...")
     data['adj_log_RV'], data['baseline_RV'] = robust_log_diurnal_transform(data, 'RV', 'time_of_day')
-    
-    # 3. Process Exogenous Features
-    final_exog_feats = []
-    for raw_col in exog_col_names:
-        
-        print(f"Generating HAR Lags for {raw_col}...")
-        
-        # A. Transform the raw series
-        base_adj_col = f"adj_log_{raw_col}"
-        data[base_adj_col], _ = robust_log_diurnal_transform(data, raw_col, 'time_of_day')
-        
-        # B. Generate HAR Lags
-        for lag in HAR_LAGS:
-            feat_name = f"{base_adj_col}_ma_{lag}"
-            data[feat_name] = data[base_adj_col].rolling(window=lag).mean().shift(1)
-            final_exog_feats.append(feat_name)
 
-    # 4. Create HAR Features for Target (RV)
+    # ==============================================================================
+    # --- NEW: STRICTLY SEGMENTED HAR FEATURES ---
+    # ==============================================================================
+    
+    print("Generating Segment-Specific HAR Features...")
+    
+    # A. Define Segments
+    minutes = data['t'].dt.hour * 60 + data['t'].dt.minute
+    
+    cond_morning = (minutes >= SEGMENT_THRESHOLDS['morning_start']) & (minutes < SEGMENT_THRESHOLDS['midday_start'])
+    cond_midday  = (minutes >= SEGMENT_THRESHOLDS['midday_start']) & (minutes < SEGMENT_THRESHOLDS['closing_start'])
+    cond_closing = (minutes >= SEGMENT_THRESHOLDS['closing_start']) & (minutes <= SEGMENT_THRESHOLDS['market_end'])
+    
+    data['segment'] = np.select(
+        [cond_morning, cond_midday, cond_closing], 
+        ['morning', 'midday', 'closing'], 
+        default='overnight'
+    )
+    
     har_features = []
-    for lag in HAR_LAGS:
-        feat_name = f"har_ma_{lag}"
-        data[feat_name] = data['adj_log_RV'].rolling(window=lag).mean().shift(1)
-        har_features.append(feat_name)
+    
+    # B. Generate Features per Segment
+    segments = ['morning', 'midday', 'closing', 'overnight']
+    
+    for seg in segments:
+        # Create a mask for the current segment
+        seg_mask = (data['segment'] == seg)
         
-    # 5. Clean & Finalize
-    final_cols = har_features + final_exog_feats
+        # Extract the target series ONLY for this segment
+        seg_series = data.loc[seg_mask, 'adj_log_RV']
+        
+        for lag in HAR_LAGS:
+            feat_name = f"har_{seg}_ma_{lag}"
+            
+            # 1. Initialize feature column with ZEROS (Strict Isolation)
+            # This ensures 'morning' features are 0.0 when it is 'midday'
+            data[feat_name] = 0.0
+            
+            # 2. Calculate Rolling Mean on the COMPRESSED series
+            # (e.g., average of previous 5 'mornings')
+            # shift(1) ensures we don't use the current morning to predict itself
+            rolling_feat = seg_series.rolling(window=lag, min_periods=1).mean().shift(1)
+            
+            # 3. Place values back into the DataFrame ONLY at segment rows
+            data.loc[seg_mask, feat_name] = rolling_feat
+            
+            # 4. Fill initial NaNs within the segment with 0
+            data.loc[seg_mask, feat_name] = data.loc[seg_mask, feat_name].fillna(0.0)
+            
+            har_features.append(feat_name)
+
+    # ==============================================================================
+    # --- END NEW LOGIC ---
+    # ==============================================================================
+
+    # 3. Finalize Features
+    final_cols = har_features 
     print(f"Final Features ({len(final_cols)}): {final_cols}")
     
-    required_cols = ['t', 'adj_log_RV', 'baseline_RV'] + final_cols
+    required_cols = ['t', 'segment', 'adj_log_RV', 'baseline_RV'] + final_cols
     data = data[required_cols]
     data = data.dropna()
+    
+    # Optional: Filter out 'overnight' rows if you only want to predict market hours
+    # data = data[data['segment'] != 'overnight']
     
     print(f"Post-cleaning shape: {data.shape}")
     
@@ -220,7 +219,6 @@ def load_and_prep_data_strided(hparams, input_file):
     
     X_np = data[final_cols].values.astype(np.float64)
     y_np = data['adj_log_RV'].values.astype(np.float64)
-    
     dates = data['t']
     baselines = data['baseline_RV'].values
     
