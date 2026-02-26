@@ -1,0 +1,2 @@
+/home1/jc_905/harxhar/data.py:97: FutureWarning: Series.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+  baseline = baseline.fillna(method='bfill').fillna(floor)

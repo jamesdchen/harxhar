@@ -58,6 +58,9 @@ def robust_log_diurnal_transform(df, col_name, time_col="time_of_day",
     # --- CRITICAL FIX: FORCE NUMERIC ---
     # Convert column to numeric, turning text/errors into NaNs
     series_clean = pd.to_numeric(df[col_name], errors='coerce')
+    
+    # Apply the clip to prevent microscopic values from exploding the log
+    series_clean = series_clean.clip(lower=1e-10)
 
     if is_signed:
         print(f"  [Skipping Diurnal] '{col_name}' identified as Directional/Signed.")
@@ -100,125 +103,126 @@ def robust_log_diurnal_transform(df, col_name, time_col="time_of_day",
 
 def load_and_prep_data_strided(hparams, input_file):
     print(f"Loading {input_file}...")
+    
+    # 1. Load the data
     try: 
         data = pd.read_parquet(input_file, engine="pyarrow")
     except: 
         data = pd.read_csv(input_file)
         
-    # 1. Standardize Time & Sort
-    if 'endbartime' in data.columns: 
+    # 2. Standardize Time & Sort
+    if 'endbartime' in data.columns:
         data = data.rename(columns={'endbartime': 't', 'sumret2': 'RV'})
-    
+
     data['t'] = pd.to_datetime(data['t'])
-    
-    # --- DEDUPLICATE (Critical for Reindexing) ---
+
+    # Deduplicate before gridding
     if data['t'].duplicated().any():
-        print(f"Warning: Dropping {data['t'].duplicated().sum()} duplicate timestamps.")
         data = data.drop_duplicates(subset=['t'], keep='last')
 
-    # Filter Dates
-    data = data[data['t'] >= '2004-01-01']
-    data = data[data['t'].dt.dayofweek < 5]
+    # 3. Define Global Boundaries
+    start_date = "2005-01-01" 
+    end_date = data['t'].max().date()
     
-    # Align to full grid
-    print("Aligning to full market grid...")
-    dates = data['t'].dt.date.unique()
-    all_slots = []
-    for d in dates:
-        day_slots = pd.date_range(start=f"{d} 00:00", end=f"{d} 23:30", freq="30min")
-        all_slots.append(day_slots)
-        
-    full_grid = pd.DatetimeIndex(np.concatenate(all_slots)).sort_values()
+    full_grid = pd.date_range(start=f"{start_date} 00:00", 
+                              end=f"{end_date} 23:30", 
+                              freq="30min")
+                              
+    if len(full_grid) == 0: return pd.DataFrame()
+
     data = data.set_index('t').reindex(full_grid)
     data.index.name = 't'
     data = data.reset_index()
 
-    # Fill Gaps & Winsorize (Standard Pre-processing)
-    data['RV'] = data['RV'].fillna(0.0)
+    # --- 3. Surgical Trimming (Drop planned closures) ---
     
+    # Drop Friday after 20:00
+    mask_friday_night = (data['t'].dt.dayofweek == 4) & (data['t'].dt.time > pd.to_datetime("20:00").time())
+    
+    # Drop all of Saturday (Monday=0, ..., Saturday=5)
+    mask_saturday = data['t'].dt.dayofweek == 5
+    
+    # Drop Sunday before 18:30 (Sunday=6)
+    mask_sunday_morning = (data['t'].dt.dayofweek == 6) & (data['t'].dt.time < pd.to_datetime("18:30").time())
+    
+    # Drop older data
+    mask_pre_2007 = data['t'] < '2007-01-01'
+    
+    # Apply masks: Keep rows where ALL of these drop conditions are FALSE
+    data = data[~(mask_friday_night | mask_saturday | mask_sunday_morning | mask_pre_2007)]
+
+    # --- 4. Parse Exogenous Columns (if any) ---
+    exog_col_names = []
+    if hparams.get("exog_cols") and str(hparams["exog_cols"]).lower() != "none":
+        sep = '|' if '|' in hparams["exog_cols"] else ','
+        exog_col_names = [c.strip() for c in hparams["exog_cols"].split(sep) if c.strip() in data.columns]
+        for col in exog_col_names:
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+
+    # --- 5. Targeted Circuit Breaker Handling ---
+    # The 4 days in 2020 where Level 1 market-wide circuit breakers tripped
+    cb_dates = pd.to_datetime(['2020-03-09', '2020-03-12', '2020-03-16', '2020-03-18']).date
+    mask_cb = data['t'].dt.date.isin(cb_dates) & (data['RV'] == 0.0)
+    
+    # Convert those exact 0.0s to NaN so pandas knows they are missing data
+    data.loc[mask_cb, 'RV'] = np.nan
+
+    # --- 6. True Missing Data Handling ---
+    cols_to_fill = ['RV'] + exog_col_names
+    
+    # Forward-fill to bridge the circuit breakers and minor data drops (up to 2 periods / 1 hour)
+    data[cols_to_fill] = data[cols_to_fill].ffill(limit=2)
+    
+    # Drop anything left over that couldn't be filled
+    data = data.dropna(subset=cols_to_fill)
+    
+    # --- 6. Rolling Winsorization (1% - 99%) ---
     w_window = hparams.get('winsor_window', 240) 
+    
     rv_lower = data['RV'].rolling(window=w_window, min_periods=1).quantile(0.01)
     rv_upper = data['RV'].rolling(window=w_window, min_periods=1).quantile(0.99)
     data['RV'] = data['RV'].clip(lower=rv_lower, upper=rv_upper)
+    
+    for col in exog_col_names:
+        ex_lower = data[col].rolling(window=w_window, min_periods=1).quantile(0.01)
+        ex_upper = data[col].rolling(window=w_window, min_periods=1).quantile(0.99)
+        data[col] = data[col].clip(lower=ex_lower, upper=ex_upper)
 
+    # --- 7. Log-Diurnal Transformation ---
     data['time_of_day'] = data['t'].dt.time
-    
-    # 2. Process Target (RV) -> adj_log_RV
-    print("Applying Robust Diurnal Adj to Target (RV)...")
     data['adj_log_RV'], data['baseline_RV'] = robust_log_diurnal_transform(data, 'RV', 'time_of_day')
-
-    # ==============================================================================
-    # --- NEW: STRICTLY SEGMENTED HAR FEATURES ---
-    # ==============================================================================
     
-    print("Generating Segment-Specific HAR Features...")
+    final_exog_feats = []
+    HAR_LAGS = [1, 5, 25, 125, 625, 3125]
     
-    # A. Define Segments
-    minutes = data['t'].dt.hour * 60 + data['t'].dt.minute
-    
-    cond_morning = (minutes >= SEGMENT_THRESHOLDS['morning_start']) & (minutes < SEGMENT_THRESHOLDS['midday_start'])
-    cond_midday  = (minutes >= SEGMENT_THRESHOLDS['midday_start']) & (minutes < SEGMENT_THRESHOLDS['closing_start'])
-    cond_closing = (minutes >= SEGMENT_THRESHOLDS['closing_start']) & (minutes <= SEGMENT_THRESHOLDS['market_end'])
-    
-    data['segment'] = np.select(
-        [cond_morning, cond_midday, cond_closing], 
-        ['morning', 'midday', 'closing'], 
-        default='overnight'
-    )
-    
-    har_features = []
-    
-    # B. Generate Features per Segment
-    segments = ['morning', 'midday', 'closing', 'overnight']
-    
-    for seg in segments:
-        # Create a mask for the current segment
-        seg_mask = (data['segment'] == seg)
-        
-        # Extract the target series ONLY for this segment
-        seg_series = data.loc[seg_mask, 'adj_log_RV']
+    for raw_col in exog_col_names:
+        base_adj_col = f"adj_log_{raw_col}"
+        data[base_adj_col], _ = robust_log_diurnal_transform(data, raw_col, 'time_of_day')
         
         for lag in HAR_LAGS:
-            feat_name = f"har_{seg}_ma_{lag}"
-            
-            # 1. Initialize feature column with ZEROS (Strict Isolation)
-            # This ensures 'morning' features are 0.0 when it is 'midday'
-            data[feat_name] = 0.0
-            
-            # 2. Calculate Rolling Mean on the COMPRESSED series
-            # (e.g., average of previous 5 'mornings')
-            # shift(1) ensures we don't use the current morning to predict itself
-            rolling_feat = seg_series.rolling(window=lag, min_periods=1).mean().shift(1)
-            
-            # 3. Place values back into the DataFrame ONLY at segment rows
-            data.loc[seg_mask, feat_name] = rolling_feat
-            
-            # 4. Fill initial NaNs within the segment with 0
-            data.loc[seg_mask, feat_name] = data.loc[seg_mask, feat_name].fillna(0.0)
-            
-            har_features.append(feat_name)
+            feat_name = f"{base_adj_col}_ma_{lag}"
+            data[feat_name] = data[base_adj_col].rolling(window=lag).mean().shift(1)
+            final_exog_feats.append(feat_name)
 
-    # ==============================================================================
-    # --- END NEW LOGIC ---
-    # ==============================================================================
-
-    # 3. Finalize Features
-    final_cols = har_features 
-    print(f"Final Features ({len(final_cols)}): {final_cols}")
+    # --- 8. HAR Features for Target (RV) ---
+    har_features = []
+    for lag in HAR_LAGS:
+        feat_name = f"har_ma_{lag}"
+        data[feat_name] = data['adj_log_RV'].rolling(window=lag).mean().shift(1)
+        har_features.append(feat_name)
+        
+    # --- 9. Final Clean & Matrix Extraction ---
+    final_cols = har_features + final_exog_feats
+    required_cols = ['t', 'adj_log_RV', 'baseline_RV'] + final_cols
     
-    required_cols = ['t', 'segment', 'adj_log_RV', 'baseline_RV'] + final_cols
     data = data[required_cols]
-    data = data.dropna()
     
-    # Optional: Filter out 'overnight' rows if you only want to predict market hours
-    # data = data[data['segment'] != 'overnight']
-    
-    print(f"Post-cleaning shape: {data.shape}")
-    
-    data = data.reset_index(drop=True)     
+    # Drop rows with NaNs introduced by the longest HAR lags (the burn-in period)
+    data = data.dropna().reset_index(drop=True)     
     
     X_np = data[final_cols].values.astype(np.float64)
     y_np = data['adj_log_RV'].values.astype(np.float64)
+    
     dates = data['t']
     baselines = data['baseline_RV'].values
     
