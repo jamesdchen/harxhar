@@ -33,7 +33,7 @@ ml python
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # Run Python Script
-python harx_coef.py \
+python harx.py \
     --output-file "$OUTPUT_FILE" \
     --chunk-id $SLURM_ARRAY_TASK_ID \
     --total-chunks $TOTAL_CHUNKS \
