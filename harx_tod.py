@@ -111,7 +111,7 @@ def main(args):
     print("Loading data...")
     # 1. LOAD DATA DICTIONARY (Modified return from data_tod.py)
     # Returns: {'morning': {...}, 'midday': {...}, ...}
-    datasets = load_and_prep_data_strided(hparams, "all30min.parquet")
+    datasets = load_and_prep_data_strided(hparams, "all30min")
 
     # 2. Iterate over each Segment and Run Backtest
     for seg_name, data in datasets.items():

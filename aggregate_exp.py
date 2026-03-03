@@ -6,13 +6,13 @@ import re
 import glob
 
 # --- CONFIGURATION ---
-VALID_SEGMENTS = ['morning', 'midday', 'closing', 'overnight']
+IGNORED_SEGMENTS = ['morning', 'midday', 'closing', 'overnight']
 
 def load_all_chunks(exp_dir):
     """
-    Loads result files that strictly end with a valid segment name.
-    e.g., 'results_chunk_0_morning.csv' -> OK
-          'results_chunk_0.csv'         -> IGNORE
+    Loads result files that strictly DO NOT end with a segment name.
+    e.g., 'results_chunk_0.csv'         -> OK
+          'results_chunk_0_morning.csv' -> IGNORE
     """
     # 1. Find all potential result files
     search_pattern = os.path.join(exp_dir, "results_chunk_*.csv")
@@ -25,18 +25,19 @@ def load_all_chunks(exp_dir):
     
     # 2. Iterate and Filter
     for filename in all_files:
-        # Check if file ends with a valid segment
+        # Check if file ends with a segment suffix
         # We strip the extension (.csv) and check the suffix
         base_name = os.path.splitext(filename)[0] # remove .csv
         
-        is_valid_segment = False
-        for seg in VALID_SEGMENTS:
+        is_segment = False
+        for seg in IGNORED_SEGMENTS:
             if base_name.endswith(f"_{seg}"):
-                is_valid_segment = True
+                is_segment = True
                 break
         
-        if not is_valid_segment:
-            # print(f"  [Skipping] {os.path.basename(filename)} (Not a segment file)")
+        # We only want NON-segment files, so skip if it is a segment
+        if is_segment:
+            # print(f"  [Skipping] {os.path.basename(filename)} (Segment file)")
             continue
 
         try:
@@ -137,7 +138,7 @@ def calculate_global_metrics(df):
     return metrics
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Aggregate Global QLIKE & MSE (Strict Segments Only)")
+    parser = argparse.ArgumentParser(description="Aggregate Global QLIKE & MSE (Non-Segments Only)")
     parser.add_argument("--base_dir", type=str, default="results_elasticnet_subgroups", help="Base directory containing exp_X folders")
     parser.add_argument("--start_date", type=str, default=None, help="Start date filter (YYYY-MM-DD).")
 
@@ -152,7 +153,7 @@ if __name__ == '__main__':
     exp_dirs = sorted(glob.glob(search_path), key=natural_sort_key)
     
     print(f"Found {len(exp_dirs)} experiments in {args.base_dir}")
-    print(f"Valid Segments: {VALID_SEGMENTS}")
+    print(f"Ignored Segments: {IGNORED_SEGMENTS}")
     if args.start_date:
         print(f"Filtering Results: Only including data AFTER {args.start_date}")
     print("-" * 100)
@@ -254,7 +255,7 @@ if __name__ == '__main__':
     final_cols = [c for c in cols if c in summary_df.columns]
     
     print("\n" + "="*160)
-    print(f"GLOBAL SUMMARY (Strict Segments Only - Sorted by Raw MSE)")
+    print(f"GLOBAL SUMMARY (Non-Segments Only - Sorted by Raw MSE)")
     if args.start_date:
         print(f"Data Filter: AFTER {args.start_date}")
     print("="*160)
@@ -278,6 +279,6 @@ if __name__ == '__main__':
     
     print(summary_df[final_cols].to_string(index=False, formatters=actual_formatters))
     
-    output_file = os.path.join(args.base_dir, "global_results_summary.csv")
+    output_file = os.path.join(args.base_dir, "global_results_summary_non_segments.csv")
     summary_df.to_csv(output_file, index=False)
     print(f"\nSaved summary to: {output_file}")

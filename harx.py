@@ -120,7 +120,7 @@ def main(args):
 
     print("Loading data...")
     # UPDATED UNPACKING: dates, baselines instead of t, adj
-    X_np, y_np, dates, baselines = load_and_prep_data_strided(hparams, "all30min.parquet")
+    X_np, y_np, dates, baselines = load_and_prep_data_strided(hparams, "all30min")
 
     print(f"Data Shape: X={X_np.shape}, Y={y_np.shape}")
 

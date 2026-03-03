@@ -58,13 +58,13 @@ def robust_log_diurnal_transform(df, col_name, time_col="time_of_day",
     # --- CRITICAL FIX: FORCE NUMERIC ---
     # Convert column to numeric, turning text/errors into NaNs
     series_clean = pd.to_numeric(df[col_name], errors='coerce')
-    
-    # Apply the clip to prevent microscopic values from exploding the log
-    series_clean = series_clean.clip(lower=1e-10)
 
     if is_signed:
         print(f"  [Skipping Diurnal] '{col_name}' identified as Directional/Signed.")
         return series_clean.fillna(0.0), pd.Series(0.0, index=df.index)
+
+    # Apply the clip to prevent microscopic values from exploding the log
+    series_clean = series_clean.clip(lower=1e-10)
 
     # --- 3. APPLY MAGNITUDE TRANSFORM ---
     
@@ -102,13 +102,30 @@ def robust_log_diurnal_transform(df, col_name, time_col="time_of_day",
     return adj_series, baseline
 
 def load_and_prep_data_strided(hparams, input_file):
-    print(f"Loading {input_file}...")
+    print(f"Loading data from {input_path}...")
     
-    # 1. Load the data
-    try: 
-        data = pd.read_parquet(input_file, engine="pyarrow")
-    except: 
-        data = pd.read_csv(input_file)
+    # 1. Check if the input is our new directory of buckets
+    if os.path.isdir(input_path):
+        print("Directory detected. Stitching bucketed files together...")
+        
+        # Grab all parquet files in the folder
+        files = [f for f in os.listdir(input_path) if f.endswith('.parquet')]
+        if not files:
+            raise FileNotFoundError(f"No parquet files found in directory: {input_path}")
+            
+        dataframes = []
+        for file in files:
+            file_path = os.path.join(input_path, file)
+            print(f"  -> Loading {file}...")
+            # Load each bucket
+            df_part = pd.read_parquet(file_path, engine="pyarrow")
+            dataframes.append(df_part)
+            
+        # Stitch all dataframes together sequentially on 'endbartime'
+        print("Merging all buckets on 'endbartime'...")
+        data = reduce(lambda left, right: pd.merge(left, right, on='endbartime', how='outer'), dataframes)
+        
+        print(f"Stitching complete! Final shape: {data.shape}")
         
     # 2. Standardize Time & Sort
     if 'endbartime' in data.columns:
@@ -146,7 +163,7 @@ def load_and_prep_data_strided(hparams, input_file):
     mask_sunday_morning = (data['t'].dt.dayofweek == 6) & (data['t'].dt.time < pd.to_datetime("18:30").time())
     
     # Drop older data
-    mask_pre_2007 = data['t'] < '2007-01-01'
+    mask_pre_2007 = data['t'] < '2005-01-01'
     
     # Apply masks: Keep rows where ALL of these drop conditions are FALSE
     data = data[~(mask_friday_night | mask_saturday | mask_sunday_morning | mask_pre_2007)]
