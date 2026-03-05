@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1        # CPU cores per task. (See note below*)
 #SBATCH --mem=16G                # Memory per node
 #SBATCH --partition=main         # 'main' or 'debug' partition
-#SBATCH --account=pollok_1603  # <--- ACTION: Replace with your PI's ID (e.g., ttrojan_123)
+#SBATCH --account=pollok_1603    # <--- ACTION: Replace with your PI's ID (e.g., ttrojan_123)
 #SBATCH --time=1:00:00
 #SBATCH --output=logs/slurm-%A_%a.out
 
@@ -27,7 +27,7 @@ module load python        # Adjust version if needed
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-# 3. Check Variables (Passed from submit_doe_carc.py)
+# 3. Check Variables (Passed from the python submission script)
 # We set defaults just in case you run this manually for testing.
 if [ -z "$RESULT_DIR" ]; then
     echo "WARNING: RESULT_DIR not set. Defaulting to current directory."
@@ -42,20 +42,26 @@ if [ -z "$EXOG_COLS" ]; then
     EXOG_COLS="NONE"
 fi
 
+if [ -z "$MODEL_TYPE" ]; then
+    echo "WARNING: MODEL_TYPE not set. Defaulting to naive."
+    MODEL_TYPE="naive"
+fi
+
 # 4. Prepare Output
-# The Python orchestrator usually creates this, but this is a failsafe.
 mkdir -p "$RESULT_DIR"
 OUTPUT_FILE="$RESULT_DIR/results_chunk_${SLURM_ARRAY_TASK_ID}.csv"
 
 echo "Processing Chunk: $SLURM_ARRAY_TASK_ID"
 echo "Output File: $OUTPUT_FILE"
+echo "Model Type: $MODEL_TYPE"
 echo "Exog Vars: $EXOG_COLS"
 
 # --- Run the Python Script ---
 # Note: SLURM_ARRAY_TASK_ID is usually 1-based (1..100).
 # Python lists are 0-based (0..99). We subtract 1 here.
 
-time python3 harx.py \
+time python3 harx_tod.py \
+    --model "$MODEL_TYPE" \
     --output-file "$OUTPUT_FILE" \
     --chunk-id $((SLURM_ARRAY_TASK_ID-1)) \
     --total-chunks $TOTAL_CHUNKS \
