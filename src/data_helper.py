@@ -5,10 +5,11 @@ import os
 from functools import reduce
 from src import config
 
-def robust_log_diurnal_transform(df, col_name, time_col="time_of_day", 
+def robust_transform(df, col_name, time_col="time_of_day", 
                                  diurnal_window=config.DIURNAL_WINDOW, 
-                                 min_periods=config.DIURNAL_MIN_PERIODS):
-    """Intelligently applies log and diurnal transformations."""
+                                 min_periods=config.DIURNAL_MIN_PERIODS,
+                                 use_log=True): # <-- NEW TOGGLE
+    """Intelligently applies (optional) log and diurnal transformations."""
     SKIP_VARS = {'hour', 'DOW', 't', 'date'}
     SIGNED_KEYWORDS = ['sumret', 'autocov', 'sentiment', 'voldemand']
     MAGNITUDE_EXCEPTIONS = ['sumret2', 'sumret4', 'sumabsret', 'sumpret2']
@@ -26,27 +27,48 @@ def robust_log_diurnal_transform(df, col_name, time_col="time_of_day",
     series_clean = pd.to_numeric(df[col_name], errors='coerce')
 
     if is_signed:
-        return series_clean.fillna(0.0), pd.Series(0.0, index=df.index)
-
-    series_clean = series_clean.clip(lower=1e-10)
-
-    with np.errstate(divide='ignore', invalid='ignore'):
-        log_vals = np.log(series_clean)
+        # Additive identity is 0.0, Multiplicative identity is 1.0
+        identity_baseline = 0.0 if use_log else 1.0
+        return series_clean.fillna(0.0), pd.Series(identity_baseline, index=df.index)
         
-    finite_vals = log_vals[np.isfinite(log_vals)]
-    floor = finite_vals.min() - 2.0 if len(finite_vals) > 0 else -20.0
+    # We clip at 0 if not logging, 1e-10 if logging
+    series_clean = series_clean.clip(lower=1e-10 if use_log else 0.0)
+
+    if use_log:
+        with np.errstate(divide='ignore', invalid='ignore'):
+            target_vals = np.log(series_clean)
+            
+        finite_vals = target_vals[np.isfinite(target_vals)]
+        floor = finite_vals.min() - 2.0 if len(finite_vals) > 0 else -20.0
+            
+        target_clipped = target_vals.copy()
+        target_clipped[~np.isfinite(target_clipped)] = floor
         
-    log_clipped = log_vals.copy()
-    log_clipped[~np.isfinite(log_clipped)] = floor
-    
-    baseline = df.groupby(time_col)[col_name].transform(
-        lambda x: log_clipped.loc[x.index].rolling(
-            window=diurnal_window, min_periods=min_periods
-        ).median().shift(1)  
-    )
-    
-    baseline = baseline.fillna(method='bfill').fillna(floor)
-    adj_series = log_clipped - baseline
+        baseline = df.groupby(time_col)[col_name].transform(
+            lambda x: target_clipped.loc[x.index].rolling(
+                window=diurnal_window, min_periods=min_periods
+            ).median().shift(1)  
+        )
+        baseline = baseline.fillna(method='ffill').fillna(0.0)        
+        
+        # Log Space: Subtraction
+        adj_series = target_clipped - baseline
+    else:
+        # Linear space: no log applied
+        target_clipped = series_clean.copy()
+        
+        baseline = df.groupby(time_col)[col_name].transform(
+            lambda x: target_clipped.loc[x.index].rolling(
+                window=diurnal_window, min_periods=min_periods
+            ).median().shift(1)  
+        )
+        
+        baseline = baseline.fillna(method='ffill').fillna(1.0)
+        
+        baseline = baseline.clip(lower=1e-10) 
+        
+        # Linear Space: Division (Multiplicative Adjustment)
+        adj_series = target_clipped / baseline
     
     return adj_series, baseline
 
@@ -96,9 +118,16 @@ def load_and_clean_base_data(hparams, input_path):
     mask_cb = data['t'].dt.date.isin(cb_dates) & (data['RV'] == 0.0)
     data.loc[mask_cb, 'RV'] = np.nan
 
-    cols_to_fill = ['RV'] + exog_col_names
-    data[cols_to_fill] = data[cols_to_fill].ffill(limit=2)
-    data = data.dropna(subset=cols_to_fill)
+    allow_missing = hparams.get('allow_missing', False)
+
+    # 1. ALWAYS clean the target variable (models need a y-value to train)
+    data['RV'] = data['RV'].ffill(limit=2)
+    data = data.dropna(subset=['RV'])
+    
+    # 2. Conditionally clean the exogenous features
+    if not allow_missing and exog_col_names:
+        data[exog_col_names] = data[exog_col_names].ffill(limit=2)
+        data = data.dropna(subset=exog_col_names)
     
     # Winsorize
     w_window = hparams.get('winsor_window', 240) 
@@ -108,13 +137,23 @@ def load_and_clean_base_data(hparams, input_path):
         data[col] = data[col].clip(lower=lower, upper=upper)
 
     # Transforms
+    use_log = hparams.get('use_log', True)
+    prefix = "adj_log_" if use_log else "adj_"
+
     data['time_of_day'] = data['t'].dt.time
-    data['adj_log_RV'], data['baseline_RV'] = robust_log_diurnal_transform(data, 'RV', 'time_of_day')
     
-    cols_to_transform = ['adj_log_RV']
+    # Target transform
+    target_col_name = f"{prefix}RV"
+    data[target_col_name], data['baseline_RV'] = robust_transform(
+        data, 'RV', 'time_of_day', use_log=use_log
+    )
+    
+    # THE FIX: Dynamically track the target column name
+    cols_to_transform = [target_col_name]
+    
     for raw_col in exog_col_names:
-        base_adj_col = f"adj_log_{raw_col}"
-        data[base_adj_col], _ = robust_log_diurnal_transform(data, raw_col, 'time_of_day')
+        base_adj_col = f"{prefix}{raw_col}"
+        data[base_adj_col], _ = robust_transform(data, raw_col, 'time_of_day', use_log=use_log)
         cols_to_transform.append(base_adj_col)
 
     return data, cols_to_transform
@@ -129,24 +168,33 @@ def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
     if chunk_id >= len(chunk_indices_list): return np.array([])
     return chunk_indices_list[chunk_id]
 
-def save_chunk_results(output_file, forecasts, naive, indices, train_window, y_true, dates, baselines):
-    """Saves predictions and applies Duan's Smearing Estimator back to raw space."""
+def save_chunk_results(output_file, forecasts, naive, indices, train_window, y_true, dates, baselines, use_log=True):
+    """Saves predictions and properly reconstructs the raw space values."""
     y_subset = y_true[indices]
     base_subset = baselines[indices]
     dates_subset = dates.iloc[indices].values if hasattr(dates, 'iloc') else dates[indices]
     
-    sigma2_model = np.var(y_subset - forecasts)
-    pred_raw = np.exp(forecasts + base_subset + (sigma2_model / 2))
-    
-    sigma2_naive = np.var(y_subset - naive)
-    naive_raw = np.exp(naive + base_subset + (sigma2_naive / 2))
+    if use_log:
+        # Reconstruct from Log Space using Duan's Smearing
+        sigma2_model = np.var(y_subset - forecasts)
+        pred_raw = np.exp(forecasts + base_subset + (sigma2_model / 2))
+        
+        sigma2_naive = np.var(y_subset - naive)
+        naive_raw = np.exp(naive + base_subset + (sigma2_naive / 2))
+        
+        true_raw = np.exp(y_subset + base_subset)
+    else:
+        # THE FIX: Reconstruct from Linear Space (Multiply the diurnal baseline back)
+        pred_raw = forecasts * base_subset
+        naive_raw = naive * base_subset
+        true_raw = y_subset * base_subset
     
     df = pd.DataFrame({
         'date': dates_subset,
         'true_adj': y_subset,
         'pred_adj': forecasts,
         'naive_adj': naive,        
-        'true_raw': np.exp(y_subset + base_subset),
+        'true_raw': true_raw,
         'pred_raw': pred_raw,
         'naive_raw': naive_raw     
     })
