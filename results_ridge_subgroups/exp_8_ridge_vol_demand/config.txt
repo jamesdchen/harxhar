@@ -1,0 +1,5 @@
+Experiment ID: 8
+Experiment Name: vol_demand
+Model Type: ridge
+Num Variables: 4
+Variables: ['voldemand_spx_open_and_close', 'voldemand_spx_open_only', 'voldemand_all_open_and_close', 'voldemand_all_open_only']

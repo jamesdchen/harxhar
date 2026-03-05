@@ -4,7 +4,7 @@ import os
 import argparse
 
 # --- Import from your modular src/ directory ---
-from src.data_tod import load_and_prep_segment_data
+from src.data_tod import load_and_prep_data_strided
 from src.data_helper import get_chunk_indices_strided, save_chunk_results
 from src.models import RidgeModel, NaiveBaseline
 from src.backtest import run_backtest_agnostic
@@ -21,7 +21,7 @@ def main(args):
     
     # 1. LOAD DATA DICTIONARY 
     # Returns: {'morning': {'X': ..., 'y': ...}, 'midday': {...}, ...}
-    datasets = load_and_prep_segment_data(hparams, args.input_path, target_segment='all')
+    datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment='all')
 
     if not datasets:
         print("No datasets returned. Check data path and dates.")
@@ -78,6 +78,14 @@ def main(args):
         elif args.model == 'naive':
             print(f"  Initializing Naive Baseline (Lag {args.naive_lag})...")
             model = NaiveBaseline(lag_index=args.naive_lag)
+        elif args.model == 'xgboost':
+            model = XGBoostModel(train_win_periods=args.train_window,
+                 n_features=num_features,
+                 use_scaling=False,
+                 n_estimators=100,      # Add your preferred defaults
+                 max_depth=3,           # Add your preferred defaults
+                 learning_rate=0.1,
+                 tree_method='hist')    # Highly recommended for speed
         else:
             raise ValueError(f"Unknown model type: {args.model}")
 
@@ -116,7 +124,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Segmented Time-Series Backtester")
     
     # Execution Routing
-    parser.add_argument('--model', type=str, choices=['ridge', 'naive'], required=True)
+    parser.add_argument('--model', type=str, choices=['ridge', 'naive', 'xgboost'], required=True)
     parser.add_argument('--input-path', type=str, default="all30min")
     parser.add_argument('--output-file', type=str, required=True)
     

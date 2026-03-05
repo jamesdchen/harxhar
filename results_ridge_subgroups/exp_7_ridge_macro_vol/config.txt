@@ -1,0 +1,5 @@
+Experiment ID: 7
+Experiment Name: macro_vol
+Model Type: ridge
+Num Variables: 3
+Variables: ['vix', 'vvix', 'vix3m']

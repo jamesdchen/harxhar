@@ -28,7 +28,7 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
         else:
             mask = (minutes >= start) | (minutes <= end)
             
-        seg_df = data.loc[mask].copy()
+        seg_df = data.loc[mask].copy()        
         if seg_df.empty:
             continue
             

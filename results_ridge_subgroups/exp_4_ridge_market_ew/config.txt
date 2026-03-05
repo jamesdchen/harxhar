@@ -1,0 +1,5 @@
+Experiment ID: 4
+Experiment Name: market_ew
+Model Type: ridge
+Num Variables: 11
+Variables: ['sumret2_ewstock', 'sumret3_ewstock', 'sumret4_ewstock', 'sumabsret_ewstock', 'sumbipow_ewstock', 'sumpret2_ewstock', 'turnover_ewstock', 'buyturnover_ewstock', 'sellturnover_ewstock', 'effspread_ewstock', 'spread_ewstock']

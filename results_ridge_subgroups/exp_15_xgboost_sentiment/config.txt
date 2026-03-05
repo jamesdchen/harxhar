@@ -1,0 +1,5 @@
+Experiment ID: 15
+Experiment Name: sentiment
+Model Type: xgboost
+Num Variables: 3
+Variables: ['stocktwits_attention', 'stocktwits_sentiment', 'stocktwits_sentcount']
