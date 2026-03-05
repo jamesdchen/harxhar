@@ -1,5 +1,0 @@
-Experiment ID: 1
-Experiment Name: baseline
-Model Type: elasticnet
-Num Variables: 0
-Variables: []
