@@ -44,6 +44,14 @@ def main(args):
     elif args.model == 'naive':
         print(f"Initializing Naive Baseline (Lag Index: {args.naive_lag})...")
         model = NaiveBaseline(lag_index=args.naive_lag)
+    elif args.model == 'xgboost':
+        model = XGBoostModel(train_win_periods=args.train_window,
+             n_features=num_features,
+             use_scaling=False,
+             n_estimators=100,      # Add your preferred defaults
+             max_depth=3,           # Add your preferred defaults
+             learning_rate=0.1,
+             tree_method='hist')    # Highly recommended for speed
     else:
         raise ValueError(f"Unknown model type: {args.model}")
 
@@ -80,7 +88,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Time-Series Volatility Forecasting Pipeline")
     
     # Execution Routing
-    parser.add_argument('--model', type=str, choices=['ridge', 'naive'], required=True, 
+    parser.add_argument('--model', type=str, choices=['ridge', 'naive', 'xgboost'], required=True, 
                         help="Which model to run for this experiment.")
     parser.add_argument('--input-path', type=str, default="all30min", 
                         help="Path to the parquet directory or file.")
