@@ -6,7 +6,7 @@ import argparse
 # --- Import from your modular src/ directory ---
 from src.data_tod import load_and_prep_data_strided
 from src.data_helper import get_chunk_indices_strided, save_chunk_results
-from src.models import RidgeModel, NaiveBaseline
+from src.models import RidgeModel, NaiveBaseline, XGBoostModel
 from src.backtest import run_backtest_agnostic
 
 def main(args):
