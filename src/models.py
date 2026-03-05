@@ -1,35 +1,31 @@
 import numpy as np
 from sklearn.linear_model import Ridge
 from xgboost import XGBRegressor
-from src.rolling import RollingStandardScaler, RollingBuffer # Your custom classes
+from src.rolling import RollingRobustScaler, RollingBuffer
 
+# --- 1. Top-Level Interface ---
 class BaseModel:
     def initialize(self, X_init, y_init): pass
     def predict(self, x_t): pass
     def update(self, x_t, y_t): pass
 
-class XGBoostModel(BaseModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **xgb_kwargs):
+# --- 2. The Engine (Handles all Rolling/Scaling Logic) ---
+class RollingRegressionModel(BaseModel):
+    def __init__(self, model, train_win_periods, n_features, use_scaling=True, refit_frequency=1):
+        self.model = model
         self.train_win_periods = train_win_periods
         self.n_features = n_features
         self.use_scaling = use_scaling
-        self.refit_frequency = refit_frequency # <-- NEW: How often to retrain
-        self.steps_since_refit = 0             # <-- NEW: Counter
+        self.refit_frequency = refit_frequency
+        self.steps_since_refit = 0
         
-        # Optimize XGBoost for speed
-        if 'tree_method' not in xgb_kwargs:
-            xgb_kwargs['tree_method'] = 'hist' # Much faster than exact greedy
-        if 'n_jobs' not in xgb_kwargs:
-            xgb_kwargs['n_jobs'] = -1          # Use all cores
-        
-        # Initialize XGBoost with any passed kwargs (e.g., n_estimators, max_depth)
-        self.model = XGBRegressor(**xgb_kwargs)
         self.buffer = RollingBuffer(train_win_periods, n_features, 1)
         
         if self.use_scaling:
-            self.scaler = RollingStandardScaler(n_features)
-            self.mean_x = np.zeros(n_features)
-            self.std_x = np.ones(n_features)
+            self.scaler = RollingRobustScaler(train_win_periods, n_features)
+        
+        self.mean_x = np.zeros(n_features)
+        self.std_x = np.ones(n_features)
         
         self.hist_X = []
         self.hist_y = []
@@ -63,22 +59,16 @@ class XGBoostModel(BaseModel):
         return self.model.predict(x_input.reshape(1, -1)).item()
 
     def update(self, x_t, y_t):
-        # Pop oldest
-        x_old = self.hist_X.pop(0)
-        _ = self.hist_y.pop(0)
-
         # Update Scaler
         if self.use_scaling:
-            self.scaler.update(x_t, x_old)
+            self.scaler.update(x_t)
             self.mean_x, self.std_x = self.scaler.get_scaler()
             x_new = (x_t - self.mean_x) / self.std_x
         else:
             x_new = x_t
 
-        # Add new to buffer
+        # Add new to buffer and history
         self.buffer.add(x_new, y_t)
-        
-        # Maintain raw history
         self.hist_X.append(x_t)
         self.hist_y.append(y_t)
 
@@ -87,77 +77,54 @@ class XGBoostModel(BaseModel):
         if self.steps_since_refit >= self.refit_frequency:
             X_tr, y_tr = self.buffer.get_view()
             self.model.fit(X_tr, y_tr)
-            self.steps_since_refit = 0 # Reset counter
+            self.steps_since_refit = 0
 
-class RidgeModel(BaseModel):
+
+# --- 3. The Specific Algorithms ---
+
+class RidgeModel(RollingRegressionModel):
     def __init__(self, train_win_periods, n_features, use_scaling=True, **ridge_kwargs):
-        self.train_win_periods = train_win_periods
-        self.n_features = n_features
-        self.use_scaling = use_scaling
-        
-        self.model = Ridge(**ridge_kwargs)
-        self.buffer = RollingBuffer(train_win_periods, n_features, 1)
-        self.scaler = RollingStandardScaler(n_features)
-        
-        self.hist_X = []
-        self.hist_y = []
-        self.mean_x = np.zeros(n_features)
-        self.std_x = np.ones(n_features)
+        # Initialize Ridge and pass it up to the parent engine
+        model = Ridge(**ridge_kwargs)
+        super().__init__(
+            model=model,
+            train_win_periods=train_win_periods,
+            n_features=n_features,
+            use_scaling=use_scaling,
+            refit_frequency=1 # Ridge is fast, refit every step
+        )
 
-    def initialize(self, X_init, y_init):
-        if y_init.ndim == 1:
-            y_init = y_init.reshape(-1, 1)
+class XGBoostModel(RollingRegressionModel):
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **xgb_kwargs):
+        # Apply XGBoost speed tweaks
+        if 'tree_method' not in xgb_kwargs:
+            xgb_kwargs['tree_method'] = 'hist'
+        if 'n_jobs' not in xgb_kwargs:
+            xgb_kwargs['n_jobs'] = -1
             
-        if self.use_scaling:
-            self.scaler.initialize(X_init)
-            self.mean_x, self.std_x = self.scaler.get_scaler()
+        # Initialize XGBoost and pass it up to the parent engine
+        model = XGBRegressor(**xgb_kwargs)
+        super().__init__(
+            model=model,
+            train_win_periods=train_win_periods,
+            n_features=n_features,
+            use_scaling=use_scaling,
+            refit_frequency=refit_frequency
+        )
 
-        self.buffer.X_buffer[:] = (X_init - self.mean_x) / self.std_x
-        self.buffer.y_buffer[:] = y_init
-        
-        self.hist_X = list(X_init)
-        self.hist_y = list(y_init)
-        
-        X_tr, y_tr = self.buffer.get_view()
-        self.model.fit(X_tr, y_tr)
-
-    def predict(self, x_t):
-        x_scl = (x_t - self.mean_x) / self.std_x
-        return self.model.predict(x_scl.reshape(1, -1)).item()
-
-    def update(self, x_t, y_t):
-        # Pop oldest
-        x_old = self.hist_X.pop(0)
-        _ = self.hist_y.pop(0)
-
-        # Update Scaler
-        if self.use_scaling:
-            self.scaler.update(x_t, x_old)
-            self.mean_x, self.std_x = self.scaler.get_scaler()
-
-        # Add new to buffer
-        x_new_scl = (x_t - self.mean_x) / self.std_x
-        self.buffer.add(x_new_scl, y_t)
-        
-        # Maintain raw history
-        self.hist_X.append(x_t)
-        self.hist_y.append(y_t)
-
-        # Refit
-        X_tr, y_tr = self.buffer.get_view()
-        self.model.fit(X_tr, y_tr)
-
+# --- 4. The Baseline ---
 
 class NaiveBaseline(BaseModel):
+    # Notice this skips the RollingRegressionModel and inherits straight from BaseModel
+    # because it doesn't need to waste memory on buffers or scaling!
     def __init__(self, lag_index=0):
-        # 0 = 1-period MA, 1 = 5-period MA, etc.
         self.lag_index = lag_index
 
     def initialize(self, X_init, y_init):
-        pass # No training required
+        pass 
 
     def predict(self, x_t):
         return x_t[self.lag_index]
 
     def update(self, x_t, y_t):
-        pass # No refitting required
+        pass

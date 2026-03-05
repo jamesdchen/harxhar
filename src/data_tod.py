@@ -13,6 +13,10 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     if data.empty:
         return {} if target_segment == 'all' else (np.array([]), np.array([]), [], [])
 
+    # --- NEW: Check toggle and set target column name dynamically ---
+    use_log = hparams.get('use_log', True)
+    target_col = 'adj_log_RV' if use_log else 'adj_RV'
+
     minutes = data['t'].dt.hour * 60 + data['t'].dt.minute
     datasets = {}
 
@@ -39,10 +43,14 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
         for col in cols_to_transform:
             for lag in config.HAR_LAGS:
                 # Keep naming consistent with the global script
-                feat_name = f"har_ma_{lag}" if col == 'adj_log_RV' else f"{col}_ma_{lag}"
+                feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
                 
                 # Store the series in the dictionary instead of inserting into seg_df
-                new_feats_dict[feat_name] = seg_df[col].rolling(window=lag, min_periods=1).mean().shift(1)
+                # In load_and_prep_data_strided (global and TOD versions)
+                new_feats_dict[feat_name] = data[col].rolling(
+                    window=lag, 
+                    min_periods=1 # <-- ADD THIS to prevent NaN cascading
+                ).mean().shift(1)
                 segment_features.append(feat_name)
         
         # Concatenate all new columns to the segment dataframe at once
@@ -50,17 +58,26 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
         seg_df = pd.concat([seg_df, new_feats_df], axis=1)
         
         # --- THE FIX: Retain base columns + all the new features ---
-        required_cols = ['t', 'adj_log_RV', 'baseline_RV'] + segment_features
+        required_cols = ['t', target_col, 'baseline_RV'] + segment_features
         seg_df = seg_df[required_cols]
         
-        # Clean this specific dataset
-        seg_df = seg_df.dropna().reset_index(drop=True)
+        allow_missing = hparams.get('allow_missing', False)
+    
+        if allow_missing:
+            # SNIPER: Drop only the burn-in rows and rows with missing targets
+            max_lag = max(config.HAR_LAGS)
+            seg_df = seg_df.iloc[max_lag:] # Slice off the initial burn-in
+            seg_df = seg_df.dropna(subset=[target_col, 'baseline_RV']).reset_index(drop=True)
+        else:
+            # SHOTGUN: Drop everything (for Ridge)
+            seg_df = seg_df.dropna().reset_index(drop=True)
+            
         if seg_df.empty:
-            continue
+            return np.array([]), np.array([]), [], []
 
         datasets[seg_name] = {
             'X': seg_df[segment_features].values.astype(np.float64),
-            'y': seg_df['adj_log_RV'].values.astype(np.float64),
+            'y': seg_df[target_col].values.astype(np.float64), # Updated target selection
             'dates': seg_df['t'],
             'baselines': seg_df['baseline_RV'].values,
             'features': segment_features
