@@ -1,6 +1,8 @@
 import os
 import glob
 import pandas as pd
+import numpy as np
+from src.metrics import calculate_global_metrics
 
 def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     """
@@ -39,10 +41,11 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     return pd.concat(dfs).sort_index()
 
 def parse_config(exp_dir):
-    """Parses the config.txt file to extract the experiment name and ID."""
+    """Parses the config.txt file to extract the experiment name, ID, and model type."""
     config_path = os.path.join(exp_dir, "config.txt")
     exp_name = "Unknown"
     exp_id = -1
+    model_type = "Unknown"
     
     if os.path.exists(config_path):
         try:
@@ -52,31 +55,71 @@ def parse_config(exp_dir):
                         exp_name = line.split(":", 1)[1].strip()
                     elif line.startswith("Experiment ID:"):
                         exp_id = int(line.split(":", 1)[1].strip())
+                    elif line.startswith("Model Type:"):
+                        model_type = line.split(":", 1)[1].strip()
         except Exception:
             pass
             
     if exp_id == -1:
         try:
             exp_id = int(exp_dir.split('_')[-1])
-        except ValueError:
+        except (ValueError, IndexError):
             pass
             
-    return exp_id, exp_name
+    return exp_id, exp_name, model_type
 
-def filter_by_date(df, start_date=None, end_date=None):
-    """Slices the DataFrame to the specified datetime window."""
-    if df.empty or (not start_date and not end_date):
+def filter_by_time(df, start_time=None, end_time=None):
+    """Slices the DataFrame to the specified time-of-day window."""
+    if df.empty or (start_time is None and end_time is None):
         return df
         
     try:
         if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
             
-        if start_date:
-            df = df[df.index >= pd.Timestamp(start_date)]
-        if end_date:
-            df = df[df.index <= pd.Timestamp(end_date)]
-    except Exception as e:
-        print(f"  [Warning] Date filtering failed: {e}")
+        start = start_time if start_time else "00:00:00"
+        end = end_time if end_time else "23:59:59"
         
-    return df
+        # inclusive='left' prevents double-counting the exact overlapping minute (e.g., 11:30)
+        return df.between_time(start, end, inclusive='left')
+    except Exception as e:
+        print(f"  [Warning] Time filtering failed: {e}")
+        return df
+
+def process_single_experiment(exp_dir, metadata, segment_configs):
+    """Agnostically loads data, applies optional time boundaries, and calculates metrics."""
+    exp_results = []
+
+    for seg_conf in segment_configs:
+        seg_name = seg_conf['name']
+        load_kwargs = seg_conf['load_kwargs']
+        time_bounds = seg_conf.get('time_bounds', None)
+        
+        print(f"Processing Exp {metadata['exp_id']:<3} | {metadata['model'].upper():<8} | {metadata['experiment_name'][:16]:<16} | {seg_name:<12}...", end=" ", flush=True)        
+        
+        # 1. Load Data
+        df = load_all_chunks(exp_dir, **load_kwargs)
+        
+        if df.empty:
+            print("[EMPTY]")
+            continue
+
+        # 2. Apply Time-of-Day Filter in Memory
+        if time_bounds:
+            df = filter_by_time(df, time_bounds['start'], time_bounds['end'])
+            if df.empty:
+                print("[EMPTY AFTER TOD FILTER]")
+                continue
+
+        # 3. Calculate Metrics
+        m = calculate_global_metrics(df)
+        m.update(metadata)
+        m['segment'] = seg_name
+        m['qlike'] = m.get('qlike_nofilter', m.get('qlike', np.nan))
+        
+        # Added MAE back to the console output
+        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse_raw', np.nan):.4e} | MAE: {m.get('mae_raw', np.nan):.4e}")
+        
+        exp_results.append(m)
+
+    return exp_results

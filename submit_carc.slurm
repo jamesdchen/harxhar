@@ -8,7 +8,7 @@
 #SBATCH --partition=main         # 'main' or 'debug' partition
 #SBATCH --account=pollok_1603    # <--- ACTION: Replace with your PI's ID (e.g., ttrojan_123)
 #SBATCH --time=1:00:00
-#SBATCH --output=logs/slurm-%A_%a.out
+#SBATCH --output=/scratch1/jc_905/logs/slurm-%A_%a.out
 
 # *Note on CPUs: If your script uses heavy Numpy/Pandas matrix math, 
 # you can increase --cpus-per-task to 4 or 8 to speed it up.
@@ -60,7 +60,7 @@ echo "Exog Vars: $EXOG_COLS"
 # Note: SLURM_ARRAY_TASK_ID is usually 1-based (1..100).
 # Python lists are 0-based (0..99). We subtract 1 here.
 
-time python3 harx_tod.py \
+time python3 harx.py \
     --model "$MODEL_TYPE" \
     --output-file "$OUTPUT_FILE" \
     --chunk-id $((SLURM_ARRAY_TASK_ID-1)) \

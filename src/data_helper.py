@@ -129,11 +129,26 @@ def load_and_clean_base_data(hparams, input_path):
         data[exog_col_names] = data[exog_col_names].ffill(limit=2)
         data = data.dropna(subset=exog_col_names)
     
-    # Winsorize
+    # Define columns to winsorize
+    cols_to_fill = ['RV'] + exog_col_names
+    
+    # Winsorize (handling potential NaNs for XGBoost)
     w_window = hparams.get('winsor_window', 240) 
     for col in cols_to_fill:
-        lower = data[col].rolling(window=w_window, min_periods=1).quantile(0.01)
-        upper = data[col].rolling(window=w_window, min_periods=1).quantile(0.99)
+        if allow_missing:
+            # For XGBoost: use nanquantile so a single NaN doesn't void the whole window
+            # min_periods=1 ensures we get a value as long as there is 1 non-NaN observation
+            lower = data[col].rolling(window=w_window, min_periods=1).apply(
+                lambda x: np.nanquantile(x, 0.01), raw=True
+            )
+            upper = data[col].rolling(window=w_window, min_periods=1).apply(
+                lambda x: np.nanquantile(x, 0.99), raw=True
+            )
+        else:
+            # For Ridge: standard quantile is faster since data is already ffilled/dropped
+            lower = data[col].rolling(window=w_window, min_periods=1).quantile(0.01)
+            upper = data[col].rolling(window=w_window, min_periods=1).quantile(0.99)
+            
         data[col] = data[col].clip(lower=lower, upper=upper)
 
     # Transforms
@@ -168,37 +183,32 @@ def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
     if chunk_id >= len(chunk_indices_list): return np.array([])
     return chunk_indices_list[chunk_id]
 
-def save_chunk_results(output_file, forecasts, naive, indices, train_window, y_true, dates, baselines, use_log=True):
-    """Saves predictions and properly reconstructs the raw space values."""
+def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines, use_log=True):
+    """Saves predictions and reconstructs raw space values for the primary model only."""
     y_subset = y_true[indices]
     base_subset = baselines[indices]
     dates_subset = dates.iloc[indices].values if hasattr(dates, 'iloc') else dates[indices]
     
     if use_log:
-        # Reconstruct from Log Space using Duan's Smearing
+        # Reconstruct from Log Space using Duan's Smearing for the model
         sigma2_model = np.var(y_subset - forecasts)
         pred_raw = np.exp(forecasts + base_subset + (sigma2_model / 2))
-        
-        sigma2_naive = np.var(y_subset - naive)
-        naive_raw = np.exp(naive + base_subset + (sigma2_naive / 2))
-        
         true_raw = np.exp(y_subset + base_subset)
     else:
-        # THE FIX: Reconstruct from Linear Space (Multiply the diurnal baseline back)
+        # Reconstruct from Linear Space (Diurnal baseline back-multiplication)
         pred_raw = forecasts * base_subset
-        naive_raw = naive * base_subset
         true_raw = y_subset * base_subset
     
+    # DataFrame now only contains true vs. model predicted
     df = pd.DataFrame({
         'date': dates_subset,
         'true_adj': y_subset,
-        'pred_adj': forecasts,
-        'naive_adj': naive,        
+        'pred_adj': forecasts,     
         'true_raw': true_raw,
-        'pred_raw': pred_raw,
-        'naive_raw': naive_raw     
+        'pred_raw': pred_raw
     })
     
+    from pathlib import Path
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_file, index=False)
     return dates_subset
