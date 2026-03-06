@@ -121,7 +121,7 @@ def load_and_clean_base_data(hparams, input_path):
     allow_missing = hparams.get('allow_missing', False)
 
     # 1. ALWAYS clean the target variable (models need a y-value to train)
-    data['RV'] = data['RV'].ffill(limit=2)
+    data['RV'] = data['RV'].ffill()
     data = data.dropna(subset=['RV'])
     
     # 2. Conditionally clean the exogenous features
