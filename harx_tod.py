@@ -16,6 +16,10 @@ def main(args):
         print("No datasets returned. Check data path and dates.")
         return
 
+    if args.model == 'naive':
+        first_ds = next(iter(datasets.values())) 
+        args.naive_lag = first_ds['features'].index('har_ma_125')
+
     for seg_name, data in datasets.items():
         print(f"\n" + "="*50)
         print(f"PROCESSING SEGMENT: {seg_name.upper()}")

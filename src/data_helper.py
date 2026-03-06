@@ -49,10 +49,8 @@ def robust_transform(df, col_name, time_col="time_of_day",
                 window=diurnal_window, min_periods=min_periods
             ).median().shift(1)  
         )
-        if allow_missing:
-            baseline = baseline.fillna(method='ffill')   # <-- only ffill, no fallback to 0.0
-        else:
-            baseline = baseline.fillna(method='ffill').fillna(0.0)       
+        
+        baseline = baseline.fillna(method='ffill').fillna(0.0)       
         
         # Log Space: Subtraction
         adj_series = target_clipped - baseline
@@ -66,10 +64,7 @@ def robust_transform(df, col_name, time_col="time_of_day",
             ).median().shift(1)  
         )
         
-        if allow_missing:
-            baseline = baseline.fillna(method='ffill')   # <-- only ffill, no fallback to 1.0
-        else:
-            baseline = baseline.fillna(method='ffill').fillna(1.0)
+        baseline = baseline.fillna(method='ffill').fillna(1.0)
                 
         baseline = baseline.clip(lower=1e-10) 
         

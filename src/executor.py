@@ -25,8 +25,7 @@ def get_common_parser(description):
     parser.add_argument('--chunk-id', type=int, required=True)
     parser.add_argument('--total-chunks', type=int, required=True)
     parser.add_argument('--train-window', type=int, default=500, help="Training window in DAYS")
-    parser.add_argument('--exog-cols', type=str, default=None, help="Pipe-separated list of columns")   
-    parser.add_argument('--naive-lag', type=int, default=0, help="Feature index for naive baseline")
+    parser.add_argument('--exog-cols', type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument('--lag-scope', type=str, choices=['global', 'intra'], default='global', help="Whether to compute HAR lags on the full dataset ('global') or per-segment ('intra')")
     return parser
 
@@ -61,7 +60,7 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
         
     elif args.model == 'naive':
-        print(f"  Initializing Naive Baseline (Lag: {args.naive_lag})...")
+        print(f"  Initializing Naive Baseline...")
         model = NaiveBaseline(lag_index=args.naive_lag)
         
     elif args.model == 'xgboost':

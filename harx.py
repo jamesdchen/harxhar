@@ -9,11 +9,14 @@ def main(args):
     print(f"Loading data from '{args.input_path}'...")
     print(f"Log Transform Enabled: {hparams['use_log']}")
     
-    X_np, y_np, dates, baselines = load_and_prep_data_strided(hparams, args.input_path)
+    X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
     
     if len(X_np) == 0:
         print("Dataset is empty. Exiting.")
         return
+        
+    if args.model == 'naive':
+        args.naive_lag = feature_names.index('har_ma_125')
 
     # Static Calculation for Global Array
     periods_per_day = 48
