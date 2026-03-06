@@ -8,7 +8,7 @@ from src import config
 def robust_transform(df, col_name, time_col="time_of_day", 
                                  diurnal_window=config.DIURNAL_WINDOW, 
                                  min_periods=config.DIURNAL_MIN_PERIODS,
-                                 use_log=True): # <-- NEW TOGGLE
+                                 use_log=True, allow_missing=False): # <-- NEW TOGGLE
     """Intelligently applies (optional) log and diurnal transformations."""
     SKIP_VARS = {'hour', 'DOW', 't', 'date'}
     SIGNED_KEYWORDS = ['sumret', 'autocov', 'sentiment', 'voldemand']
@@ -27,9 +27,9 @@ def robust_transform(df, col_name, time_col="time_of_day",
     series_clean = pd.to_numeric(df[col_name], errors='coerce')
 
     if is_signed:
-        # Additive identity is 0.0, Multiplicative identity is 1.0
         identity_baseline = 0.0 if use_log else 1.0
-        return series_clean.fillna(0.0), pd.Series(identity_baseline, index=df.index)
+        filled = series_clean if allow_missing else series_clean.fillna(0.0)  # <-- CHANGE
+        return filled, pd.Series(identity_baseline, index=df.index)
         
     # We clip at 0 if not logging, 1e-10 if logging
     series_clean = series_clean.clip(lower=1e-10 if use_log else 0.0)
@@ -49,7 +49,10 @@ def robust_transform(df, col_name, time_col="time_of_day",
                 window=diurnal_window, min_periods=min_periods
             ).median().shift(1)  
         )
-        baseline = baseline.fillna(method='ffill').fillna(0.0)        
+        if allow_missing:
+            baseline = baseline.fillna(method='ffill')   # <-- only ffill, no fallback to 0.0
+        else:
+            baseline = baseline.fillna(method='ffill').fillna(0.0)       
         
         # Log Space: Subtraction
         adj_series = target_clipped - baseline
@@ -63,8 +66,11 @@ def robust_transform(df, col_name, time_col="time_of_day",
             ).median().shift(1)  
         )
         
-        baseline = baseline.fillna(method='ffill').fillna(1.0)
-        
+        if allow_missing:
+            baseline = baseline.fillna(method='ffill')   # <-- only ffill, no fallback to 1.0
+        else:
+            baseline = baseline.fillna(method='ffill').fillna(1.0)
+                
         baseline = baseline.clip(lower=1e-10) 
         
         # Linear Space: Division (Multiplicative Adjustment)
@@ -160,16 +166,17 @@ def load_and_clean_base_data(hparams, input_path):
     # Target transform
     target_col_name = f"{prefix}RV"
     data[target_col_name], data['baseline_RV'] = robust_transform(
-        data, 'RV', 'time_of_day', use_log=use_log
+        data, 'RV', 'time_of_day', use_log=use_log, allow_missing=allow_missing
     )
     
     # THE FIX: Dynamically track the target column name
     cols_to_transform = [target_col_name]
-    
+
     for raw_col in exog_col_names:
         base_adj_col = f"{prefix}{raw_col}"
-        data[base_adj_col], _ = robust_transform(data, raw_col, 'time_of_day', use_log=use_log)
-        cols_to_transform.append(base_adj_col)
+        data[base_adj_col], _ = robust_transform(
+            data, raw_col, 'time_of_day', use_log=use_log, allow_missing=allow_missing
+        )
 
     return data, cols_to_transform
 
