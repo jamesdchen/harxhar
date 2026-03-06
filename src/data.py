@@ -55,4 +55,4 @@ def load_and_prep_data_strided(hparams, input_path):
     X_np = data[final_features].values.astype(np.float64)
     y_np = data[target_col].values.astype(np.float64)
     
-    return X_np, y_np, data['t'], data['baseline_RV'].values
+    return X_np, y_np, data['t'], data['baseline_RV'].values, final_features
