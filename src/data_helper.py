@@ -8,7 +8,8 @@ from src import config
 def robust_transform(df, col_name, time_col="time_of_day", 
                                  diurnal_window=config.DIURNAL_WINDOW, 
                                  min_periods=config.DIURNAL_MIN_PERIODS,
-                                 use_log=True, allow_missing=False): # <-- NEW TOGGLE
+                                 use_log=True, allow_missing=False,
+                                 use_diurnal=True): # <-- NEW TOGGLE
     """Intelligently applies (optional) log and diurnal transformations."""
     SKIP_VARS = {'hour', 'DOW', 't', 'date'}
     SIGNED_KEYWORDS = ['sumret', 'autocov', 'sentiment', 'voldemand']
@@ -44,13 +45,15 @@ def robust_transform(df, col_name, time_col="time_of_day",
         target_clipped = target_vals.copy()
         target_clipped[~np.isfinite(target_clipped)] = floor
         
-        baseline = df.groupby(time_col)[col_name].transform(
-            lambda x: target_clipped.loc[x.index].rolling(
-                window=diurnal_window, min_periods=min_periods
-            ).median().shift(1)  
-        )
-        
-        baseline = baseline.fillna(method='ffill').fillna(0.0)       
+        if use_diurnal:
+            baseline = df.groupby(time_col)[col_name].transform(
+                lambda x: target_clipped.loc[x.index].rolling(
+                    window=diurnal_window, min_periods=min_periods
+                ).median().shift(1)
+            )
+            baseline = baseline.fillna(method='ffill').fillna(0.0)
+        else:
+            baseline = pd.Series(0.0, index=df.index)  # identity in log space    
         
         # Log Space: Subtraction
         adj_series = target_clipped - baseline
@@ -58,15 +61,16 @@ def robust_transform(df, col_name, time_col="time_of_day",
         # Linear space: no log applied
         target_clipped = series_clean.copy()
         
-        baseline = df.groupby(time_col)[col_name].transform(
-            lambda x: target_clipped.loc[x.index].rolling(
-                window=diurnal_window, min_periods=min_periods
-            ).median().shift(1)  
-        )
-        
-        baseline = baseline.fillna(method='ffill').fillna(1.0)
-                
-        baseline = baseline.clip(lower=1e-10) 
+        if use_diurnal:
+            baseline = df.groupby(time_col)[col_name].transform(
+                lambda x: target_clipped.loc[x.index].rolling(
+                    window=diurnal_window, min_periods=min_periods
+                ).median().shift(1)
+            )
+            baseline = baseline.fillna(method='ffill').fillna(1.0)
+            baseline = baseline.clip(lower=1e-10)
+        else:
+            baseline = pd.Series(1.0, index=df.index)  # identity in linear space
         
         # Linear Space: Division (Multiplicative Adjustment)
         adj_series = target_clipped / baseline
@@ -127,7 +131,6 @@ def load_and_clean_base_data(hparams, input_path):
     
     # 2. Conditionally clean the exogenous features
     if not allow_missing and exog_col_names:
-        data[exog_col_names] = data[exog_col_names].ffill(limit=2)
         data = data.dropna(subset=exog_col_names)
     
     # Define columns to winsorize
@@ -167,11 +170,36 @@ def load_and_clean_base_data(hparams, input_path):
     # THE FIX: Dynamically track the target column name
     cols_to_transform = [target_col_name]
 
+    NO_DIURNAL_KEYWORDS = {'sentiment', 'spread', 'vix'}
+
     for raw_col in exog_col_names:
         base_adj_col = f"{prefix}{raw_col}"
+        
+        use_diurnal = not any(kw in raw_col.lower() for kw in NO_DIURNAL_KEYWORDS)
+    
+        overnight = None
+        if any(kw in raw_col for kw in ('ewstock', 'vwstock')):
+            overnight = ('20:30', '04:00')
+        elif 'voldemand' in raw_col:
+            overnight = ('17:00', '10:00')
+    
         data[base_adj_col], _ = robust_transform(
-            data, raw_col, 'time_of_day', use_log=use_log, allow_missing=allow_missing
+            data, raw_col, 'time_of_day',
+            use_log=use_log,
+            allow_missing=allow_missing,
+            use_diurnal=use_diurnal,
         )
+    
+        if overnight is not None:
+            t_start = pd.to_datetime(overnight[0]).time()
+            t_end   = pd.to_datetime(overnight[1]).time()
+            tod     = data['t'].dt.time
+            in_overnight = (tod >= t_start) | (tod < t_end) if t_start > t_end \
+                           else (tod >= t_start) & (tod < t_end)
+            fill_val = 0.0 if use_log else 1.0
+            data.loc[in_overnight & data[base_adj_col].isna(), base_adj_col] = fill_val
+        
+        cols_to_transform.append(base_adj_col)  # <-- missing
 
     return data, cols_to_transform
 
