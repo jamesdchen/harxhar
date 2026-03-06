@@ -42,3 +42,35 @@ def calculate_global_metrics(df):
             metrics['qlike_nofilter'] = np.nan
             
     return metrics
+    
+def calculate_baseline_deltas(summary_df):
+    """
+    Finds the baseline model and computes relative deltas and OOS R2.
+    This keeps the comparative logic completely isolated from the file processing.
+    """
+    baseline_mask = (summary_df['exp_id'] == 0) | (summary_df['experiment_name'].str.lower().isin(['baseline', 'naive_baseline']))
+    baseline_df = summary_df[baseline_mask]
+    
+    if baseline_df.empty:
+        print("\n[Warning] No baseline experiment found. Deltas and OOS R2 will be NaN.")
+        for col in ['delta_mse_raw', 'delta_mae_raw', 'delta_qlike', 'oos_r2']:
+            summary_df[col] = np.nan
+        return summary_df
+
+    def get_baseline_val(segment_name, metric):
+        b_row = baseline_df[baseline_df['segment'] == segment_name]
+        return b_row.iloc[0].get(metric, np.nan) if not b_row.empty else np.nan
+
+    # Vectorized comparisons
+    summary_df['delta_mse_raw'] = summary_df.apply(lambda r: r['mse_raw'] - get_baseline_val(r['segment'], 'mse_raw'), axis=1)
+    summary_df['delta_mae_raw'] = summary_df.apply(lambda r: r['mae_raw'] - get_baseline_val(r['segment'], 'mae_raw'), axis=1)
+    summary_df['delta_qlike']   = summary_df.apply(lambda r: r['qlike']   - get_baseline_val(r['segment'], 'qlike'), axis=1)
+    
+    # OOS R2 Calculation (1 - MSE_model / MSE_baseline)
+    summary_df['oos_r2'] = summary_df.apply(
+        lambda r: 1.0 - (r['mse_raw'] / get_baseline_val(r['segment'], 'mse_raw')) 
+        if get_baseline_val(r['segment'], 'mse_raw') > 0 else np.nan, 
+        axis=1
+    )
+
+    return summary_df

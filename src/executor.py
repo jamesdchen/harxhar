@@ -28,19 +28,20 @@ def get_common_hparams(args):
         "use_log": use_log_transform,
         "allow_missing": allow_missing
     }
-
+    
 def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_win_periods, output_file):
-    """Handles model init, backtest execution, and result saving."""
+    """Handles model init, backtest execution, and result saving without naive baselines."""
     chunk_idxs = get_chunk_indices_strided(X_np, train_win_periods, args.chunk_id, args.total_chunks)
 
     if chunk_idxs.size == 0: 
-        return False # Indicates chunk was empty
+        return False 
 
-    # Initialize Model
+    # 1. Initialize Model
     if args.model == 'ridge':
         print(f"  Initializing Ridge Model (Train Window: {train_win_periods} periods)...")
         model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
     elif args.model == 'naive':
+        # Even if the model IS 'naive', we treat its output as the primary 'forecast' 
         print(f"  Initializing Naive Baseline (Lag: {args.naive_lag})...")
         model = NaiveBaseline(lag_index=args.naive_lag)
     elif args.model == 'xgboost':
@@ -49,16 +50,14 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
     else:
         raise ValueError(f"Unknown model type: {args.model}")
 
-    # Run Backtest
+    # 2. Run Backtest (The result of this is our primary forecast)
     preds = run_backtest_agnostic(model=model, indices=chunk_idxs, X=X_np, y=y_np, train_win_periods=train_win_periods)
 
-    # Save
-    naive_preds = X_np[chunk_idxs, args.naive_lag]
+    # 3. Save
     print(f"  Saving results to {output_file}...")
     save_chunk_results(
         output_file=output_file, 
         forecasts=preds, 
-        naive=naive_preds, 
         indices=chunk_idxs, 
         train_window=train_win_periods, 
         y_true=y_np, 

@@ -35,7 +35,7 @@ SUBGROUPS = {
     "market_ew": [f for f in ALL_FEATURES if "ewstock" in f],
     "market_vw": [f for f in ALL_FEATURES if "vwstock" in f],
     "sentiment": [f for f in ALL_FEATURES if "stocktwits" in f],
-    "macro_vol": [f for f in ALL_FEATURES if "vix" in f],
+    "implied_vol": [f for f in ALL_FEATURES if "vix" in f],
     "vol_demand": [f for f in ALL_FEATURES if "voldemand" in f],
     "all_features": ALL_FEATURES
 }
