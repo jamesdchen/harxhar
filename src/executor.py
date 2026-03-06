@@ -1,13 +1,25 @@
 import argparse
 import os
 from src.data_helper import get_chunk_indices_strided, save_chunk_results
-from src.models import RidgeModel, NaiveBaseline, XGBoostModel
+from src.models import (
+    RidgeModel, 
+    NaiveBaseline, 
+    XGBoostModel, 
+    LightGBMModel, 
+    RandomForestModel
+)
 from src.backtest import run_backtest_agnostic
 
 def get_common_parser(description):
     """Returns a standardized arg parser for all scripts."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--model', type=str, choices=['ridge', 'naive', 'xgboost'], required=True)
+    # Added 'lightgbm' and 'random_forest' to the choices
+    parser.add_argument(
+        '--model', 
+        type=str, 
+        choices=['ridge', 'naive', 'xgboost', 'lightgbm', 'random_forest'], 
+        required=True
+    )
     parser.add_argument('--input-path', type=str, default="all30min")
     parser.add_argument('--output-file', type=str, required=True)
     parser.add_argument('--chunk-id', type=int, required=True)
@@ -19,8 +31,13 @@ def get_common_parser(description):
 
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model chosen."""
-    use_log_transform = False if args.model == 'xgboost' else True
-    allow_missing = True if args.model == 'xgboost' else False
+    tree_models = ['xgboost', 'lightgbm', 'random_forest']
+    
+    # Tree models usually don't need target variables log-transformed
+    use_log_transform = False if args.model in tree_models else True
+    
+    # XGBoost and LightGBM handle NaNs natively; scikit-learn's Random Forest and Ridge do not.
+    allow_missing = True if args.model in ['xgboost', 'lightgbm'] else False
     
     return {
         "diurnal_adjust": True,
@@ -40,13 +57,24 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
     if args.model == 'ridge':
         print(f"  Initializing Ridge Model (Train Window: {train_win_periods} periods)...")
         model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
+        
     elif args.model == 'naive':
-        # Even if the model IS 'naive', we treat its output as the primary 'forecast' 
         print(f"  Initializing Naive Baseline (Lag: {args.naive_lag})...")
         model = NaiveBaseline(lag_index=args.naive_lag)
+        
     elif args.model == 'xgboost':
         print(f"  Initializing XGBoost Model (Train Window: {train_win_periods} periods)...")
         model = XGBoostModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=False, n_estimators=100, max_depth=3, learning_rate=0.1, tree_method='hist')
+        
+    elif args.model == 'lightgbm':
+        print(f"  Initializing LightGBM Model (Train Window: {train_win_periods} periods)...")
+        model = LightGBMModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=False, n_estimators=100, max_depth=3, learning_rate=0.1)
+        
+    elif args.model == 'random_forest':
+        print(f"  Initializing Random Forest Model (Train Window: {train_win_periods} periods)...")
+        # Note: RF doesn't use learning_rate, and standard n_estimators is often higher, but we'll keep it at 100 for speed parity
+        model = RandomForestModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=False, n_estimators=100, max_depth=3)
+        
     else:
         raise ValueError(f"Unknown model type: {args.model}")
 

@@ -1,6 +1,8 @@
 import numpy as np
 from sklearn.linear_model import Ridge
 from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from sklearn.ensemble import RandomForestRegressor
 from src.rolling import RollingRobustScaler, RollingBuffer
 
 # --- 1. Top-Level Interface ---
@@ -104,6 +106,42 @@ class XGBoostModel(RollingRegressionModel):
             
         # Initialize XGBoost and pass it up to the parent engine
         model = XGBRegressor(**xgb_kwargs)
+        super().__init__(
+            model=model,
+            train_win_periods=train_win_periods,
+            n_features=n_features,
+            use_scaling=use_scaling,
+            refit_frequency=refit_frequency
+        )
+
+class LightGBMModel(RollingRegressionModel):
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **lgbm_kwargs):
+        # Apply default speed/system tweaks if not provided
+        if 'n_jobs' not in lgbm_kwargs:
+            lgbm_kwargs['n_jobs'] = -1
+        # Suppress some common LightGBM verbosity by default
+        if 'verbose' not in lgbm_kwargs:
+            lgbm_kwargs['verbose'] = -1
+            
+        # Initialize LightGBM and pass it to the parent engine
+        model = LGBMRegressor(**lgbm_kwargs)
+        super().__init__(
+            model=model,
+            train_win_periods=train_win_periods,
+            n_features=n_features,
+            use_scaling=use_scaling,
+            refit_frequency=refit_frequency
+        )
+
+
+class RandomForestModel(RollingRegressionModel):
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **rf_kwargs):
+        # Apply default speed tweaks if not provided
+        if 'n_jobs' not in rf_kwargs:
+            rf_kwargs['n_jobs'] = -1
+            
+        # Initialize Random Forest and pass it to the parent engine
+        model = RandomForestRegressor(**rf_kwargs)
         super().__init__(
             model=model,
             train_win_periods=train_win_periods,
