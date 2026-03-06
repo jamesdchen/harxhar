@@ -1,0 +1,5 @@
+Experiment ID: 25
+Experiment Name: implied_vol
+Model Type: lightgbm
+Num Variables: 3
+Variables: ['vix', 'vvix', 'vix3m']

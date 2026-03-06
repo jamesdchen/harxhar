@@ -1,0 +1,5 @@
+Experiment ID: 34
+Experiment Name: implied_vol
+Model Type: random_forest
+Num Variables: 3
+Variables: ['vix', 'vvix', 'vix3m']

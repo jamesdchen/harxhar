@@ -9,7 +9,8 @@ BASE_RESULT_DIR = "results_ridge_subgroups"
 SUBMISSION_SCRIPT = "submit_carc.slurm"
 
 # Define the models we want to iterate over
-MODELS_TO_RUN = ["ridge", "xgboost"]
+# Added lightgbm and random_forest here
+MODELS_TO_RUN = ["ridge", "xgboost", "lightgbm", "random_forest"]
 
 # --- 1. DEFINE THE FEATURE UNIVERSE ---
 FULL_FEATURE_STRING = (
@@ -82,7 +83,7 @@ def main():
         start_task = end_task + 1
 
     # ==========================================
-    # --- SUBMIT ML MODELS (RIDGE & XGBOOST) ---
+    # --- SUBMIT ML MODELS ---
     # ==========================================
     exp_id = 1
     for model_type in MODELS_TO_RUN:
@@ -108,8 +109,16 @@ def main():
                 end_task = min(start_task + TASKS_PER_ARRAY - 1, TOTAL_CHUNKS)
                 task_range = f"{start_task}-{end_task}"
                 
-                # Dynamic job names: rdg_1, xgb_10, etc.
-                short_model_name = "xgb" if model_type == "xgboost" else "rdg"
+                # Dynamic job names expanded for new models
+                if model_type == "xgboost":
+                    short_model_name = "xgb"
+                elif model_type == "lightgbm":
+                    short_model_name = "lgb"
+                elif model_type == "random_forest":
+                    short_model_name = "rf"
+                else:
+                    short_model_name = "rdg"
+                    
                 job_name = f"{short_model_name}_{exp_id}"
                 
                 job_env = os.environ.copy()
