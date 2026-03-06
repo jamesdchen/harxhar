@@ -27,6 +27,7 @@ def get_common_parser(description):
     parser.add_argument('--train-window', type=int, default=500, help="Training window in DAYS")
     parser.add_argument('--exog-cols', type=str, default=None, help="Pipe-separated list of columns")   
     parser.add_argument('--naive-lag', type=int, default=0, help="Feature index for naive baseline")
+    parser.add_argument('--lag-scope', type=str, choices=['global', 'intra'], default='global', help="Whether to compute HAR lags on the full dataset ('global') or per-segment ('intra')")
     return parser
 
 def get_common_hparams(args):
@@ -43,7 +44,8 @@ def get_common_hparams(args):
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
         "use_log": use_log_transform,
-        "allow_missing": allow_missing
+        "allow_missing": allow_missing,
+        'lag_scope': args.lag_scope
     }
     
 def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_win_periods, output_file):
