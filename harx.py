@@ -7,7 +7,7 @@ def main(args):
     hparams = get_common_hparams(args)
 
     print(f"Loading data from '{args.input_path}'...")
-    print(f"Log Transform Enabled: {hparams['use_log']}")
+    print(f"Log Transform Enabled: {hparams['use_transform']}")
     
     X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
     

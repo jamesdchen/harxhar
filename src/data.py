@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from src import config
-from src.data_helper import load_and_clean_base_data
+from src.data_main import load_and_clean_base_data
 
 def load_and_prep_data_strided(hparams, input_path):
     """
@@ -12,16 +12,14 @@ def load_and_prep_data_strided(hparams, input_path):
         return np.array([]), np.array([]), [], []
 
     # --- NEW: Check toggle and set target column name dynamically ---
-    use_log = hparams.get('use_log', True)
-    target_col = 'adj_log_RV' if use_log else 'adj_RV'
+    target_col = 'adj_RV'
 
     final_features = []
     new_features_dict = {}
     
     # 1. Calculate and store in a dictionary (Fast)
     for col in cols_to_transform:
-        for lag in config.HAR_LAGS: 
-            # Use dynamic target_col instead of hardcoded 'adj_log_RV'
+        for lag in config.HAR_LAGS:
             feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
             
             # In load_and_prep_data_strided (global and TOD versions)

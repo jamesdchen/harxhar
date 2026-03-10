@@ -31,10 +31,10 @@ def get_common_parser(description):
 
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model chosen."""
-    tree_models = ['xgboost', 'lightgbm', 'random_forest']
+    tree_models = ['xgboost', 'lightgbm']
     
-    # Tree models usually don't need target variables log-transformed
-    use_log_transform = False if args.model in tree_models else True
+    # Tree models usually don't need variables transformed
+    use_transform = False if args.model in tree_models else True
     
     # XGBoost and LightGBM handle NaNs natively; scikit-learn's Random Forest and Ridge do not.
     allow_missing = True if args.model in ['xgboost', 'lightgbm'] else False
@@ -42,7 +42,7 @@ def get_common_hparams(args):
     return {
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
-        "use_log": use_log_transform,
+        "use_transform": use_transform,
         "allow_missing": allow_missing,
         'lag_scope': args.lag_scope
     }
@@ -83,6 +83,11 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
     preds = run_backtest_agnostic(model=model, indices=chunk_idxs, X=X_np, y=y_np, train_win_periods=train_win_periods)
 
     # 3. Save
+    # Append _cb_drop suffix to the output filename when circuit-breaker rows
+    # were dropped, so the state is visible in the filename during analysis.
+    if hparams.get('cb_drop', False):
+        base, ext = os.path.splitext(output_file)
+        output_file = f"{base}_cb_drop{ext}"
     print(f"  Saving results to {output_file}...")
     save_chunk_results(
         output_file=output_file, 
@@ -91,7 +96,6 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         train_window=train_win_periods, 
         y_true=y_np, 
         dates=dates, 
-        baselines=baselines,
-        use_log=hparams['use_log']
+        baselines=baselines
     )
     return True
