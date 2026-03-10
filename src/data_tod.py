@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from src import config
-from src.data_helper import load_and_clean_base_data
+from src.data_main import load_and_clean_base_data
 
 def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     """
@@ -21,8 +21,7 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     if data.empty:
         return {} if target_segment == 'all' else (np.array([]), np.array([]), [], [])
 
-    use_log = hparams.get('use_log', True)
-    target_col = 'adj_log_RV' if use_log else 'adj_RV'
+    target_col = 'adj_RV'
     allow_missing = hparams.get('allow_missing', False)
     lag_scope = hparams.get('lag_scope', 'global')
 

@@ -7,17 +7,33 @@ from src.metrics import calculate_global_metrics
 def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     """
     Stitches chunk CSVs into a DataFrame with flexible filtering.
+
+    Files tagged with _cb_drop (e.g. results_chunk_1_cb_drop.csv) are treated
+    identically to their non-tagged counterparts for the purpose of suffix
+    matching — the _cb_drop token is stripped before any ignore/require check.
+
+    Returns
+    -------
+    (df, cb_drop) : (pd.DataFrame, bool)
+        cb_drop is True when every loaded file carries the _cb_drop tag,
+        meaning the experiment ran with circuit-breaker rows excluded.
     """
     search_pattern = os.path.join(exp_dir, "results_chunk_*.csv")
     all_files = glob.glob(search_pattern)
     
     if not all_files:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
     
     dfs = []
+    cb_drop_flags = []
     for filename in all_files:
-        base_name = os.path.splitext(os.path.basename(filename))[0] 
-        
+        raw_base = os.path.splitext(os.path.basename(filename))[0]
+
+        # Strip _cb_drop before suffix matching so it is never mistaken for a
+        # segment name and never accidentally triggers ignore/require filters.
+        has_cb_drop = raw_base.endswith("_cb_drop")
+        base_name = raw_base[: -len("_cb_drop")] if has_cb_drop else raw_base
+
         # 1. Check if we should ignore this file
         if ignore_suffixes and any(base_name.endswith(f"_{seg}") for seg in ignore_suffixes):
             continue
@@ -32,13 +48,16 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.set_index('date')
             dfs.append(df)
+            cb_drop_flags.append(has_cb_drop)
         except Exception as e:
-            print(f"  [Warning] Could not read {base_name}: {e}")
+            print(f"  [Warning] Could not read {raw_base}: {e}")
             
     if not dfs:
-        return pd.DataFrame()
-        
-    return pd.concat(dfs).sort_index()
+        return pd.DataFrame(), False
+
+    # cb_drop is True only when every chunk file in this experiment was tagged.
+    cb_drop = len(cb_drop_flags) > 0 and all(cb_drop_flags)
+    return pd.concat(dfs).sort_index(), cb_drop
 
 def parse_config(exp_dir):
     """Parses the config.txt file to extract the experiment name, ID, and model type."""
@@ -97,8 +116,8 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
         
         print(f"Processing Exp {metadata['exp_id']:<3} | {metadata['model'].upper():<8} | {metadata['experiment_name'][:16]:<16} | {seg_name:<12}...", end=" ", flush=True)        
         
-        # 1. Load Data
-        df = load_all_chunks(exp_dir, **load_kwargs)
+        # 1. Load Data — also returns the cb_drop flag
+        df, cb_drop = load_all_chunks(exp_dir, **load_kwargs)
         
         if df.empty:
             print("[EMPTY]")
@@ -115,10 +134,11 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
         m = calculate_global_metrics(df)
         m.update(metadata)
         m['segment'] = seg_name
+        m['cb_drop'] = cb_drop
         m['qlike'] = m.get('qlike_nofilter', m.get('qlike', np.nan))
         
-        # Added MAE back to the console output
-        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse_raw', np.nan):.4e} | MAE: {m.get('mae_raw', np.nan):.4e}")
+        cb_tag = " [CB_DROP]" if cb_drop else ""
+        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse_raw', np.nan):.4e} | MAE: {m.get('mae_raw', np.nan):.4e}{cb_tag}")
         
         exp_results.append(m)
 

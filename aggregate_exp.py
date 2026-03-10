@@ -86,7 +86,7 @@ def main(args):
     
     # 4. --- Final Table Output ---
     final_cols = [
-        'exp_id', 'model', 'experiment_name', 'segment',
+        'exp_id', 'model', 'experiment_name', 'segment', 'cb_drop',
         'mse_raw', 'delta_mse_raw', 'oos_r2', 
         'mae_raw', 'delta_mae_raw',
         'qlike', 'delta_qlike', 'n_samples'
@@ -104,7 +104,8 @@ def main(args):
         'delta_mae_raw': '{:.4e}'.format,
         'qlike': '{:.6f}'.format,
         'delta_qlike': '{:.6f}'.format,
-        'oos_r2': '{:.4%}'.format
+        'oos_r2': '{:.4%}'.format,
+        'cb_drop': lambda v: 'CB_DROP' if v else ''
     }
     
     pd.set_option('display.width', 1000)

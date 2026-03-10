@@ -8,7 +8,7 @@ def main(args):
     hparams = get_common_hparams(args)
 
     print(f"Loading segmented data from {args.input_path}...")
-    print(f"Log Transform Enabled: {hparams['use_log']}")
+    print(f"Log Transform Enabled: {hparams['use_transform']}")
     
     datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment='all')
 
