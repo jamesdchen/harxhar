@@ -52,7 +52,7 @@ def robust_transform(df, col_name, time_col="time_of_day",
     if col_name in SKIP_VARS:
         return df[col_name], pd.Series(0, index=df.index)
 
-    series = pd.to_numeric(df[col_name], errors='coerce')
+    series = df[col_name]
 
     # Detect sign on raw series before any adjustment.
     has_negatives = bool((series.dropna() < 0).any())
@@ -61,6 +61,11 @@ def robust_transform(df, col_name, time_col="time_of_day",
     # 1. DIURNAL ADJUSTMENT (on raw series)
     # ------------------------------------------------------------------ #
     do_diurnal = use_diurnal and (col_name not in diurnal_excluded_cols)
+
+    assert df.index.is_monotonic_increasing, (
+        f"Index must be sorted before diurnal transform — "
+        f"first offender at position {(df.index.to_series().diff() < 0).argmax()}"
+    )
 
     if do_diurnal:
         baseline = pd.Series(index=series.index, dtype=float)
@@ -81,19 +86,25 @@ def robust_transform(df, col_name, time_col="time_of_day",
     # ------------------------------------------------------------------ #
     if use_transform:
         def _col_matches(*keywords):
-            return any(kw in col_name for kw in keywords)
+            return any(kw in col_name for kw in keywords)        
 
-        if has_negatives:
+        if _col_matches('ret2', 'RV', 'turnover','bipow','effspread'):
+            series = np.sqrt(series)
+        
+        elif _col_matches('autocov'):
+            series = np.sign(series) * np.sqrt(np.abs(series))
+            
+        elif _col_matches('ret3'):
+            series = np.cbrt(series)
+            
+        elif _col_matches('ret4'):
+            series = np.power(series, 0.25)
+
+        elif has_negatives or _col_matches('sumabsret'):
             # Diurnal std-normalisation already handled the scale; no further
             # transform needed for signed residuals.
             if not allow_missing:
                 series = series.fillna(0.0)
-
-        elif _col_matches('ret2', 'sumret2', 'sumpret2', 'sumabsret', 'turnover'):
-            series = np.sqrt(series)
-
-        elif _col_matches('ret4', 'sumret4'):
-            series = np.power(series, 0.25)
 
         else:
             # Default: log transform.
@@ -107,14 +118,14 @@ def robust_transform(df, col_name, time_col="time_of_day",
     if winsor_window is not None:
         if allow_missing and not is_target:
             lower = series.rolling(window=winsor_window, min_periods=1).apply(
-                lambda x: np.nanquantile(x, 0.01), raw=True
-            )
+                lambda x: np.nanquantile(x, 0.05), raw=True
+            ).shift(1)
             upper = series.rolling(window=winsor_window, min_periods=1).apply(
-                lambda x: np.nanquantile(x, 0.99), raw=True
-            )
+                lambda x: np.nanquantile(x, 0.95), raw=True
+            ).shift(1)
         else:
-            lower = series.rolling(window=winsor_window, min_periods=1).quantile(0.01)
-            upper = series.rolling(window=winsor_window, min_periods=1).quantile(0.99)
+            lower = series.rolling(window=winsor_window, min_periods=1).quantile(0.05).shift(1)
+            upper = series.rolling(window=winsor_window, min_periods=1).quantile(0.95).shift(1)
         series = series.clip(lower=lower, upper=upper)
 
     return series, baseline
@@ -168,7 +179,10 @@ def load_and_clean_base_data(hparams, input_path):
         sep = '|' if '|' in hparams["exog_cols"] else ','
         exog_col_names = [c.strip() for c in hparams["exog_cols"].split(sep) if c.strip() in data.columns]
         for col in exog_col_names:
-            data[col] = pd.to_numeric(data[col], errors='coerce')
+            if any(vix in col.lower() for vix in {'vvix', 'vix3m'}):
+                data[col] = pd.to_numeric(data[col], errors='coerce')
+            else:
+                assert data[col].dtype != object, f"Unexpected object dtype on {col}"
 
     # --- Circuit Breaker Handling ---
     cb_dates = pd.to_datetime(['2020-03-09', '2020-03-12', '2020-03-16', '2020-03-18']).date
