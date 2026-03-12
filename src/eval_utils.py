@@ -135,10 +135,9 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
         m.update(metadata)
         m['segment'] = seg_name
         m['cb_drop'] = cb_drop
-        m['qlike'] = m.get('qlike_nofilter', m.get('qlike', np.nan))
         
         cb_tag = " [CB_DROP]" if cb_drop else ""
-        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse_raw', np.nan):.4e} | MAE: {m.get('mae_raw', np.nan):.4e}{cb_tag}")
+        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse', np.nan):.4e} | MAE: {m.get('mae', np.nan):.4e}{cb_tag}")
         
         exp_results.append(m)
 
