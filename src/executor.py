@@ -60,12 +60,8 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         return False 
 
     # 1. Initialize Model
-    if args.model == 'har':
-        print(f"  Initializing HAR-Ridge Model (Train Window: {train_win_periods} periods)...")
-        model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
-
-    elif args.model == 'ridge':
-        print(f"  Initializing Ridge Model with raw lags (Train Window: {train_win_periods} periods)...")
+    if args.model == 'har' or args.model == 'ridge':
+        print(f"  Initializing Ridge Model (Train Window: {train_win_periods} periods)...")
         model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
 
     elif args.model == 'naive':
