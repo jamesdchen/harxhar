@@ -153,124 +153,132 @@ class RandomForestModel(RollingRegressionModel):
 
 # --- 4. SARIMAX Model ---
 
-class SARIMAXModel(BaseModel):
+class _SARIMAXEstimator:
     """
-    Pure SARIMAX baseline — no exogenous features.
+    Thin sklearn-style wrapper around statsmodels SARIMAX.
 
-    Fits SARIMAX on the raw y series only. The model's AR/MA and seasonal
-    AR components capture autoregressive structure via individual raw lags,
-    as opposed to the aggregated HAR rolling means used by Ridge. HAR
-    features passed through the pipeline interface are intentionally ignored.
-
-    Uses RollingBuffer from rolling.py for the internal y window.
-
-    Parameters
-    ----------
-    train_win_periods : int
-        Burn-in window required by the backtester framework.
-    order : tuple
-        ARIMA (p, d, q) non-seasonal order.
-    seasonal_order : tuple
-        (P, D, Q, s) seasonal order. s=48 for daily seasonality on
-        30-minute bars.
-    fit_window : int
-        Number of most-recent observations used when (re)fitting.
-        Defaults to 480 (10 trading days of 30-min bars).
-    refit_frequency : int
-        Steps between model refits. Defaults to 48 (once per day).
+    Accepts fit(X, y) where X/y are in chronological order, and
+    predict(X) for one-step-ahead forecasting with exogenous data.
+    Silently retains the previous fitted result on any failure.
     """
 
-    def __init__(
-        self,
-        train_win_periods,
-        order=(2, 0, 1),
-        seasonal_order=(1, 0, 0, 48),
-        fit_window=480,
-        refit_frequency=48,
-    ):
-        self.train_win_periods = train_win_periods
+    def __init__(self, order, seasonal_order):
         self.order = order
         self.seasonal_order = seasonal_order
-        self.fit_window = fit_window
-        self.refit_frequency = refit_frequency
-        self.steps_since_refit = 0
-        self._buf_full = False
+        self._result = None
 
-        # Reuse RollingBuffer for the y window; n_features=0 since no exog
-        self.buffer = RollingBuffer(fit_window, n_features=0, n_targets=1)
-        self.result = None
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _get_y_ordered(self):
-        """Return y in chronological order from the RollingBuffer ring."""
-        y_flat = self.buffer.y_buffer[:, 0]
-        ptr = self.buffer.ptr
-        if self._buf_full:
-            return np.concatenate([y_flat[ptr:], y_flat[:ptr]]).astype(np.float64)
-        return y_flat[:ptr].astype(np.float64)
-
-    def _fit(self, y):
-        """Fit (or refit) SARIMAX; silently retains the previous result on failure."""
+    def fit(self, X, y):
+        y = np.asarray(y, dtype=np.float64).ravel()
+        exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
         try:
             m = _SARIMAX(
                 endog=y,
+                exog=exog,
                 order=self.order,
                 seasonal_order=self.seasonal_order,
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             )
-            self.result = m.fit(disp=False, method="lbfgs", maxiter=100)
+            self._result = m.fit(disp=False, method="lbfgs", maxiter=100)
         except Exception:
-            pass  # keep previous result on failure
+            pass
+        return self
 
-    # ------------------------------------------------------------------
-    # BaseModel interface
-    # ------------------------------------------------------------------
+    def predict(self, X):
+        """Return np.array([scalar]) so .item() in RollingRegressionModel works."""
+        if self._result is None:
+            return np.array([0.0])
+        exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
+        try:
+            fc = self._result.forecast(steps=1, exog=exog)
+            return np.array([float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])])
+        except Exception:
+            return np.array([0.0])
+
+
+class SARIMAXModel(RollingRegressionModel):
+    """
+    SARIMAX baseline that inherits RollingRegressionModel for buffer/scaler reuse.
+
+    Uses raw-lag exogenous features (same lag indices as HAR_LAGS but as individual
+    point values) together with ARMA(p,q) and seasonal AR components. The rolling
+    window is fit_window periods (default 480 = 10 trading days), much shorter than
+    the outer train_win_periods, since SARIMAX is a parametric model.
+
+    Parameters
+    ----------
+    train_win_periods : int
+        Burn-in window passed in by the backtester (only used to slice X_init/y_init).
+    n_features : int
+        Number of exogenous features (raw-lag columns).
+    fit_window : int
+        Internal buffer / fitting window. Defaults to 480 (10 days of 30-min bars).
+    refit_frequency : int
+        Steps between refits. Defaults to 48 (once per simulated day).
+    order : tuple
+        ARIMA (p, d, q) non-seasonal order.
+    seasonal_order : tuple
+        (P, D, Q, s) seasonal order. s=48 for daily seasonality on 30-min bars.
+    """
+
+    def __init__(
+        self,
+        train_win_periods,
+        n_features,
+        fit_window=480,
+        refit_frequency=48,
+        order=(2, 0, 1),
+        seasonal_order=(1, 0, 0, 48),
+    ):
+        estimator = _SARIMAXEstimator(order, seasonal_order)
+        # Pass fit_window as train_win_periods so buffer/scaler size = fit_window
+        super().__init__(
+            model=estimator,
+            train_win_periods=fit_window,
+            n_features=n_features,
+            use_scaling=True,
+            refit_frequency=refit_frequency,
+        )
 
     def initialize(self, X_init, y_init):
-        # X_init (HAR features) intentionally ignored
-        if y_init.ndim == 2:
-            y_init = y_init.ravel()
+        """Override to slice X_init/y_init to fit_window and use ordered fit."""
+        if y_init.ndim == 1:
+            y_init = y_init.reshape(-1, 1)
 
-        # Seed the buffer with the most recent fit_window observations
-        n = len(y_init)
-        start = max(0, n - self.fit_window)
-        for val in y_init[start:]:
-            self.buffer.add(
-                np.empty(0, dtype=np.float32),
-                np.array([val], dtype=np.float32),
-            )
-        self._buf_full = n >= self.fit_window
+        # Slice to the buffer size (fit_window rows)
+        X_init = X_init[-self.train_win_periods:]
+        y_init = y_init[-self.train_win_periods:]
 
-        self._fit(self._get_y_ordered())
+        if self.use_scaling:
+            self.scaler.initialize(X_init)
+            self.mean_x, self.std_x = self.scaler.get_scaler()
+            X_buffered = (X_init - self.mean_x) / self.std_x
+        else:
+            X_buffered = X_init
 
-    def predict(self, x_t):
-        # x_t (HAR features) intentionally ignored
-        if self.result is None:
-            ptr = self.buffer.ptr
-            return float(self.buffer.y_buffer[(ptr - 1) % self.fit_window, 0])
-        try:
-            fc = self.result.forecast(steps=1)
-            return float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])
-        except Exception:
-            ptr = self.buffer.ptr
-            return float(self.buffer.y_buffer[(ptr - 1) % self.fit_window, 0])
+        # Fill buffer directly; ptr stays 0 → data is already chronological
+        self.buffer.X_buffer[:] = X_buffered
+        self.buffer.y_buffer[:] = y_init
+
+        # Fit SARIMAX with chronologically ordered data
+        X_tr, y_tr = self.buffer.get_ordered_view()
+        self.model.fit(X_tr, y_tr)
 
     def update(self, x_t, y_t):
-        # x_t (HAR features) intentionally ignored
-        self.buffer.add(
-            np.empty(0, dtype=np.float32),
-            np.array([float(y_t)], dtype=np.float32),
-        )
-        if not self._buf_full and self.buffer.ptr == 0:
-            self._buf_full = True
+        """Override to use get_ordered_view() when refitting."""
+        if self.use_scaling:
+            self.scaler.update(x_t)
+            self.mean_x, self.std_x = self.scaler.get_scaler()
+            x_new = (x_t - self.mean_x) / self.std_x
+        else:
+            x_new = x_t
+
+        self.buffer.add(x_new, y_t)
 
         self.steps_since_refit += 1
         if self.steps_since_refit >= self.refit_frequency:
-            self._fit(self._get_y_ordered())
+            X_tr, y_tr = self.buffer.get_ordered_view()
+            self.model.fit(X_tr, y_tr)
             self.steps_since_refit = 0
 
 
