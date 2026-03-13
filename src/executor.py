@@ -97,10 +97,6 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
 
     elif args.model == 'sarimax':
         print(f"  Initializing SARIMAX Model (fit_window: 480 periods, refit every 48 steps)...")
-        # SARIMAX(2,0,1)(1,0,0,48): ARMA(2,1) + daily seasonal AR on 30-min bars.
-        # Receives raw-lag exogenous features; AR/MA terms handle target autocorrelation.
-        # Internally fits on only the most recent 480 observations (10 trading days)
-        # regardless of train_win_periods, and refits once per simulated day.
         model = SARIMAXModel(
             train_win_periods=train_win_periods,
             n_features=X_np.shape[1],
@@ -111,31 +107,25 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         )
 
     elif args.model == 'pca_ridge':
-        n_components = getattr(args, 'n_components', 5)
-        print(f"  Initializing PCA+Ridge Model (n_components={n_components}, Train Window: {train_win_periods} periods)...")
+        print(f"  Initializing PCA+Ridge Model (n_components={args.n_components}, Train Window: {train_win_periods} periods)...")
         model = PCALagRidgeModel(
             train_win_periods=train_win_periods,
             n_features=X_np.shape[1],
-            n_components=n_components,
+            n_components=args.n_components,
             alpha=1.0,
         )
 
     elif args.model == 'ae_ridge':
-        n_components = getattr(args, 'n_components', 5)
-        ae_alpha = getattr(args, 'ae_alpha', 0.5)
-        ae_epochs = getattr(args, 'ae_epochs', 50)
-        ae_hidden = getattr(args, 'ae_hidden', 0) or None
-        ae_loss_path = getattr(args, 'ae_loss_path', None)
-        print(f"  Initializing AE+Ridge Model (n_components={n_components}, alpha={ae_alpha}, epochs={ae_epochs}, refit every 240 steps)...")
+        print(f"  Initializing AE+Ridge Model (n_components={args.n_components}, alpha={args.ae_alpha}, epochs={args.ae_epochs}, refit every 240 steps)...")
         model = AutoEncoderLagRidgeModel(
             train_win_periods=train_win_periods,
             n_features=X_np.shape[1],
-            n_components=n_components,
-            alpha=ae_alpha,
-            hidden_dim=ae_hidden,
-            epochs=ae_epochs,
+            n_components=args.n_components,
+            alpha=args.ae_alpha,
+            hidden_dim=args.ae_hidden or None,
+            epochs=args.ae_epochs,
             refit_frequency=240,
-            ae_loss_path=ae_loss_path,
+            ae_loss_path=args.ae_loss_path,
         )
 
     else:
