@@ -65,6 +65,7 @@ time python3 harx.py \
     --output-file "$OUTPUT_FILE" \
     --chunk-id $((SLURM_ARRAY_TASK_ID-1)) \
     --total-chunks $TOTAL_CHUNKS \
-    --exog-cols "$EXOG_COLS"
+    --exog-cols "$EXOG_COLS" \
+    ${EXTRA_ARGS:-}
 
 echo "Job finished successfully."
