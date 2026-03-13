@@ -80,11 +80,11 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
     elif args.model == 'sarimax':
         print(f"  Initializing SARIMAX Model (fit_window: 480 periods, refit every 48 steps)...")
         # SARIMAX(2,0,1)(1,0,0,48): ARMA(2,1) plus daily seasonal AR on 30-min bars.
+        # No exogenous features — raw y lags are handled by the AR/MA terms.
         # Internally uses only the most recent 480 observations (10 trading days)
         # regardless of train_win_periods, and refits once per simulated day.
         model = SARIMAXModel(
             train_win_periods=train_win_periods,
-            n_features=X_np.shape[1],
             order=(2, 0, 1),
             seasonal_order=(1, 0, 0, 48),
             fit_window=480,
