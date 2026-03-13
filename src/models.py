@@ -1,10 +1,15 @@
+import os
+import csv
 import numpy as np
+import torch
 from sklearn.linear_model import Ridge
+from sklearn.decomposition import PCA
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 from src.rolling import RollingRobustScaler, RollingBuffer
+from src.autoencoder import LagAutoEncoder, train_autoencoder
 
 # --- 1. Top-Level Interface ---
 class BaseModel:
@@ -282,7 +287,193 @@ class SARIMAXModel(RollingRegressionModel):
             self.steps_since_refit = 0
 
 
-# --- 5. The Baseline ---
+# --- 5. PCA + Ridge ---
+
+class PCALagRidgeModel(BaseModel):
+    """
+    Compresses raw lag features with PCA (fit on the correlation matrix, i.e.
+    robust-scaled features) then regresses with Ridge.
+
+    Rolling refit matches Ridge cadence (every step by default).
+    """
+
+    def __init__(self, train_win_periods, n_features, n_components, alpha=1.0, refit_frequency=1):
+        self.n_components = n_components
+        self.refit_frequency = refit_frequency
+        self.steps_since_refit = 0
+
+        self.buffer = RollingBuffer(train_win_periods, n_features, 1)
+        self.scaler = RollingRobustScaler(train_win_periods, n_features)
+
+        self.pca = PCA(n_components=n_components)
+        self.ridge = Ridge(alpha=alpha)
+
+        self.mean_x = np.zeros(n_features)
+        self.std_x = np.ones(n_features)
+        self.is_fitted = False
+
+    def _scale(self, x):
+        return (x - self.mean_x) / self.std_x
+
+    def initialize(self, X_init, y_init):
+        if y_init.ndim == 1:
+            y_init = y_init.reshape(-1, 1)
+
+        self.scaler.initialize(X_init)
+        self.mean_x, self.std_x = self.scaler.get_scaler()
+        X_scaled = self._scale(X_init)
+
+        self.buffer.X_buffer[:] = X_scaled.astype(np.float32)
+        self.buffer.y_buffer[:] = y_init.astype(np.float32)
+
+        self.pca.fit(X_scaled)
+        X_pca = self.pca.transform(X_scaled)
+        self.ridge.fit(X_pca, y_init.ravel())
+        self.is_fitted = True
+
+    def predict(self, x_t):
+        if not self.is_fitted:
+            return 0.0
+        x_scaled = self._scale(x_t)
+        x_pca = self.pca.transform(x_scaled.reshape(1, -1))
+        return self.ridge.predict(x_pca).item()
+
+    def update(self, x_t, y_t):
+        self.scaler.update(x_t)
+        self.mean_x, self.std_x = self.scaler.get_scaler()
+        x_scaled = self._scale(x_t)
+        self.buffer.add(x_scaled, y_t)
+
+        self.steps_since_refit += 1
+        if self.steps_since_refit >= self.refit_frequency:
+            X_tr, y_tr = self.buffer.get_view()
+            self.pca.fit(X_tr)
+            X_pca = self.pca.transform(X_tr)
+            self.ridge.fit(X_pca, y_tr.ravel())
+            self.steps_since_refit = 0
+
+
+# --- 6. Hybrid AutoEncoder + Ridge ---
+
+class AutoEncoderLagRidgeModel(BaseModel):
+    """
+    Compresses raw lag features with a hybrid autoencoder (reconstruction +
+    RV-prediction loss) then regresses with Ridge on the latent embedding.
+
+    Neural-network refit is expensive, so refit_frequency defaults to 240
+    steps (~5 trading days of 30-min bars).
+
+    AE training losses are appended to loss_log (list of dicts) when provided,
+    and flushed to a CSV at ae_loss_path after every refit so they are available
+    for later plotting.
+    """
+
+    def __init__(
+        self,
+        train_win_periods,
+        n_features,
+        n_components,
+        alpha=0.5,
+        hidden_dim=None,
+        epochs=50,
+        lr=1e-3,
+        refit_frequency=240,
+        ae_loss_path=None,
+    ):
+        self.n_features = n_features
+        self.n_components = n_components
+        self.alpha = alpha
+        self.epochs = epochs
+        self.lr = lr
+        self.refit_frequency = refit_frequency
+        self.ae_loss_path = ae_loss_path
+        self.steps_since_refit = 0
+
+        self.buffer = RollingBuffer(train_win_periods, n_features, 1)
+        self.scaler = RollingRobustScaler(train_win_periods, n_features)
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.ae = LagAutoEncoder(n_features, n_components, hidden_dim)
+        self.ridge = Ridge(alpha=1.0)
+
+        self.mean_x = np.zeros(n_features)
+        self.std_x = np.ones(n_features)
+        self.is_fitted = False
+
+        # Accumulates per-epoch loss dicts across all refits
+        self._loss_log = []
+
+    def _scale(self, x):
+        return (x - self.mean_x) / self.std_x
+
+    def _encode_np(self, X_scaled_np):
+        """Encode a numpy array, return numpy array of latents."""
+        X_t = torch.tensor(X_scaled_np, dtype=torch.float32, device=self.device)
+        z = self.ae.encode(X_t)
+        return z.cpu().numpy()
+
+    def _refit_ae_and_ridge(self, X_scaled_np, y_np):
+        train_autoencoder(
+            self.ae, X_scaled_np, y_np,
+            alpha=self.alpha,
+            epochs=self.epochs,
+            lr=self.lr,
+            device=self.device,
+            loss_log=self._loss_log,
+        )
+        z = self._encode_np(X_scaled_np)
+        self.ridge.fit(z, y_np.ravel())
+
+        if self.ae_loss_path is not None:
+            self._flush_loss_log()
+
+    def _flush_loss_log(self):
+        """Write accumulated loss entries to CSV (append mode)."""
+        if not self._loss_log:
+            return
+        write_header = not os.path.exists(self.ae_loss_path)
+        with open(self.ae_loss_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["recon", "pred", "total"])
+            if write_header:
+                writer.writeheader()
+            writer.writerows(self._loss_log)
+        self._loss_log.clear()
+
+    def initialize(self, X_init, y_init):
+        if y_init.ndim == 1:
+            y_init = y_init.reshape(-1, 1)
+
+        self.scaler.initialize(X_init)
+        self.mean_x, self.std_x = self.scaler.get_scaler()
+        X_scaled = self._scale(X_init)
+
+        self.buffer.X_buffer[:] = X_scaled.astype(np.float32)
+        self.buffer.y_buffer[:] = y_init.astype(np.float32)
+
+        self._refit_ae_and_ridge(X_scaled, y_init.ravel())
+        self.is_fitted = True
+
+    def predict(self, x_t):
+        if not self.is_fitted:
+            return 0.0
+        x_scaled = self._scale(x_t)
+        z_t = self._encode_np(x_scaled.reshape(1, -1))
+        return self.ridge.predict(z_t).item()
+
+    def update(self, x_t, y_t):
+        self.scaler.update(x_t)
+        self.mean_x, self.std_x = self.scaler.get_scaler()
+        x_scaled = self._scale(x_t)
+        self.buffer.add(x_scaled, y_t)
+
+        self.steps_since_refit += 1
+        if self.steps_since_refit >= self.refit_frequency:
+            X_tr, y_tr = self.buffer.get_view()
+            self._refit_ae_and_ridge(X_tr.astype(np.float64), y_tr.ravel().astype(np.float64))
+            self.steps_since_refit = 0
+
+
+# --- 7. The Baseline ---
 
 class NaiveBaseline(BaseModel):
     # Notice this skips the RollingRegressionModel and inherits straight from BaseModel

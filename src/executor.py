@@ -8,6 +8,8 @@ from src.models import (
     LightGBMModel,
     RandomForestModel,
     SARIMAXModel,
+    PCALagRidgeModel,
+    AutoEncoderLagRidgeModel,
 )
 from src.backtest import run_backtest_agnostic
 
@@ -18,9 +20,20 @@ def get_common_parser(description):
     parser.add_argument(
         '--model',
         type=str,
-        choices=['har', 'ridge', 'naive', 'xgboost', 'lightgbm', 'random_forest', 'sarimax'],
+        choices=['har', 'ridge', 'naive', 'xgboost', 'lightgbm', 'random_forest', 'sarimax',
+                 'pca_ridge', 'ae_ridge'],
         required=True
     )
+    parser.add_argument('--n-components', type=int, default=5,
+                        help="Number of PCA/AE latent components (pca_ridge, ae_ridge)")
+    parser.add_argument('--ae-alpha', type=float, default=0.5,
+                        help="AE loss weight: alpha*recon + (1-alpha)*pred (ae_ridge)")
+    parser.add_argument('--ae-epochs', type=int, default=50,
+                        help="Training epochs per AE refit (ae_ridge)")
+    parser.add_argument('--ae-hidden', type=int, default=0,
+                        help="AE hidden layer width; 0 = auto (n_features // 2) (ae_ridge)")
+    parser.add_argument('--ae-loss-path', type=str, default=None,
+                        help="File path to save AE training loss log CSV (ae_ridge)")
     parser.add_argument('--input-path', type=str, default="all30min")
     parser.add_argument('--output-file', type=str, required=True)
     parser.add_argument('--chunk-id', type=int, required=True)
@@ -33,6 +46,7 @@ def get_common_parser(description):
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model chosen."""
     tree_models = ['xgboost', 'lightgbm']
+    lag_feature_models = ['pca_ridge', 'ae_ridge']
 
     # Tree models usually don't need variables transformed
     use_transform = False if args.model in tree_models else True
@@ -94,6 +108,34 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
             seasonal_order=(1, 0, 0, 48),
             fit_window=480,
             refit_frequency=48,
+        )
+
+    elif args.model == 'pca_ridge':
+        n_components = getattr(args, 'n_components', 5)
+        print(f"  Initializing PCA+Ridge Model (n_components={n_components}, Train Window: {train_win_periods} periods)...")
+        model = PCALagRidgeModel(
+            train_win_periods=train_win_periods,
+            n_features=X_np.shape[1],
+            n_components=n_components,
+            alpha=1.0,
+        )
+
+    elif args.model == 'ae_ridge':
+        n_components = getattr(args, 'n_components', 5)
+        ae_alpha = getattr(args, 'ae_alpha', 0.5)
+        ae_epochs = getattr(args, 'ae_epochs', 50)
+        ae_hidden = getattr(args, 'ae_hidden', 0) or None
+        ae_loss_path = getattr(args, 'ae_loss_path', None)
+        print(f"  Initializing AE+Ridge Model (n_components={n_components}, alpha={ae_alpha}, epochs={ae_epochs}, refit every 240 steps)...")
+        model = AutoEncoderLagRidgeModel(
+            train_win_periods=train_win_periods,
+            n_features=X_np.shape[1],
+            n_components=n_components,
+            alpha=ae_alpha,
+            hidden_dim=ae_hidden,
+            epochs=ae_epochs,
+            refit_frequency=240,
+            ae_loss_path=ae_loss_path,
         )
 
     else:
