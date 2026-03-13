@@ -1,4 +1,4 @@
-logs/
 __pycache__/
 *.py[cod]
 *.pyo
+results_chunk_*.csv
