@@ -5,13 +5,16 @@ from src.data_main import load_and_clean_base_data
 
 def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     """
-    Generates segmented HAR lags.
-    
+    Generates segmented lag features.
+
+    feature_type='har'  (hparams): rolling-mean HAR aggregates (original HARXHAR)
+    feature_type='raw'  (default): individual point lags via .shift(lag)
+
     Lag calculation strategy is controlled by hparams['lag_scope']:
-      - 'global'  (default): Calculates all HAR lags on the full dataset before 
-                             slicing into segments, ensuring temporal continuity 
+      - 'global'  (default): Calculates all lags on the full dataset before
+                             slicing into segments, ensuring temporal continuity
                              across segment boundaries.
-      - 'intra'            : Calculates HAR lags within each segment independently,
+      - 'intra'            : Calculates lags within each segment independently,
                              so lags never bleed across segment boundaries.
 
     If target_segment is 'all', returns a dict of all segments.
@@ -24,15 +27,27 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     target_col = 'adj_RV'
     allow_missing = hparams.get('allow_missing', False)
     lag_scope = hparams.get('lag_scope', 'global')
+    feature_type = hparams.get('feature_type', 'raw')
+
+    def _make_features(src_df, cols):
+        """Return (feat_dict, feat_names) for the given source dataframe."""
+        feat_dict, feat_names = {}, []
+        for col in cols:
+            for lag in config.HAR_LAGS:
+                if feature_type == 'har':
+                    name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
+                    feat_dict[name] = src_df[col].rolling(window=lag, min_periods=1).mean().shift(1)
+                else:  # 'raw'
+                    name = f"{col}_lag_{lag}"
+                    feat_dict[name] = src_df[col].shift(lag)
+                feat_names.append(name)
+        return feat_dict, feat_names
 
     # --- GLOBAL MODE: pre-compute lags on full dataset before segmenting ---
     if lag_scope == 'global':
-        all_feature_names = []
-        for col in cols_to_transform:
-            for lag in config.HAR_LAGS:
-                feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-                data[feat_name] = data[col].rolling(window=lag, min_periods=1).mean().shift(1)
-                all_feature_names.append(feat_name)
+        feat_dict, all_feature_names = _make_features(data, cols_to_transform)
+        for name, series in feat_dict.items():
+            data[name] = series
 
     minutes = data['t'].dt.hour * 60 + data['t'].dt.minute
     datasets = {}
@@ -54,17 +69,7 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
 
         # --- INTRA MODE: compute lags per-segment using the full series for context ---
         if lag_scope == 'intra':
-            segment_features = []
-            new_feats_dict = {}
-            for col in cols_to_transform:
-                for lag in config.HAR_LAGS:
-                    feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-                    new_feats_dict[feat_name] = seg_df[col].rolling(
-                        window=lag,
-                        min_periods=1
-                    ).mean().shift(1)
-                    segment_features.append(feat_name)
-
+            new_feats_dict, segment_features = _make_features(seg_df, cols_to_transform)
             new_feats_df = pd.DataFrame(new_feats_dict, index=seg_df.index)
             seg_df = pd.concat([seg_df, new_feats_df], axis=1)
             feature_names = segment_features
