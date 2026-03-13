@@ -32,7 +32,7 @@ def calculate_baseline_deltas(summary_df):
     
     if baseline_df.empty:
         print("\n[Warning] No baseline experiment found. Deltas and OOS R2 will be NaN.")
-        for col in ['delta_mse_raw', 'delta_mae_raw', 'delta_qlike', 'oos_r2']:
+        for col in ['delta_mse', 'delta_mae', 'delta_qlike', 'oos_r2']:
             summary_df[col] = np.nan
         return summary_df
 
@@ -41,14 +41,14 @@ def calculate_baseline_deltas(summary_df):
         return b_row.iloc[0].get(metric, np.nan) if not b_row.empty else np.nan
 
     # Vectorized comparisons
-    summary_df['delta_mse_raw'] = summary_df.apply(lambda r: r['mse_raw'] - get_baseline_val(r['segment'], 'mse_raw'), axis=1)
-    summary_df['delta_mae_raw'] = summary_df.apply(lambda r: r['mae_raw'] - get_baseline_val(r['segment'], 'mae_raw'), axis=1)
+    summary_df['delta_mse'] = summary_df.apply(lambda r: r['mse'] - get_baseline_val(r['segment'], 'mse'), axis=1)
+    summary_df['delta_mae'] = summary_df.apply(lambda r: r['mae'] - get_baseline_val(r['segment'], 'mae'), axis=1)
     summary_df['delta_qlike']   = summary_df.apply(lambda r: r['qlike']   - get_baseline_val(r['segment'], 'qlike'), axis=1)
     
     # OOS R2 Calculation (1 - MSE_model / MSE_baseline)
     summary_df['oos_r2'] = summary_df.apply(
-        lambda r: 1.0 - (r['mse_raw'] / get_baseline_val(r['segment'], 'mse_raw')) 
-        if get_baseline_val(r['segment'], 'mse_raw') > 0 else np.nan, 
+        lambda r: 1.0 - (r['mse'] / get_baseline_val(r['segment'], 'mse')) 
+        if get_baseline_val(r['segment'], 'mse') > 0 else np.nan, 
         axis=1
     )
 
