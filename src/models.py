@@ -3,6 +3,7 @@ from sklearn.linear_model import Ridge
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
+from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 from src.rolling import RollingRobustScaler, RollingBuffer
 
 # --- 1. Top-Level Interface ---
@@ -150,7 +151,144 @@ class RandomForestModel(RollingRegressionModel):
             refit_frequency=refit_frequency
         )
 
-# --- 4. The Baseline ---
+# --- 4. SARIMAX Model ---
+
+class SARIMAXModel(BaseModel):
+    """
+    SARIMAX baseline using statsmodels.
+
+    Uses HAR lag features as exogenous regressors and a short rolling
+    window for efficient periodic refitting. The seasonal AR component
+    (default s=48) captures intraday periodicity in 30-min data.
+
+    Parameters
+    ----------
+    train_win_periods : int
+        Burn-in window required by the backtester framework (unused
+        internally; the model fits on the last `fit_window` observations).
+    n_features : int
+        Number of exogenous features (HAR lags + any extra columns).
+    order : tuple
+        ARIMA (p, d, q) non-seasonal order.
+    seasonal_order : tuple
+        (P, D, Q, s) seasonal order.  Set s=48 for daily seasonality
+        on 30-minute bars.
+    fit_window : int
+        Number of most-recent observations used when (re)fitting.
+        Defaults to 480 (10 trading days of 30-min bars).
+    refit_frequency : int
+        How many steps between model refits.  Defaults to 48
+        (once per simulated trading day).
+    """
+
+    def __init__(
+        self,
+        train_win_periods,
+        n_features,
+        order=(2, 0, 1),
+        seasonal_order=(1, 0, 0, 48),
+        fit_window=480,
+        refit_frequency=48,
+    ):
+        self.train_win_periods = train_win_periods
+        self.n_features = n_features
+        self.order = order
+        self.seasonal_order = seasonal_order
+        self.fit_window = fit_window
+        self.refit_frequency = refit_frequency
+        self.steps_since_refit = 0
+
+        # Ring buffers for endog and exog
+        self.y_buf = np.zeros(fit_window)
+        self.X_buf = np.zeros((fit_window, n_features))
+        self.buf_ptr = 0
+        self.buf_full = False
+
+        self.result = None
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _ordered_buffers(self):
+        """Return (y, X) in chronological order from the ring buffer."""
+        if self.buf_full:
+            p = self.buf_ptr
+            y = np.concatenate([self.y_buf[p:], self.y_buf[:p]])
+            X = np.vstack([self.X_buf[p:], self.X_buf[:p]])
+        else:
+            y = self.y_buf[: self.buf_ptr]
+            X = self.X_buf[: self.buf_ptr]
+        return y, X
+
+    def _fit(self, y, X):
+        """Fit (or refit) the SARIMAX model; silently retains the previous
+        result if fitting fails."""
+        try:
+            m = _SARIMAX(
+                endog=y,
+                exog=X,
+                order=self.order,
+                seasonal_order=self.seasonal_order,
+                enforce_stationarity=False,
+                enforce_invertibility=False,
+            )
+            self.result = m.fit(disp=False, method="lbfgs", maxiter=100)
+        except Exception:
+            pass  # keep previous result on failure
+
+    # ------------------------------------------------------------------
+    # BaseModel interface
+    # ------------------------------------------------------------------
+
+    def initialize(self, X_init, y_init):
+        if y_init.ndim == 2:
+            y_init = y_init.ravel()
+
+        # Store only the most recent fit_window observations
+        n = len(y_init)
+        if n >= self.fit_window:
+            self.y_buf[:] = y_init[-self.fit_window :]
+            self.X_buf[:] = X_init[-self.fit_window :]
+            self.buf_ptr = 0
+            self.buf_full = True
+        else:
+            self.y_buf[:n] = y_init
+            self.X_buf[:n] = X_init
+            self.buf_ptr = n
+            self.buf_full = False
+
+        y, X = self._ordered_buffers()
+        self._fit(y, X)
+
+    def predict(self, x_t):
+        if self.result is None:
+            # Fallback: repeat the most recent observed value
+            last = (self.buf_ptr - 1) % self.fit_window
+            return float(self.y_buf[last])
+        try:
+            fc = self.result.forecast(steps=1, exog=x_t.reshape(1, -1))
+            return float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])
+        except Exception:
+            last = (self.buf_ptr - 1) % self.fit_window
+            return float(self.y_buf[last])
+
+    def update(self, x_t, y_t):
+        # Write new observation into the ring buffer
+        self.y_buf[self.buf_ptr] = float(y_t)
+        self.X_buf[self.buf_ptr] = x_t
+        self.buf_ptr = (self.buf_ptr + 1) % self.fit_window
+        if not self.buf_full and self.buf_ptr == 0:
+            self.buf_full = True
+
+        self.steps_since_refit += 1
+        if self.steps_since_refit >= self.refit_frequency:
+            y, X = self._ordered_buffers()
+            self._fit(y, X)
+            self.steps_since_refit = 0
+
+
+# --- 5. The Baseline ---
 
 class NaiveBaseline(BaseModel):
     # Notice this skips the RollingRegressionModel and inherits straight from BaseModel
