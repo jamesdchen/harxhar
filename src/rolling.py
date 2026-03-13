@@ -180,3 +180,14 @@ class RollingBuffer:
             
     def get_view(self):
         return self.X_buffer, self.y_buffer
+
+    def get_ordered_view(self):
+        """Return (X, y) in oldest-to-newest chronological order.
+
+        After a direct buffer fill (ptr=0) this is identical to get_view().
+        After k updates (ptr=k) it correctly reorders the ring buffer.
+        """
+        p = self.ptr
+        X = np.concatenate([self.X_buffer[p:], self.X_buffer[:p]], axis=0)
+        y = np.concatenate([self.y_buffer[p:], self.y_buffer[:p]], axis=0)
+        return X, y

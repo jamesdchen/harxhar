@@ -16,7 +16,10 @@ def main(args):
         return
         
     if args.model == 'naive':
-        args.naive_lag = feature_names.index('har_ma_125')
+        # Feature name for the 125-period lag differs by feature_type:
+        # 'har' mode → 'har_ma_125';  'raw' mode → 'adj_RV_lag_125'
+        lag_key = next(f for f in feature_names if 'lag_125' in f or f == 'har_ma_125')
+        args.naive_lag = feature_names.index(lag_key)
 
     # Static Calculation for Global Array
     periods_per_day = 48
