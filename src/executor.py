@@ -2,11 +2,12 @@ import argparse
 import os
 from src.data_helper import get_chunk_indices_strided, save_chunk_results
 from src.models import (
-    RidgeModel, 
-    NaiveBaseline, 
-    XGBoostModel, 
-    LightGBMModel, 
-    RandomForestModel
+    RidgeModel,
+    NaiveBaseline,
+    XGBoostModel,
+    LightGBMModel,
+    RandomForestModel,
+    SARIMAXModel,
 )
 from src.backtest import run_backtest_agnostic
 
@@ -15,9 +16,9 @@ def get_common_parser(description):
     parser = argparse.ArgumentParser(description=description)
     # Added 'lightgbm' and 'random_forest' to the choices
     parser.add_argument(
-        '--model', 
-        type=str, 
-        choices=['ridge', 'naive', 'xgboost', 'lightgbm', 'random_forest'], 
+        '--model',
+        type=str,
+        choices=['har', 'ridge', 'naive', 'xgboost', 'lightgbm', 'random_forest', 'sarimax'],
         required=True
     )
     parser.add_argument('--input-path', type=str, default="all30min")
@@ -32,19 +33,23 @@ def get_common_parser(description):
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model chosen."""
     tree_models = ['xgboost', 'lightgbm']
-    
+
     # Tree models usually don't need variables transformed
     use_transform = False if args.model in tree_models else True
-    
-    # XGBoost and LightGBM handle NaNs natively; scikit-learn's Random Forest and Ridge do not.
+
+    # XGBoost and LightGBM handle NaNs natively; other models do not.
     allow_missing = True if args.model in ['xgboost', 'lightgbm'] else False
-    
+
+    # 'har' model uses HAR rolling-mean aggregates; all others use raw individual lags
+    feature_type = 'har' if args.model == 'har' else 'raw'
+
     return {
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
         "use_transform": use_transform,
         "allow_missing": allow_missing,
-        'lag_scope': args.lag_scope
+        'lag_scope': args.lag_scope,
+        'feature_type': feature_type,
     }
     
 def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_win_periods, output_file):
@@ -55,10 +60,14 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         return False 
 
     # 1. Initialize Model
-    if args.model == 'ridge':
-        print(f"  Initializing Ridge Model (Train Window: {train_win_periods} periods)...")
+    if args.model == 'har':
+        print(f"  Initializing HAR-Ridge Model (Train Window: {train_win_periods} periods)...")
         model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
-        
+
+    elif args.model == 'ridge':
+        print(f"  Initializing Ridge Model with raw lags (Train Window: {train_win_periods} periods)...")
+        model = RidgeModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=True, alpha=1.0)
+
     elif args.model == 'naive':
         print(f"  Initializing Naive Baseline...")
         model = NaiveBaseline(lag_index=args.naive_lag)
@@ -75,7 +84,22 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
         print(f"  Initializing Random Forest Model (Train Window: {train_win_periods} periods)...")
         # Note: RF doesn't use learning_rate, and standard n_estimators is often higher, but we'll keep it at 100 for speed parity
         model = RandomForestModel(train_win_periods=train_win_periods, n_features=X_np.shape[1], use_scaling=False, n_estimators=100, max_depth=3)
-        
+
+    elif args.model == 'sarimax':
+        print(f"  Initializing SARIMAX Model (fit_window: 480 periods, refit every 48 steps)...")
+        # SARIMAX(2,0,1)(1,0,0,48): ARMA(2,1) + daily seasonal AR on 30-min bars.
+        # Receives raw-lag exogenous features; AR/MA terms handle target autocorrelation.
+        # Internally fits on only the most recent 480 observations (10 trading days)
+        # regardless of train_win_periods, and refits once per simulated day.
+        model = SARIMAXModel(
+            train_win_periods=train_win_periods,
+            n_features=X_np.shape[1],
+            order=(2, 0, 1),
+            seasonal_order=(1, 0, 0, 48),
+            fit_window=480,
+            refit_frequency=48,
+        )
+
     else:
         raise ValueError(f"Unknown model type: {args.model}")
 

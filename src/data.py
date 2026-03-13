@@ -5,28 +5,33 @@ from src.data_main import load_and_clean_base_data
 
 def load_and_prep_data_strided(hparams, input_path):
     """
-    Generates continuous, global HAR lag features.
+    Generates continuous, global lag features.
+
+    feature_type='har'  (hparams): rolling-mean HAR aggregates (original HARXHAR)
+    feature_type='raw'  (default): individual point lags via .shift(lag)
     """
     data, cols_to_transform = load_and_clean_base_data(hparams, input_path)
     if data.empty:
         return np.array([]), np.array([]), [], []
 
-    # --- NEW: Check toggle and set target column name dynamically ---
     target_col = 'adj_RV'
+    feature_type = hparams.get('feature_type', 'raw')
 
     final_features = []
     new_features_dict = {}
-    
+
     # 1. Calculate and store in a dictionary (Fast)
     for col in cols_to_transform:
         for lag in config.HAR_LAGS:
-            feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-            
-            # In load_and_prep_data_strided (global and TOD versions)
-            new_features_dict[feat_name] = data[col].rolling(
-                window=lag, 
-                min_periods=1 # <-- ADD THIS to prevent NaN cascading
-            ).mean().shift(1)
+            if feature_type == 'har':
+                feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
+                new_features_dict[feat_name] = data[col].rolling(
+                    window=lag,
+                    min_periods=1
+                ).mean().shift(1)
+            else:  # 'raw'
+                feat_name = f"{col}_lag_{lag}"
+                new_features_dict[feat_name] = data[col].shift(lag)
             final_features.append(feat_name)
             
     # 2. Convert dictionary to DataFrame and concatenate all at once (Zero fragmentation)
