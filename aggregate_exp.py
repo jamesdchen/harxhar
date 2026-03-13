@@ -87,8 +87,8 @@ def main(args):
     # 4. --- Final Table Output ---
     final_cols = [
         'exp_id', 'model', 'experiment_name', 'segment', 'cb_drop',
-        'mse_raw', 'delta_mse_raw', 'oos_r2', 
-        'mae_raw', 'delta_mae_raw',
+        'mse', 'delta_mse', 'oos_r2', 
+        'mae', 'delta_mae',
         'qlike', 'delta_qlike', 'n_samples'
     ]
     final_cols = [c for c in final_cols if c in summary_df.columns]
@@ -98,10 +98,10 @@ def main(args):
     print("="*165)
     
     formatters = {
-        'mse_raw': '{:.4e}'.format,         
-        'delta_mse_raw': '{:.4e}'.format, 
-        'mae_raw': '{:.4e}'.format,         
-        'delta_mae_raw': '{:.4e}'.format,
+        'mse': '{:.4e}'.format,         
+        'delta_mse': '{:.4e}'.format, 
+        'mae': '{:.4e}'.format,         
+        'delta_mae': '{:.4e}'.format,
         'qlike': '{:.6f}'.format,
         'delta_qlike': '{:.6f}'.format,
         'oos_r2': '{:.4%}'.format,

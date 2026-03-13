@@ -45,11 +45,10 @@ def get_common_parser(description):
 
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model chosen."""
-    tree_models = ['xgboost', 'lightgbm']
     lag_feature_models = ['pca_ridge', 'ae_ridge']
 
     # Tree models usually don't need variables transformed
-    use_transform = False if args.model in tree_models else True
+    tree_model = False if args.model in ['xgboost', 'lightgbm', 'random_forest'] else True
 
     # XGBoost and LightGBM handle NaNs natively; other models do not.
     allow_missing = True if args.model in ['xgboost', 'lightgbm'] else False
@@ -60,10 +59,10 @@ def get_common_hparams(args):
     return {
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
-        "use_transform": use_transform,
+        "use_transform": tree_model,
         "allow_missing": allow_missing,
         'lag_scope': args.lag_scope,
-        'feature_type': feature_type,
+        'feature_type': feature_type
     }
     
 def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_win_periods, output_file):

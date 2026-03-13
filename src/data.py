@@ -16,7 +16,7 @@ def load_and_prep_data_strided(hparams, input_path):
 
     target_col = 'adj_RV'
     feature_type = hparams.get('feature_type', 'raw')
-
+    
     final_features = []
     new_features_dict = {}
 
@@ -37,6 +37,11 @@ def load_and_prep_data_strided(hparams, input_path):
     # 2. Convert dictionary to DataFrame and concatenate all at once (Zero fragmentation)
     new_features_df = pd.DataFrame(new_features_dict, index=data.index)
     data = pd.concat([data, new_features_df], axis=1)
+
+    # --- NEW: Keep DOW and hour for tree models ---
+    if hparams.get('use_transform', False):
+        # Since they already exist in 'data', we just add them to our feature list
+        final_features.extend(['DOW', 'hour'])
 
     # --- 3. Final Clean & Matrix Extraction ---
     # Use dynamic target_col here too

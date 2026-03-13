@@ -24,7 +24,6 @@ FULL_FEATURE_STRING = (
     "stocktwits_attention|stocktwits_sentiment|stocktwits_sentcount|"
     "vix|vvix|vix3m|"
     "voldemand_spx_open_and_close|voldemand_spx_open_only|voldemand_all_open_and_close|voldemand_all_open_only|"
-    "hour|DOW"
 )
 
 ALL_FEATURES = FULL_FEATURE_STRING.split("|")
@@ -33,9 +32,9 @@ ALL_FEATURES = FULL_FEATURE_STRING.split("|")
 SUBGROUPS = {
     "baseline": [],
     "moments": [f for f in ALL_FEATURES if f.startswith("sum") and "stock" not in f and "volume" not in f],
-    "liquidity": [f for f in ALL_FEATURES if any(x in f for x in ["volume", "turnover", "spread"])],
-    "market_ew": [f for f in ALL_FEATURES if "ewstock" in f],
-    "market_vw": [f for f in ALL_FEATURES if "vwstock" in f],
+    "liquidity": [f for f in ALL_FEATURES if any(x in f for x in ["volume", "turnover", "spread", "numobs])],
+    "market_ew": [f for f in ALL_FEATURES if ("ewstock" in f) and not any(x in f for x in ["turnover", "spread"])],
+    "market_vw": [f for f in ALL_FEATURES if ("vwstock" in f) and not any(x in f for x in ["turnover", "spread"])],
     "sentiment": [f for f in ALL_FEATURES if "stocktwits" in f],
     "implied_vol": [f for f in ALL_FEATURES if "vix" in f],
     "vol_demand": [f for f in ALL_FEATURES if "voldemand" in f],
