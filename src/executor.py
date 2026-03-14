@@ -4,7 +4,7 @@ import numpy as np
 from src.backtest import get_chunk_indices_strided, save_chunk_results, run_backtest_agnostic
 from src.models import create_model
 from src.features import PCATransform, AETransform
-from src.data import load_and_prep_data_strided
+from src.data import load_and_prep_data_strided, apply_horizon_shift
 
 def add_feature_args(parser):
     """Add feature-related arguments shared between executor and submit parsers."""
@@ -54,6 +54,8 @@ def get_common_parser(description):
                         help="Run segmented backtest. 'all' processes every segment; or pick one.")
     parser.add_argument('--save-coefs', action='store_true', default=False,
                         help="Save rolling model coefficients to a .npz file alongside results.")
+    parser.add_argument('--horizon', type=int, default=1,
+                        help="Final forecast horizon H. Runs backtests for h=1,2,...,H (default 1).")
     return parser
 
 def get_common_hparams(args):
@@ -97,8 +99,8 @@ def _build_feature_transform(args, n_features):
     return None
 
 def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, train_win_periods: int, output_file: str,
-                           feature_names=None) -> bool:
-    """Handles model init, backtest execution, and result saving."""
+                           feature_names=None, horizon=1) -> bool:
+    """Handles model init, backtest execution, and result saving for a single horizon."""
     chunk_idxs = get_chunk_indices_strided(X_np, train_win_periods, args.chunk_id, args.total_chunks)
 
     if chunk_idxs.size == 0:
@@ -108,7 +110,7 @@ def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, tr
     feature_transform = _build_feature_transform(args, n_features)
     refit_frequency = hparams.get('refit_frequency', 1)
 
-    print(f"  Initializing {args.model} (features={args.features}, Train Window: {train_win_periods} periods)...")
+    print(f"  Initializing {args.model} (features={args.features}, horizon={horizon}, Train Window: {train_win_periods} periods)...")
     model = create_model(
         model_name=args.model,
         train_win_periods=train_win_periods,
@@ -116,6 +118,7 @@ def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, tr
         feature_transform=feature_transform,
         refit_frequency=refit_frequency,
         naive_lag_index=getattr(args, 'naive_lag', None),
+        horizon=horizon,
     )
 
     # Run Backtest
@@ -137,7 +140,8 @@ def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, tr
         train_window=train_win_periods,
         y_true=y_np,
         dates=dates,
-        baselines=baselines
+        baselines=baselines,
+        horizon=horizon,
     )
 
     # Save coefficients if collected
@@ -181,16 +185,27 @@ def _run_global(args, hparams):
     from src import config as cfg
     periods_per_day = cfg.PERIODS_PER_DAY
     train_win_periods = args.train_window * periods_per_day
+    final_horizon = getattr(args, 'horizon', 1)
 
-    success = execute_chunk_backtest(
-        args, hparams, X_np, y_np, dates, baselines, train_win_periods, args.output_file,
-        feature_names=feature_names,
-    )
+    for h in range(1, final_horizon + 1):
+        print(f"\n--- Horizon {h}/{final_horizon} ---")
+        X_h, y_h, dates_h, baselines_h = apply_horizon_shift(
+            X_np, y_np, dates, baselines, h)
 
-    if not success:
-        print(f"Chunk {args.chunk_id} is empty. Exiting.")
-    else:
-        print("Run complete!")
+        # Build output filename with horizon suffix
+        base, ext = os.path.splitext(args.output_file)
+        h_output = f"{base}_h{h}{ext}" if final_horizon > 1 else args.output_file
+
+        success = execute_chunk_backtest(
+            args, hparams, X_h, y_h, dates_h, baselines_h,
+            train_win_periods, h_output,
+            feature_names=feature_names, horizon=h,
+        )
+
+        if not success:
+            print(f"  Chunk {args.chunk_id} is empty for horizon {h}. Skipping.")
+
+    print("Run complete!")
 
 
 def _run_segmented(args, hparams):
@@ -214,6 +229,8 @@ def _run_segmented(args, hparams):
             lag_key = next(f for f in fnames if 'lag_125' in f or f == 'har_ma_125')
             args.naive_lag = fnames.index(lag_key)
 
+    final_horizon = getattr(args, 'horizon', 1)
+
     for seg_name, data in datasets.items():
         print(f"\n{'='*50}")
         print(f"PROCESSING SEGMENT: {seg_name.upper()}")
@@ -230,17 +247,23 @@ def _run_segmented(args, hparams):
 
         print(f"  Window size: {train_win_periods} rows ({args.train_window} days @ {median_slots} slots/day)")
 
-        base, ext = os.path.splitext(args.output_file)
-        seg_output_file = f"{base}_{seg_name}{ext}"
+        for h in range(1, final_horizon + 1):
+            print(f"\n  --- Horizon {h}/{final_horizon} ---")
+            X_h, y_h, dates_h, baselines_h = apply_horizon_shift(
+                X, y, dates, baselines, h)
 
-        seg_features = data.get('features') if isinstance(data, dict) else None
-        success = execute_chunk_backtest(
-            args, hparams, X, y, dates, baselines, train_win_periods, seg_output_file,
-            feature_names=seg_features,
-        )
+            base, ext = os.path.splitext(args.output_file)
+            seg_output_file = f"{base}_{seg_name}_h{h}{ext}" if final_horizon > 1 else f"{base}_{seg_name}{ext}"
 
-        if not success:
-            print(f"  [Skipping] Chunk {args.chunk_id} empty for segment {seg_name}.")
+            seg_features = data.get('features') if isinstance(data, dict) else None
+            success = execute_chunk_backtest(
+                args, hparams, X_h, y_h, dates_h, baselines_h,
+                train_win_periods, seg_output_file,
+                feature_names=seg_features, horizon=h,
+            )
+
+            if not success:
+                print(f"  [Skipping] Chunk {args.chunk_id} empty for segment {seg_name}, horizon {h}.")
 
     print("\nAll segments processed.")
 
