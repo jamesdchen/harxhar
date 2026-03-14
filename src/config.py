@@ -14,3 +14,27 @@ SEGMENT_DEFINITIONS = {
     'closing':   {'start': 840, 'end': 960},   # 14:00 - 16:00
     'overnight': {'start': 990, 'end': 510}    # 16:30 - 08:30 (Wraps)
 }
+
+# --- DL (PatchTSMixer) Configuration ---
+DL_CONFIG = {
+    "output_path": "results.csv",
+    "train_window": 50000,
+    "gpu_count": 2,
+    "model": {
+        "context_len": 241,
+        "num_input_channels": 1,
+        "hidden_dim": 4,
+        "num_layers": 4,
+        "dropout": 0.25,
+        "patch_len": 47,
+        "stride": 31,
+        "prediction_length": 1,
+    },
+    "train": {
+        "num_epochs": 150,
+        "learning_rate": 1e-4,
+        "batch_size": 50,
+        "optimizer": "ADAMW",
+        "loss_fn": "QLIKE",
+    }
+}
