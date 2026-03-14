@@ -1,14 +1,7 @@
 import argparse
 import os
 from src.data_helper import get_chunk_indices_strided, save_chunk_results
-from src.models import (
-    RidgeModel,
-    NaiveBaseline,
-    XGBoostModel,
-    LightGBMModel,
-    RandomForestModel,
-    SARIMAXModel,
-)
+from src.models import create_model
 from src.features import PCATransform, AETransform
 from src.backtest import run_backtest_agnostic
 
@@ -46,6 +39,9 @@ def get_common_parser(description):
     parser.add_argument('--exog-cols', type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument('--lag-scope', type=str, choices=['global', 'intra'], default='global',
                         help="Whether to compute HAR lags on the full dataset ('global') or per-segment ('intra')")
+    parser.add_argument('--segment', type=str, default=None,
+                        choices=['all', 'morning', 'midday', 'closing', 'overnight'],
+                        help="Run segmented backtest. 'all' processes every segment; or pick one.")
     return parser
 
 def get_common_hparams(args):
@@ -54,6 +50,9 @@ def get_common_hparams(args):
     allow_missing = args.model in ('xgboost', 'lightgbm')
     feature_type = 'har' if args.features == 'har' else 'raw'
 
+    from src import config as cfg
+    refit_frequency = cfg.AE_REFIT_FREQUENCY if args.features == 'ae' else 1
+
     return {
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
@@ -61,6 +60,7 @@ def get_common_hparams(args):
         "allow_missing": allow_missing,
         'lag_scope': args.lag_scope,
         'feature_type': feature_type,
+        'refit_frequency': refit_frequency,
     }
 
 def _build_feature_transform(args, n_features):
@@ -78,7 +78,7 @@ def _build_feature_transform(args, n_features):
         )
     return None
 
-def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_win_periods, output_file):
+def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, train_win_periods: int, output_file: str) -> bool:
     """Handles model init, backtest execution, and result saving."""
     chunk_idxs = get_chunk_indices_strided(X_np, train_win_periods, args.chunk_id, args.total_chunks)
 
@@ -87,60 +87,17 @@ def execute_chunk_backtest(args, hparams, X_np, y_np, dates, baselines, train_wi
 
     n_features = X_np.shape[1]
     feature_transform = _build_feature_transform(args, n_features)
-    refit_frequency = 240 if args.features == 'ae' else 1
+    refit_frequency = hparams.get('refit_frequency', 1)
 
-    if args.model == 'ridge':
-        print(f"  Initializing Ridge Model (features={args.features}, Train Window: {train_win_periods} periods)...")
-        model = RidgeModel(
-            train_win_periods=train_win_periods,
-            n_features=n_features,
-            use_scaling=True,
-            feature_transform=feature_transform,
-            refit_frequency=refit_frequency,
-            alpha=1.0,
-        )
-
-    elif args.model == 'naive':
-        print(f"  Initializing Naive Baseline...")
-        model = NaiveBaseline(lag_index=args.naive_lag)
-
-    elif args.model == 'xgboost':
-        print(f"  Initializing XGBoost Model (features={args.features}, Train Window: {train_win_periods} periods)...")
-        model = XGBoostModel(
-            train_win_periods=train_win_periods, n_features=n_features,
-            use_scaling=False, feature_transform=feature_transform,
-            n_estimators=100, max_depth=3, learning_rate=0.1, tree_method='hist',
-        )
-
-    elif args.model == 'lightgbm':
-        print(f"  Initializing LightGBM Model (features={args.features}, Train Window: {train_win_periods} periods)...")
-        model = LightGBMModel(
-            train_win_periods=train_win_periods, n_features=n_features,
-            use_scaling=False, feature_transform=feature_transform,
-            n_estimators=100, max_depth=3, learning_rate=0.1,
-        )
-
-    elif args.model == 'random_forest':
-        print(f"  Initializing Random Forest Model (features={args.features}, Train Window: {train_win_periods} periods)...")
-        model = RandomForestModel(
-            train_win_periods=train_win_periods, n_features=n_features,
-            use_scaling=False, feature_transform=feature_transform,
-            n_estimators=100, max_depth=3,
-        )
-
-    elif args.model == 'sarimax':
-        print(f"  Initializing SARIMAX Model (features={args.features}, fit_window: 480 periods, refit every 48 steps)...")
-        model = SARIMAXModel(
-            train_win_periods=train_win_periods,
-            n_features=n_features,
-            order=(2, 0, 1),
-            seasonal_order=(1, 0, 0, 48),
-            fit_window=480,
-            refit_frequency=48,
-        )
-
-    else:
-        raise ValueError(f"Unknown model type: {args.model}")
+    print(f"  Initializing {args.model} (features={args.features}, Train Window: {train_win_periods} periods)...")
+    model = create_model(
+        model_name=args.model,
+        train_win_periods=train_win_periods,
+        n_features=n_features,
+        feature_transform=feature_transform,
+        refit_frequency=refit_frequency,
+        naive_lag_index=getattr(args, 'naive_lag', None),
+    )
 
     # Run Backtest
     preds = run_backtest_agnostic(model=model, indices=chunk_idxs, X=X_np, y=y_np, train_win_periods=train_win_periods)
