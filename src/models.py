@@ -226,7 +226,7 @@ class SARIMAXModel(RollingRegressionModel):
     """
     SARIMAX baseline that inherits RollingRegressionModel for buffer/scaler reuse.
 
-    Uses raw-lag exogenous features (same lag indices as HAR_LAGS but as individual
+    Uses raw-lag exogenous features (same lag indices as config.LAG but as individual
     point values) together with ARMA(p,q) and seasonal AR components. The rolling
     window is fit_window periods (default 480 = 10 trading days), much shorter than
     the outer train_win_periods, since SARIMAX is a parametric model.
