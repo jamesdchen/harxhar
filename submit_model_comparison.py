@@ -1,0 +1,51 @@
+"""
+Submit model horse race: all models with baseline features (raw target lags only).
+
+Paper result: Table comparing model architectures on forecasting ability.
+"""
+import argparse
+from src.feature_groups import ALL_MODELS
+from src.submit import (
+    ExperimentSpec, add_common_submit_args, build_extra_args,
+    submit_experiment_batch,
+)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Submit model comparison experiments (all models, baseline features).",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    add_common_submit_args(parser)
+    parser.add_argument(
+        "--models", nargs="+", default=ALL_MODELS,
+        help=f"Models to compare. Default: {ALL_MODELS}.",
+    )
+    parser.set_defaults(result_dir="results_model_comparison")
+    args = parser.parse_args()
+
+    feature_type = "raw"
+    extra_args = build_extra_args(feature_type, args)
+
+    specs = [
+        ExperimentSpec(
+            exp_id=i + 1,
+            exp_name="baseline",
+            model_type=model,
+            feature_type=feature_type,
+            variables=[],
+            extra_args=extra_args,
+        )
+        for i, model in enumerate(args.models)
+    ]
+
+    submit_experiment_batch(
+        specs=specs,
+        base_dir=args.result_dir,
+        total_chunks=args.total_chunks,
+        include_naive=not args.no_naive,
+    )
+
+
+if __name__ == "__main__":
+    main()
