@@ -4,11 +4,10 @@ import os
 import torch
 from torch.func import vmap, functional_call
 from src.gpu_kernels import make_ae_train_kernel
-from src import config as cfg
 from src.gpu_utils import (
     log_to_file, load_model, allocate_params,
     init_adam_state, run_kernel_and_detach,
-    run_worker, run_backtest,
+    normalize_chunks, run_worker, run_backtest,
 )
 
 
@@ -51,10 +50,8 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
     def chunk_fn(ctx, current_params, X_chunk, y_chunk, X_test_chunk,
                  curr_bs, idx):
         # Normalize (use training stats for test point)
-        mean = X_chunk.mean(dim=1, keepdim=True)
-        std = X_chunk.std(dim=1, keepdim=True) + cfg.NORM_EPS
-        X_chunk = (X_chunk - mean) / std
-        X_test_chunk = (X_test_chunk - mean) / std
+        X_chunk, X_test_chunk = normalize_chunks(
+            X_chunk, X_test_chunk, dim=1, use_train_stats_for_test=True)
 
         # Train AE
         exp_avgs, exp_avg_sqs, step_tensors = init_adam_state(

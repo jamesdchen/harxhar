@@ -73,25 +73,38 @@ def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
     if chunk_id >= len(chunk_indices_list): return np.array([])
     return chunk_indices_list[chunk_id]
 
-def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines):
-    """Saves predictions and reconstructs raw space values for the primary model only."""
-    y_subset = y_true[indices]
-    base_subset = baselines[indices]
-    dates_subset = dates.iloc[indices].values if hasattr(dates, 'iloc') else dates[indices]
+def apply_duan_smearing(forecasts, y_true, baselines):
+    """Apply Duan's smearing estimator to convert from adjusted to raw space."""
+    smear = np.mean((y_true - forecasts) ** 2)
+    pred_raw = (forecasts ** 2 + smear) * baselines
+    true_raw = (y_true ** 2) * baselines
+    return pred_raw, true_raw
 
-    # Reconstruct from Sqrt Space using Duan's Smearing for the model
-    smear = np.mean((y_subset - forecasts) ** 2)
-    pred_raw = (forecasts ** 2 + smear) * base_subset
-    true_raw = (y_subset ** 2) * base_subset
 
-    # DataFrame now only contains true vs. model predicted
-    df = pd.DataFrame({
+def _build_results_dataframe(forecasts, y_subset, dates_subset, baselines_subset):
+    """Build a results DataFrame with adjusted and raw-space columns."""
+    pred_raw, true_raw = apply_duan_smearing(forecasts, y_subset, baselines_subset)
+    return pd.DataFrame({
         'date': dates_subset,
         'true_adj': y_subset,
         'pred_adj': forecasts,
         'true_raw': true_raw,
-        'pred_raw': pred_raw
+        'pred_raw': pred_raw,
     })
+
+
+def _extract_subset(data, indices):
+    """Extract subset from pandas Series/DataFrame or numpy array."""
+    return data.iloc[indices].values if hasattr(data, 'iloc') else data[indices]
+
+
+def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines):
+    """Saves predictions and reconstructs raw space values for the primary model only."""
+    y_subset = y_true[indices]
+    base_subset = baselines[indices]
+    dates_subset = _extract_subset(dates, indices)
+
+    df = _build_results_dataframe(forecasts, y_subset, dates_subset, base_subset)
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_file, index=False)
