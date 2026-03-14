@@ -41,7 +41,7 @@ python harx.py \
     --model "$MODEL" \
     --features "$FEATURES" \
     --output-file "$OUTPUT_FILE" \
-    --chunk-id "$SLURM_ARRAY_TASK_ID" \
+    --chunk-id "$((SLURM_ARRAY_TASK_ID - 1))" \
     --total-chunks "$TOTAL_CHUNKS" \
     --train-window "$TRAIN_WINDOW" \
     ${EXOG_COLS:+--exog-cols "$EXOG_COLS"} \
