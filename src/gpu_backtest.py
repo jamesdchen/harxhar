@@ -132,8 +132,8 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module='sr
     samples_per_window = train_window // context_len
 
     # Convert to shared-memory tensors for GPU
-    X_tensor = torch.tensor(X_np, dtype=torch.float32).share_memory_().pin_memory()
-    y_tensor = torch.tensor(y_np, dtype=torch.float32).share_memory_().pin_memory()
+    X_tensor = torch.tensor(X_np, dtype=torch.float32).pin_memory()
+    y_tensor = torch.tensor(y_np, dtype=torch.float32).pin_memory()
 
     print(f'Windows: {num_windows} | Samples/Window: {samples_per_window} | Context: {context_len}')
 
