@@ -3,6 +3,10 @@ Submit model horse race: all models with baseline features (raw target lags only
 
 Paper result: Table comparing model architectures on forecasting ability.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from src.feature_groups import ALL_MODELS
 from src.submit import (
