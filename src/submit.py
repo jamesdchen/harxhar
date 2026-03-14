@@ -119,7 +119,7 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
         submit_experiment(spec, base_dir, total_chunks, tasks_per_array, slurm_script)
 
     print(f"\nAll {n_total} experiments submitted to {base_dir}.")
-    print(f"Aggregate with: python aggregate_exp.py --base_dir {base_dir}")
+    print(f"Aggregate with: python aggregate.py --base_dir {base_dir}")
 
 
 def build_extra_args(feature_type, args):
