@@ -7,8 +7,33 @@ import torch.multiprocessing as mp
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from src.backtest import save_chunk_results
+from src.backtest import save_chunk_results, _build_results_dataframe, _extract_subset
 from src import config as cfg
+
+
+def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False):
+    """Standardize training and test chunks using mean/std normalization.
+
+    Parameters
+    ----------
+    dim : int
+        Reduction dimension for mean/std.
+    use_train_stats_for_test : bool
+        If True, normalize test data with training statistics.
+        If False, normalize test data with its own statistics.
+    """
+    mean = X_chunk.mean(dim=dim, keepdim=True)
+    std = X_chunk.std(dim=dim, keepdim=True) + cfg.NORM_EPS
+    X_chunk = (X_chunk - mean) / std
+
+    if use_train_stats_for_test:
+        X_test_chunk = (X_test_chunk - mean) / std
+    else:
+        t_mean = X_test_chunk.mean(dim=dim, keepdim=True)
+        t_std = X_test_chunk.std(dim=dim, keepdim=True) + cfg.NORM_EPS
+        X_test_chunk = (X_test_chunk - t_mean) / t_std
+
+    return X_chunk, X_test_chunk
 
 
 def log_to_file(message):
@@ -142,21 +167,10 @@ def build_results_df(preds, test_indices, y_np, dates, baselines,
             baselines=baselines,
         )
 
-    dates_subset = (dates.iloc[test_indices].values
-                    if hasattr(dates, 'iloc') else dates[test_indices])
+    dates_subset = _extract_subset(dates, test_indices)
     y_subset = y_np[test_indices]
     base_subset = baselines[test_indices]
-    smear = np.mean((y_subset - preds) ** 2)
-    pred_raw = (preds ** 2 + smear) * base_subset
-    true_raw = (y_subset ** 2) * base_subset
-
-    return pd.DataFrame({
-        'date': dates_subset,
-        'true_adj': y_subset,
-        'pred_adj': preds,
-        'true_raw': true_raw,
-        'pred_raw': pred_raw,
-    })
+    return _build_results_dataframe(preds, y_subset, dates_subset, base_subset)
 
 
 def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows,
