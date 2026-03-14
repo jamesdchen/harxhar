@@ -6,47 +6,106 @@ from sklearn.decomposition import PCA
 from src.autoencoder import LagAutoEncoder, train_autoencoder
 
 
-def make_har_features(df, cols, lags, feature_type, target_col='adj_RV'):
-    """
-    Generate HAR or raw lag features for the given columns.
+# --- Base Class ---
+class BaseFeatureTransform:
+    """Base class for all feature transforms. Matches BaseModel pattern."""
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Source data containing the columns to transform.
-    cols : list[str]
-        Column names to create lag features for.
-    lags : list[int]
-        Lag windows (e.g. [1, 5, 25, 125, 625, 3125]).
-    feature_type : str
-        'har' for rolling-mean aggregates, 'raw' for individual point lags.
-    target_col : str
-        Name of the target column (used for naming HAR features).
+    def fit(self, X, y=None):
+        return self
 
-    Returns
-    -------
-    feature_dict : dict[str, pd.Series]
-        Mapping of feature name → computed series.
-    feature_names : list[str]
-        Ordered list of feature names.
-    """
-    feature_dict = {}
-    feature_names = []
-
-    for col in cols:
-        for lag in lags:
-            if feature_type == 'har':
-                name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-                feature_dict[name] = df[col].rolling(window=lag, min_periods=1).mean().shift(1)
-            else:  # 'raw'
-                name = f"{col}_lag_{lag}"
-                feature_dict[name] = df[col].shift(lag)
-            feature_names.append(name)
-
-    return feature_dict, feature_names
+    def transform(self, X):
+        return X
 
 
-class PCATransform:
+# --- Lag Feature Base (shared iteration logic) ---
+class LagFeatureBase(BaseFeatureTransform):
+    """Shared iteration logic for lag-based feature generators."""
+
+    def __init__(self, lags, target_col='adj_RV'):
+        self.lags = lags
+        self.target_col = target_col
+
+    def _compute_lag(self, col_series, lag):
+        """Override: apply per-column, per-lag transform on a pandas Series."""
+        raise NotImplementedError
+
+    def _compute_lag_np(self, col_array, lag):
+        """Override: apply per-column, per-lag transform on a numpy array."""
+        raise NotImplementedError
+
+    def _feature_name(self, col, lag):
+        """Override: return the feature name string for this col/lag pair."""
+        raise NotImplementedError
+
+    def generate(self, df, cols):
+        """Shared loop: iterate cols × lags, return (feature_dict, feature_names)."""
+        feature_dict = {}
+        feature_names = []
+        for col in cols:
+            for lag in self.lags:
+                name = self._feature_name(col, lag)
+                feature_dict[name] = self._compute_lag(df[col], lag)
+                feature_names.append(name)
+        return feature_dict, feature_names
+
+    def transform(self, X):
+        """Shared numpy loop: iterate columns × lags, stack results."""
+        n_samples, n_cols = X.shape
+        result_cols = []
+        for col_idx in range(n_cols):
+            for lag in self.lags:
+                result_cols.append(self._compute_lag_np(X[:, col_idx], lag))
+        return np.column_stack(result_cols)
+
+
+# --- HAR Features (rolling mean aggregates) ---
+class HARFeatures(LagFeatureBase):
+    """Rolling-mean HAR lag features."""
+
+    def _compute_lag(self, col_series, lag):
+        return col_series.rolling(window=lag, min_periods=1).mean().shift(1)
+
+    def _compute_lag_np(self, col_array, lag):
+        n = len(col_array)
+        cumsum = np.cumsum(col_array)
+        rolling_mean = np.empty(n)
+        for i in range(n):
+            window_start = max(0, i - lag + 1)
+            rolling_mean[i] = cumsum[i]
+            if window_start > 0:
+                rolling_mean[i] -= cumsum[window_start - 1]
+            rolling_mean[i] /= (i - window_start + 1)
+        # shift by 1
+        result = np.empty(n)
+        result[0] = np.nan
+        result[1:] = rolling_mean[:-1]
+        return result
+
+    def _feature_name(self, col, lag):
+        if col == self.target_col:
+            return f"har_ma_{lag}"
+        return f"{col}_ma_{lag}"
+
+
+# --- Raw Lag Features (individual shifted lags) ---
+class RawLagFeatures(LagFeatureBase):
+    """Individual point-shift lag features."""
+
+    def _compute_lag(self, col_series, lag):
+        return col_series.shift(lag)
+
+    def _compute_lag_np(self, col_array, lag):
+        result = np.empty_like(col_array, dtype=float)
+        result[:lag] = np.nan
+        result[lag:] = col_array[:-lag] if lag > 0 else col_array
+        return result
+
+    def _feature_name(self, col, lag):
+        return f"{col}_lag_{lag}"
+
+
+# --- PCA Transform ---
+class PCATransform(BaseFeatureTransform):
     """Sklearn-like PCA wrapper for use as a rolling feature transform."""
 
     def __init__(self, n_components):
@@ -60,7 +119,8 @@ class PCATransform:
         return self.pca.transform(X)
 
 
-class AETransform:
+# --- Autoencoder Transform ---
+class AETransform(BaseFeatureTransform):
     """Autoencoder feature transform with reconstruction + prediction loss."""
 
     def __init__(self, n_features, n_components, alpha=0.5, hidden_dim=None,

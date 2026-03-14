@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from src import config
 from src.data_main import load_and_clean_base_data
-from src.features import make_har_features
+from src.features import HARFeatures, RawLagFeatures
 
 def load_and_prep_data_strided(hparams, input_path):
     """
@@ -18,9 +18,9 @@ def load_and_prep_data_strided(hparams, input_path):
     target_col = 'adj_RV'
     feature_type = hparams.get('feature_type', 'raw')
 
-    new_features_dict, final_features = make_har_features(
-        data, cols_to_transform, config.HAR_LAGS, feature_type, target_col
-    )
+    FeatureClass = HARFeatures if feature_type == 'har' else RawLagFeatures
+    generator = FeatureClass(lags=config.HAR_LAGS, target_col=target_col)
+    new_features_dict, final_features = generator.generate(data, cols_to_transform)
 
     new_features_df = pd.DataFrame(new_features_dict, index=data.index)
     data = pd.concat([data, new_features_df], axis=1)

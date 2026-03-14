@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from src import config
 from src.data_main import load_and_clean_base_data
-from src.features import make_har_features
+from src.features import HARFeatures, RawLagFeatures
 
 def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     """
@@ -32,9 +32,9 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
 
     # --- GLOBAL MODE: pre-compute lags on full dataset before segmenting ---
     if lag_scope == 'global':
-        feat_dict, all_feature_names = make_har_features(
-            data, cols_to_transform, config.HAR_LAGS, feature_type, target_col
-        )
+        FeatureClass = HARFeatures if feature_type == 'har' else RawLagFeatures
+        generator = FeatureClass(lags=config.HAR_LAGS, target_col=target_col)
+        feat_dict, all_feature_names = generator.generate(data, cols_to_transform)
         for name, series in feat_dict.items():
             data[name] = series
 
@@ -58,9 +58,9 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
 
         # --- INTRA MODE: compute lags per-segment using the full series for context ---
         if lag_scope == 'intra':
-            new_feats_dict, segment_features = make_har_features(
-                seg_df, cols_to_transform, config.HAR_LAGS, feature_type, target_col
-            )
+            FeatureClass = HARFeatures if feature_type == 'har' else RawLagFeatures
+            seg_generator = FeatureClass(lags=config.HAR_LAGS, target_col=target_col)
+            new_feats_dict, segment_features = seg_generator.generate(seg_df, cols_to_transform)
             new_feats_df = pd.DataFrame(new_feats_dict, index=seg_df.index)
             seg_df = pd.concat([seg_df, new_feats_df], axis=1)
             feature_names = segment_features
