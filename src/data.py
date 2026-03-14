@@ -382,8 +382,8 @@ def load_and_prep_data_strided(
     generator = _make_generator(feature_type, lags_list, target_col)
     data, final_features = _generate_and_concat(generator, data, cols_to_transform)
 
-    # Keep DOW and hour for tree models
-    if hparams.get('use_transform', False):
+    # Keep DOW and hour for tree models (use_transform is False for trees)
+    if not hparams.get('use_transform', True):
         final_features.extend(['DOW', 'hour'])
 
     # Final Clean & Matrix Extraction
