@@ -345,7 +345,7 @@ def load_and_prep_data_strided(
     Parameters
     ----------
     hparams : dict
-        Pipeline hyperparameters (feature_type, use_transform, allow_missing, lag_scope).
+        Pipeline hyperparameters (feature_type, is_tree, allow_missing, lag_scope).
     input_path : str
         Path to parquet file(s).
     target_segment : str or None
@@ -382,8 +382,8 @@ def load_and_prep_data_strided(
     generator = _make_generator(feature_type, lags_list, target_col)
     data, final_features = _generate_and_concat(generator, data, cols_to_transform)
 
-    # Keep DOW and hour for tree models (use_transform is False for trees)
-    if not hparams.get('use_transform', True):
+    # Keep DOW and hour for tree models
+    if hparams.get('is_tree', False):
         final_features.extend(['DOW', 'hour'])
 
     # Final Clean & Matrix Extraction
