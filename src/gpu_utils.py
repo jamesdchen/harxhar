@@ -78,7 +78,7 @@ def init_params(params_store, curr_bs, max_batch_size):
         fan_in = p_tensor.shape[-1] if len(p_tensor.shape) > 2 else 1
         bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0.01
 
-        if len(p_tensor.shape) > 1:
+        if len(p_tensor.shape) > 2:
             p_tensor.data.uniform_(-bound, bound)
         else:
             p_tensor.data.zero_()
