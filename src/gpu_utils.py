@@ -189,3 +189,102 @@ def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows,
         results_nested = pool.starmap(worker_fn, args)
 
     return results_nested
+
+
+def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X,
+               chunk_size, total_windows, setup_fn, chunk_fn):
+    """
+    Generic per-GPU worker loop.
+
+    Parameters
+    ----------
+    setup_fn : callable(device) -> (params_store, ctx_dict)
+        Initialise model, compile kernels, return pre-allocated params_store
+        and an arbitrary context dict passed through to chunk_fn.
+    chunk_fn : callable(ctx, X_chunk, y_chunk, X_test_chunk, curr_bs) -> Tensor
+        Model-specific logic: normalise, train, predict.
+        Must return a 1-D predictions tensor on the same device.
+    """
+    try:
+        device = setup_device(gpu_id)
+        params_store, ctx = setup_fn(device)
+
+        results = []
+        for i, idx in enumerate(chunk_indices):
+            start = idx * chunk_size
+            end = min(start + chunk_size, total_windows)
+
+            X_chunk = shared_X[start:end].to(device, non_blocking=True)
+            y_chunk = shared_y[start:end].to(device, non_blocking=True)
+            X_test_chunk = shared_test_X[start:end].to(device, non_blocking=True)
+
+            curr_bs = X_chunk.shape[0]
+            if curr_bs == 0:
+                continue
+
+            current_params = init_params(params_store, curr_bs, chunk_size)
+            preds = chunk_fn(ctx, current_params, X_chunk, y_chunk,
+                             X_test_chunk, curr_bs, idx)
+
+            results.append({
+                'chunk_index': idx,
+                'predictions': preds.view(-1).cpu(),
+            })
+            if i % 10 == 0:
+                log_to_file(f'Worker {gpu_id}: Chunk {idx} done')
+
+        return results
+
+    except Exception as e:
+        import traceback
+        log_to_file(f'Worker {gpu_id} CRASHED:\n{traceback.format_exc()}')
+        raise e
+
+
+def run_backtest(X_np, y_np, dates, baselines, config, worker_fn,
+                 make_windows_fn, make_worker_args_fn, label='GPU Backtest',
+                 default_output='results.csv'):
+    """
+    Generic GPU-parallel backtest orchestrator.
+
+    Parameters
+    ----------
+    make_windows_fn : callable(X_tensor, y_tensor, config) ->
+        (all_train_X, all_train_y, all_test_X, num_windows)
+    make_worker_args_fn : callable(gpu_id, chunks, config, all_train_X,
+        all_train_y, all_test_X, chunk_size, num_windows) -> tuple
+        Build the positional args tuple for worker_fn.
+    """
+    gpu_count = config['gpu_count']
+    chunk_size = config['train']['batch_size']
+
+    print(f'Starting {label} on {gpu_count} GPUs')
+
+    X_tensor = torch.tensor(X_np, dtype=torch.float32).share_memory_().pin_memory()
+    y_tensor = torch.tensor(y_np, dtype=torch.float32).share_memory_().pin_memory()
+
+    all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(
+        X_tensor, y_tensor, config)
+
+    print(f'Windows: {num_windows}')
+    print(f'Train X Shape: {all_train_X.shape}')
+    print(f'Test X Shape:  {all_test_X.shape}')
+
+    def worker_args(gpu_id, chunks):
+        return make_worker_args_fn(gpu_id, chunks, config, all_train_X,
+                                   all_train_y, all_test_X, chunk_size,
+                                   num_windows)
+
+    results_nested = distribute_and_run(
+        worker_fn, worker_args, gpu_count, num_windows, chunk_size)
+
+    print('Workers finished. Aggregating results...')
+    preds = aggregate_predictions(results_nested, num_windows)
+
+    train_window = config['train_window']
+    test_indices = np.arange(train_window, train_window + num_windows)
+    output_file = config.get('output_path', default_output)
+    print(f'Saving {len(test_indices)} results to {output_file}...')
+
+    return build_results_df(preds, test_indices, y_np, dates, baselines,
+                            output_file=output_file)
