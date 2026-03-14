@@ -260,8 +260,8 @@ def run_backtest(X_np, y_np, dates, baselines, config, worker_fn,
 
     print(f'Starting {label} on {gpu_count} GPUs')
 
-    X_tensor = torch.tensor(X_np, dtype=torch.float32).share_memory_().pin_memory()
-    y_tensor = torch.tensor(y_np, dtype=torch.float32).share_memory_().pin_memory()
+    X_tensor = torch.tensor(X_np, dtype=torch.float32).pin_memory()
+    y_tensor = torch.tensor(y_np, dtype=torch.float32).pin_memory()
 
     all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(
         X_tensor, y_tensor, config)
