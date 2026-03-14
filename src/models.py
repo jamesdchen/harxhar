@@ -5,12 +5,13 @@ from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 from src.rolling import RollingRobustScaler, RollingBuffer
+from src import config as cfg
 
 # --- 1. Top-Level Interface ---
 class BaseModel:
-    def initialize(self, X_init, y_init): pass
-    def predict(self, x_t): pass
-    def update(self, x_t, y_t): pass
+    def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None: pass
+    def predict(self, x_t: np.ndarray) -> float: pass
+    def update(self, x_t: np.ndarray, y_t: float) -> None: pass
 
 # --- 2. The Engine (Handles all Rolling/Scaling Logic) ---
 class RollingRegressionModel(BaseModel):
@@ -196,8 +197,9 @@ class _SARIMAXEstimator:
                 enforce_invertibility=False,
             )
             self._result = m.fit(disp=False, method="lbfgs", maxiter=100)
-        except Exception:
-            pass
+        except (np.linalg.LinAlgError, ValueError) as e:
+            import warnings
+            warnings.warn(f"SARIMAX fit failed, retaining previous fit: {e}")
         return self
 
     def predict(self, X):
@@ -208,7 +210,9 @@ class _SARIMAXEstimator:
         try:
             fc = self._result.forecast(steps=1, exog=exog)
             return np.array([float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])])
-        except Exception:
+        except (ValueError, IndexError) as e:
+            import warnings
+            warnings.warn(f"SARIMAX predict failed, returning 0.0: {e}")
             return np.array([0.0])
 
 
@@ -314,3 +318,74 @@ class NaiveBaseline(BaseModel):
 
     def update(self, x_t, y_t):
         pass
+
+
+# --- 6. Model Registry & Factory ---
+
+MODEL_REGISTRY = {
+    'ridge': {
+        'class': RidgeModel,
+        'defaults': {'use_scaling': True, 'alpha': 1.0},
+    },
+    'xgboost': {
+        'class': XGBoostModel,
+        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3, 'learning_rate': 0.1, 'tree_method': 'hist'},
+    },
+    'lightgbm': {
+        'class': LightGBMModel,
+        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3, 'learning_rate': 0.1},
+    },
+    'random_forest': {
+        'class': RandomForestModel,
+        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3},
+    },
+    'sarimax': {
+        'class': SARIMAXModel,
+        'defaults': {
+            'order': cfg.SARIMAX_ORDER,
+            'seasonal_order': cfg.SARIMAX_SEASONAL_ORDER,
+            'fit_window': cfg.SARIMAX_FIT_WINDOW,
+            'refit_frequency': cfg.SARIMAX_REFIT_FREQUENCY,
+        },
+    },
+}
+
+
+def create_model(model_name, train_win_periods, n_features,
+                 feature_transform=None, refit_frequency=1, naive_lag_index=None, **overrides):
+    """
+    Factory function that creates a model instance from the registry.
+
+    Parameters
+    ----------
+    model_name : str
+        Key in MODEL_REGISTRY, or 'naive' for NaiveBaseline.
+    naive_lag_index : int or None
+        Required when model_name == 'naive'.
+    **overrides
+        Override any default hyperparameter from the registry.
+    """
+    if model_name == 'naive':
+        return NaiveBaseline(lag_index=naive_lag_index)
+
+    if model_name not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model type: {model_name}")
+
+    entry = MODEL_REGISTRY[model_name]
+    kwargs = {**entry['defaults'], **overrides}
+
+    # SARIMAX uses its own refit_frequency and doesn't take feature_transform
+    if model_name == 'sarimax':
+        return entry['class'](
+            train_win_periods=train_win_periods,
+            n_features=n_features,
+            **kwargs,
+        )
+
+    return entry['class'](
+        train_win_periods=train_win_periods,
+        n_features=n_features,
+        feature_transform=feature_transform,
+        refit_frequency=refit_frequency,
+        **kwargs,
+    )

@@ -1,98 +1,20 @@
 import importlib
 import math
 import torch
-import torch.nn as nn
 import torch.multiprocessing as mp
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from torch.func import vmap, functional_call, grad
-from torch.amp import autocast
-from torch.optim.adamw import adamw
+from torch.func import vmap, functional_call
 from src.data_helper import save_chunk_results
+from src.gpu_kernels import make_train_kernel
+from src import config as cfg
 
 
 def log_to_file(message):
     timestamp = datetime.now().strftime('%H:%M:%S')
     with open('worker_log.txt', 'a') as f:
         f.write(f'{timestamp} - {message}\n')
-
-
-# --- Log-Space Parameterized QLIKE Loss ---
-def functional_qlike_loss(h_pred, target_sqrt):
-    """
-    QLIKE parameterized in log-space for numerical stability.
-
-    h_pred: model output = log(sigma^2_pred), unconstrained real number
-    target_sqrt: adj_RV (sqrt-space target from codebase pipeline)
-
-    L = sigma^2_true * exp(-h_pred) + h_pred
-    dL/dh = -sigma^2_true * exp(-h) + 1   (always bounded, no log(0) or div-by-zero)
-    """
-    target_sq = target_sqrt.squeeze().float() ** 2
-    h = h_pred.squeeze().float()
-    h = torch.clamp(h, min=-30.0, max=30.0)
-    return target_sq * torch.exp(-h) + h
-
-
-# --- COMPILED TRAINING KERNEL ---
-def make_train_kernel(base_model, param_keys, num_epochs, base_lr):
-
-    def compute_loss_stateless(params, buffers, x, y):
-        x_in = x.unsqueeze(-1)
-        h_pred = functional_call(base_model, (params, buffers), args=(x_in,), kwargs={})
-        return functional_qlike_loss(h_pred, y)
-
-    batch_loss_fn = vmap(compute_loss_stateless, in_dims=(0, None, 0, 0), randomness='different')
-
-    def train_loop(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y):
-
-        for i in range(1, num_epochs + 1):
-            def mean_loss(p):
-                with autocast('cuda'):
-                    losses = batch_loss_fn(p, buffers, X, y)
-                    return losses.mean()
-
-            grads_dict = grad(mean_loss)(params)
-
-            grad_list = []
-            found_inf = torch.tensor(False, device=X.device)
-
-            for k in param_keys:
-                g = grads_dict[k]
-                g = torch.clamp(g, min=-5.0, max=5.0)
-                grad_list.append(g)
-                if not torch.isfinite(g).all():
-                    found_inf = torch.tensor(True, device=X.device)
-
-            if not found_inf:
-                mutable_params = [params[k].clone() for k in param_keys]
-                mutable_exp_avgs = [exp_avgs[k] for k in param_keys]
-                mutable_exp_avg_sqs = [exp_avg_sqs[k] for k in param_keys]
-                mutable_steps = [step_tensors[k] for k in param_keys]
-
-                adamw(
-                    params=mutable_params,
-                    grads=grad_list,
-                    exp_avgs=mutable_exp_avgs,
-                    exp_avg_sqs=mutable_exp_avg_sqs,
-                    max_exp_avg_sqs=[],
-                    state_steps=mutable_steps,
-                    amsgrad=False,
-                    beta1=0.9,
-                    beta2=0.999,
-                    lr=base_lr,
-                    weight_decay=0.01,
-                    eps=1e-8,
-                    maximize=False,
-                    foreach=False,
-                    capturable=True
-                )
-                params = {k: mutable_params[idx] for idx, k in enumerate(param_keys)}
-
-        return params
-
-    return train_loop
 
 
 def gpu_worker(gpu_id, chunk_indices, model_module, model_config, train_config,
@@ -173,11 +95,11 @@ def gpu_worker(gpu_id, chunk_indices, model_module, model_config, train_config,
 
             # --- INSTANCE NORMALIZATION (same concept as RollingRobustScaler) ---
             mean = X_chunk.mean(dim=2, keepdim=True)
-            std = X_chunk.std(dim=2, keepdim=True) + 1e-8
+            std = X_chunk.std(dim=2, keepdim=True) + cfg.NORM_EPS
             X_chunk = (X_chunk - mean) / std
 
             t_mean = X_test_chunk.mean(dim=2, keepdim=True)
-            t_std = X_test_chunk.std(dim=2, keepdim=True) + 1e-8
+            t_std = X_test_chunk.std(dim=2, keepdim=True) + cfg.NORM_EPS
             X_test_chunk = (X_test_chunk - t_mean) / t_std
 
             # --- TRAIN ---
