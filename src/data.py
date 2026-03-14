@@ -4,13 +4,22 @@ from src import config
 from src.data_main import load_and_clean_base_data
 from src.features import HARFeatures, RawLagFeatures
 
-def load_and_prep_data_strided(hparams, input_path):
+def load_and_prep_data_strided(hparams, input_path, lags=None):
     """
     Generates continuous, global lag features.
 
     feature_type='har'  (hparams): rolling-mean HAR aggregates (original HARXHAR)
     feature_type='raw'  (default): individual point lags via .shift(lag)
+
+    Parameters
+    ----------
+    lags : list[int] or None
+        Lag indices to use. Defaults to config.HAR_LAGS.
+        Pass list(range(1, N+1)) for dense consecutive lags (e.g. for DL models).
     """
+    if lags is None:
+        lags = config.HAR_LAGS
+
     data, cols_to_transform = load_and_clean_base_data(hparams, input_path)
     if data.empty:
         return np.array([]), np.array([]), [], []
@@ -39,7 +48,7 @@ def load_and_prep_data_strided(hparams, input_path):
     
     if allow_missing:
         # SNIPER: Drop only the burn-in rows and rows with missing targets
-        max_lag = max(config.HAR_LAGS)
+        max_lag = max(lags)
         data = data.iloc[max_lag:] # Slice off the initial burn-in
         data = data.dropna(subset=[target_col, 'baseline_RV']).reset_index(drop=True)
     else:
