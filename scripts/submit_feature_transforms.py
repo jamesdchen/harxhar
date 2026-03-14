@@ -3,6 +3,10 @@ Submit feature transform comparison: raw vs HAR vs PCA vs AE.
 
 Paper result: Table comparing feature transformation methods.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from src.feature_groups import FEATURE_TYPES, SUBGROUPS
 from src.submit import (

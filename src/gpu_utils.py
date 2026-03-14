@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from src.backtest_helper import save_chunk_results
+from src.backtest import save_chunk_results
 from src import config as cfg
 
 

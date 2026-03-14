@@ -3,6 +3,10 @@ Submit naive baseline experiment only.
 
 Paper result: Baseline performance floor for all comparisons.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from src.submit import (
     ExperimentSpec, add_common_submit_args, submit_experiment_batch,

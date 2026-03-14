@@ -13,7 +13,7 @@ from pathlib import Path
 from src.executor import add_feature_args
 
 
-SUBMISSION_SCRIPT = "submit_carc.slurm"
+SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
 
@@ -125,7 +125,7 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
     (Path(base_dir) / ".needs_aggregation").touch()
 
     print(f"\nAll {n_total} experiments submitted to {base_dir}.")
-    print("Run 'python aggregate.py' to aggregate all pending results.")
+    print("Run 'python scripts/aggregate.py' to aggregate all pending results.")
 
 
 def build_extra_args(feature_type, args):

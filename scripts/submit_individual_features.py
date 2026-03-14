@@ -4,6 +4,10 @@ Submit per-feature marginal value experiments within a subgroup.
 Paper result: Appendix table showing each feature's individual contribution.
 Replaces the old submit_moments.py.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from src.feature_groups import SUBGROUPS
 from src.submit import (
