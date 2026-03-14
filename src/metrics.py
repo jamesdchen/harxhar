@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-def calculate_global_metrics(df):
+def calculate_global_metrics(df: pd.DataFrame) -> dict[str, float]:
     """Calculates MSE, MAE, and QLIKE (both filtered and non-filtered)."""
     metrics = {'n_samples': len(df)}
     
@@ -22,7 +22,7 @@ def calculate_global_metrics(df):
             
     return metrics
     
-def calculate_baseline_deltas(summary_df):
+def calculate_baseline_deltas(summary_df: pd.DataFrame) -> pd.DataFrame:
     """
     Finds the baseline model and computes relative deltas and OOS R2.
     This keeps the comparative logic completely isolated from the file processing.

@@ -13,7 +13,7 @@ from src import config as cfg
 
 def log_to_file(message):
     timestamp = datetime.now().strftime('%H:%M:%S')
-    with open('worker_log.txt', 'a') as f:
+    with open(cfg.GPU_WORKER_LOG, 'a') as f:
         f.write(f'{timestamp} - {message}\n')
 
 

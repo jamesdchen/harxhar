@@ -1,10 +1,27 @@
 import numpy as np
 from tqdm import tqdm
 
-def run_backtest_agnostic(model, indices, X, y, train_win_periods, save_coefs=False):
+from src.models import BaseModel
+from src.config import check_positive
+
+
+def run_backtest_agnostic(
+    model: BaseModel,
+    indices: np.ndarray,
+    X: np.ndarray,
+    y: np.ndarray,
+    train_win_periods: int,
+    save_coefs: bool = False,
+) -> tuple[np.ndarray, np.ndarray | None]:
     """
     A truly model-agnostic walk-forward backtester.
     """
+    check_positive(train_win_periods, "train_win_periods")
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D, got {X.ndim}D")
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(f"X/y row mismatch: {X.shape[0]} vs {y.shape[0]}")
+
     first_test_idx = indices[0]
     if first_test_idx < train_win_periods:
         raise ValueError("Not enough history for the requested training window.")

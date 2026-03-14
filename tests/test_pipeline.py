@@ -115,7 +115,7 @@ class TestHARFeatures:
         series = pd.Series(np.arange(20, dtype=float))
         df = pd.DataFrame({'adj_RV': series})
 
-        feat_dict, names = gen.generate(df, ['adj_RV'])
+        feat_dict, names = gen.generate_pandas(df, ['adj_RV'])
         assert 'har_ma_1' in names
         assert 'har_ma_5' in names
 
@@ -137,7 +137,7 @@ class TestHARFeatures:
         series = pd.Series(np.arange(20, dtype=float))
         df = pd.DataFrame({'adj_RV': series})
 
-        feat_dict, _ = gen.generate(df, ['adj_RV'])
+        feat_dict, _ = gen.generate_pandas(df, ['adj_RV'])
         expected = np.column_stack([feat_dict['har_ma_1'], feat_dict['har_ma_5']])
 
         result = gen.transform(series.values.reshape(-1, 1))
@@ -153,7 +153,7 @@ class TestRawLagFeatures:
         series = pd.Series(np.arange(10, dtype=float))
         df = pd.DataFrame({'adj_RV': series})
 
-        feat_dict, names = gen.generate(df, ['adj_RV'])
+        feat_dict, names = gen.generate_pandas(df, ['adj_RV'])
         assert 'adj_RV_lag_1' in names
         assert 'adj_RV_lag_3' in names
 
