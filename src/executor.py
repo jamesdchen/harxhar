@@ -49,7 +49,6 @@ def get_common_parser(description):
 def get_common_hparams(args):
     """Dynamically sets hparams based on the model and feature choices."""
     is_tree = args.model in ('xgboost', 'lightgbm', 'random_forest')
-    use_transform = not is_tree
     allow_missing = args.model in ('xgboost', 'lightgbm')
     feature_type = 'har' if args.features == 'har' else 'raw'
 
@@ -59,8 +58,8 @@ def get_common_hparams(args):
     return {
         "diurnal_adjust": True,
         "exog_cols": args.exog_cols,
-        "use_transform": use_transform,
-        "use_transform_exog": use_transform,
+        "is_tree": is_tree,
+        "use_transform_exog": not is_tree,
         "use_diurnal": not is_tree,
         "use_winsor": not is_tree,
         "allow_missing": allow_missing,
