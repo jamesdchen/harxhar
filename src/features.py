@@ -1,5 +1,4 @@
 import os
-import csv
 import numpy as np
 import torch
 from sklearn.decomposition import PCA
@@ -8,7 +7,20 @@ from src.dl_models import LagAutoEncoder, train_autoencoder
 
 # --- Base Class ---
 class BaseFeatureTransform:
-    """Base class for all feature transforms. Matches BaseModel pattern."""
+    """
+    Base class for all feature transforms.
+
+    Two interfaces are supported:
+
+    1. **sklearn-style** (`fit` / `transform`): operates on numpy arrays.
+       Used by PCATransform, AETransform, and plugged into
+       RollingRegressionModel for online dimensionality reduction.
+
+    2. **pandas-level** (`generate_pandas`): operates on a DataFrame and
+       column list, returning ``(feature_dict, feature_names)`` for
+       concatenation in `data.py`.  Only implemented by LagFeatureBase
+       subclasses (HARFeatures, RawLagFeatures).
+    """
 
     def fit(self, X, y=None):
         return self
@@ -37,8 +49,8 @@ class LagFeatureBase(BaseFeatureTransform):
         """Override: return the feature name string for this col/lag pair."""
         raise NotImplementedError
 
-    def generate(self, df, cols):
-        """Shared loop: iterate cols × lags, return (feature_dict, feature_names)."""
+    def generate_pandas(self, df, cols):
+        """Pandas-level feature builder: iterate cols x lags, return (feature_dict, feature_names)."""
         feature_dict = {}
         feature_names = []
         for col in cols:
@@ -49,7 +61,7 @@ class LagFeatureBase(BaseFeatureTransform):
         return feature_dict, feature_names
 
     def transform(self, X):
-        """Shared numpy loop: iterate columns × lags, stack results."""
+        """Numpy-level transform: iterate columns x lags, stack results."""
         n_samples, n_cols = X.shape
         result_cols = []
         for col_idx in range(n_cols):
@@ -149,6 +161,8 @@ class AETransform(BaseFeatureTransform):
         return self.ae.encode(X_t).cpu().numpy()
 
     def _flush_loss_log(self):
+        import csv
+
         if not self._loss_log:
             return
         write_header = not os.path.exists(self.ae_loss_path)

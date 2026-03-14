@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from sklearn.linear_model import Ridge
 from xgboost import XGBRegressor
@@ -18,6 +20,8 @@ class BaseModel:
 class RollingRegressionModel(BaseModel):
     def __init__(self, model, train_win_periods, n_features, use_scaling=True,
                  refit_frequency=1, feature_transform=None):
+        cfg.check_positive(train_win_periods, "train_win_periods")
+        cfg.check_positive(n_features, "n_features")
         self.model = model
         self.train_win_periods = train_win_periods
         self.n_features = n_features
@@ -202,9 +206,12 @@ class _SARIMAXEstimator:
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             )
-            self._result = m.fit(disp=False, method="lbfgs", maxiter=100)
+            self._result = m.fit(
+                disp=False,
+                method=cfg.SARIMAX_FIT_METHOD,
+                maxiter=cfg.SARIMAX_FIT_MAXITER,
+            )
         except (np.linalg.LinAlgError, ValueError) as e:
-            import warnings
             warnings.warn(f"SARIMAX fit failed, retaining previous fit: {e}")
         return self
 
@@ -217,7 +224,6 @@ class _SARIMAXEstimator:
             fc = self._result.forecast(steps=1, exog=exog)
             return np.array([float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])])
         except (ValueError, IndexError) as e:
-            import warnings
             warnings.warn(f"SARIMAX predict failed, returning 0.0: {e}")
             return np.array([0.0])
 
@@ -357,8 +363,15 @@ MODEL_REGISTRY = {
 }
 
 
-def create_model(model_name, train_win_periods, n_features,
-                 feature_transform=None, refit_frequency=1, naive_lag_index=None, **overrides):
+def create_model(
+    model_name: str,
+    train_win_periods: int,
+    n_features: int,
+    feature_transform: "BaseFeatureTransform | None" = None,
+    refit_frequency: int = 1,
+    naive_lag_index: int | None = None,
+    **overrides,
+) -> BaseModel:
     """
     Factory function that creates a model instance from the registry.
 
