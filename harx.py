@@ -9,7 +9,7 @@ def main(args):
     hparams = get_common_hparams(args)
 
     print(f"Loading data from '{args.input_path}'...")
-    print(f"Log Transform Enabled: {hparams['use_transform']}")
+    print(f"Tree Model: {hparams['is_tree']}")
 
     if args.segment is not None:
         _run_segmented(args, hparams)
