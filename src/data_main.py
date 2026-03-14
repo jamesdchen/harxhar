@@ -5,7 +5,93 @@ from functools import reduce
 from src import config
 from typing import Literal
 
-def robust_transform(df, col_name, time_col="time_of_day",
+SKIP_VARS = {'hour', 'DOW', 't', 'date'}
+DEFAULT_DIURNAL_EXCLUDED = SKIP_VARS | {'vix', 'sentiment'}
+
+
+def diurnal_adjust(
+    series: pd.Series, time_of_day_series: pd.Series,
+    has_negatives: bool, window: int, min_periods: int,
+) -> tuple[pd.Series, pd.Series]:
+    """
+    Divide series by a rolling per-time-slot baseline.
+
+    - Non-negative vars: baseline = rolling mean per slot.
+    - Signed vars:       baseline = rolling std per slot.
+
+    Returns (adjusted_series, baseline).
+    """
+    baseline = pd.Series(index=series.index, dtype=float)
+    for slot, idx in time_of_day_series.groupby(time_of_day_series).groups.items():
+        slot_series = series.loc[idx].sort_index()
+        if not has_negatives:
+            rolled = slot_series.rolling(window=window, min_periods=min_periods).mean().shift(1)
+        else:
+            rolled = slot_series.rolling(window=window, min_periods=min_periods).std().shift(1)
+        baseline.loc[idx] = rolled
+    baseline = baseline.fillna(1.0)
+    return series / baseline, baseline
+
+
+def apply_data_transform(
+    series: pd.Series, col_name: str, has_negatives: bool, allow_missing: bool,
+) -> pd.Series:
+    """
+    Apply a data-driven transform based on column semantics.
+
+    - ret2/RV/turnover/bipow/effspread → sqrt
+    - autocov                          → signed sqrt
+    - ret3                             → cube root
+    - ret4                             → fourth root
+    - signed/sumabsret                 → identity (fill NaN if needed)
+    - default                          → log
+    """
+    def _col_matches(*keywords):
+        return any(kw in col_name for kw in keywords)
+
+    if _col_matches('ret2', 'RV', 'turnover', 'bipow', 'effspread'):
+        return np.sqrt(series)
+
+    elif _col_matches('autocov'):
+        return np.sign(series) * np.sqrt(np.abs(series))
+
+    elif _col_matches('ret3'):
+        return np.cbrt(series)
+
+    elif _col_matches('ret4'):
+        return np.power(series, 0.25)
+
+    elif has_negatives or _col_matches('sumabsret'):
+        if not allow_missing:
+            return series.fillna(0.0)
+        return series
+
+    else:
+        return np.log(series)
+
+
+def rolling_winsorize(
+    series: pd.Series, window: int, allow_missing: bool, is_target: bool,
+) -> pd.Series:
+    """
+    Clip series to rolling 5th/95th quantile bounds.
+
+    Uses nanquantile for allow_missing mode (except targets).
+    """
+    if allow_missing and not is_target:
+        lower = series.rolling(window=window, min_periods=1).apply(
+            lambda x: np.nanquantile(x, config.WINSOR_LOWER_Q), raw=True
+        ).shift(1)
+        upper = series.rolling(window=window, min_periods=1).apply(
+            lambda x: np.nanquantile(x, config.WINSOR_UPPER_Q), raw=True
+        ).shift(1)
+    else:
+        lower = series.rolling(window=window, min_periods=1).quantile(config.WINSOR_LOWER_Q).shift(1)
+        upper = series.rolling(window=window, min_periods=1).quantile(config.WINSOR_UPPER_Q).shift(1)
+    return series.clip(lower=lower, upper=upper)
+
+
+def robust_transform(df: pd.DataFrame, col_name: str, time_col: str = "time_of_day",
                      diurnal_window=config.DIURNAL_WINDOW,
                      min_periods=config.DIURNAL_MIN_PERIODS,
                      use_transform=True, allow_missing=False,
@@ -15,123 +101,43 @@ def robust_transform(df, col_name, time_col="time_of_day",
     """
     Applies diurnal adjustment, data-driven transform, then winsorization.
 
-    Pipeline order:
-        1. Diurnal adjustment  (on raw series)
-           - signed vars (has_negatives): divide by rolling per-slot std
-           - non-negative vars:           divide by rolling per-slot mean
-        2. Transform           (determined by column type and data sign)
-           - signed vars       : no further transform (diurnal already normalised)
-           - *ret2* / *turnover*: sqrt
-           - *ret4*            : fourth root
-           - everything else   : log  (default)
-
-    Parameters
-    ----------
-    diurnal_excluded_cols : set[str] or None
-        Columns that must NOT be diurnally adjusted (e.g. structural integer
-        features). Defaults to SKIP_VARS when None.
-    is_target : bool
-        If True: RV is strictly positive; clip to 1e-10 before log.
-        Winsorization always uses standard quantile (model-invariant).
-    winsor_window : int or None
-        If None, winsorization is skipped.
-    use_transform : bool
-        Master switch for the transform step. If False, the data-driven
-        transform (log, sqrt, fourth root, std) is skipped entirely.
-    use_diurnal : bool
-        Master switch for the diurnal step.
-    allow_missing : bool
-        If True, NaNs pass through for XGBoost native handling.
-        If False, NaNs are filled with 0.0 after all steps.
+    Pipeline: diurnal_adjust → apply_data_transform → rolling_winsorize.
     """
-    SKIP_VARS = {'hour', 'DOW', 't', 'date'}
-
     if diurnal_excluded_cols is None:
-        diurnal_excluded_cols = SKIP_VARS | {'vix', 'sentiment'}
+        diurnal_excluded_cols = DEFAULT_DIURNAL_EXCLUDED
 
     if col_name in SKIP_VARS:
         return df[col_name], pd.Series(0, index=df.index)
 
     series = df[col_name]
-
-    # Detect sign on raw series before any adjustment.
     has_negatives = bool((series.dropna() < 0).any())
-
-    # ------------------------------------------------------------------ #
-    # 1. DIURNAL ADJUSTMENT (on raw series)
-    # ------------------------------------------------------------------ #
-    do_diurnal = use_diurnal and (col_name not in diurnal_excluded_cols)
 
     assert df.index.is_monotonic_increasing, (
         f"Index must be sorted before diurnal transform — "
         f"first offender at position {(df.index.to_series().diff() < 0).argmax()}"
     )
 
+    # 1. Diurnal adjustment
+    do_diurnal = use_diurnal and (col_name not in diurnal_excluded_cols)
     if do_diurnal:
-        baseline = pd.Series(index=series.index, dtype=float)
-        for slot, idx in df[time_col].groupby(df[time_col]).groups.items():
-            slot_series = series.loc[idx].sort_index()
-            if not has_negatives:
-                rolled = slot_series.rolling(window=diurnal_window, min_periods=min_periods).mean().shift(1)
-            else:
-                rolled = slot_series.rolling(window=diurnal_window, min_periods=min_periods).std().shift(1)
-            baseline.loc[idx] = rolled
-        baseline = baseline.fillna(1.0)
-        series = series / baseline
+        series, baseline = diurnal_adjust(
+            series, df[time_col], has_negatives, diurnal_window, min_periods
+        )
     else:
         baseline = pd.Series(1.0, index=df.index)
 
-    # ------------------------------------------------------------------ #
-    # 2. DATA-DRIVEN TRANSFORM
-    # ------------------------------------------------------------------ #
+    # 2. Data-driven transform
     if use_transform:
-        def _col_matches(*keywords):
-            return any(kw in col_name for kw in keywords)        
+        series = apply_data_transform(series, col_name, has_negatives, allow_missing)
 
-        if _col_matches('ret2', 'RV', 'turnover','bipow','effspread'):
-            series = np.sqrt(series)
-        
-        elif _col_matches('autocov'):
-            series = np.sign(series) * np.sqrt(np.abs(series))
-            
-        elif _col_matches('ret3'):
-            series = np.cbrt(series)
-            
-        elif _col_matches('ret4'):
-            series = np.power(series, 0.25)
-
-        elif has_negatives or _col_matches('sumabsret'):
-            # Diurnal std-normalisation already handled the scale; no further
-            # transform needed for signed residuals.
-            if not allow_missing:
-                series = series.fillna(0.0)
-
-        else:
-            # Default: log transform.
-            # Zeros and negatives are already excluded by the has_negatives branch
-            # and the diurnal step, so no clipping needed here.
-            series = np.log(series)
-
-    # ------------------------------------------------------------------ #
-    # 3. WINSORIZATION (on transformed series)
-    # ------------------------------------------------------------------ #
+    # 3. Winsorization
     if winsor_window is not None:
-        if allow_missing and not is_target:
-            lower = series.rolling(window=winsor_window, min_periods=1).apply(
-                lambda x: np.nanquantile(x, 0.05), raw=True
-            ).shift(1)
-            upper = series.rolling(window=winsor_window, min_periods=1).apply(
-                lambda x: np.nanquantile(x, 0.95), raw=True
-            ).shift(1)
-        else:
-            lower = series.rolling(window=winsor_window, min_periods=1).quantile(0.05).shift(1)
-            upper = series.rolling(window=winsor_window, min_periods=1).quantile(0.95).shift(1)
-        series = series.clip(lower=lower, upper=upper)
+        series = rolling_winsorize(series, winsor_window, allow_missing, is_target)
 
     return series, baseline
 
 
-def load_and_clean_base_data(hparams, input_path):
+def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFrame, list[str]]:
     """
     Handles stitching, gridding, trimming, and base log-diurnal transforms.
     Returns a clean DataFrame ready for HAR feature engineering.

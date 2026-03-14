@@ -1,11 +1,37 @@
 # --- PIPELINE CONFIGURATION ---
-DIURNAL_WINDOW = 20    
-DIURNAL_MIN_PERIODS = 5 
+DIURNAL_WINDOW = 20
+DIURNAL_MIN_PERIODS = 5
 
 # HAR Lags (Geometric Sequence)
-HAR_LAGS = [1, 5, 25, 125, 625, 3125] 
+HAR_LAGS = [1, 5, 25, 125, 625, 3125]
 
 START_DATE = '2005-01-01'
+
+# Temporal constants
+PERIODS_PER_DAY = 48  # 30-min bars per trading day
+
+# Normalization
+NORM_EPS = 1e-8
+
+# Gradient clipping (GPU training)
+GRAD_CLIP_BOUND = 5.0
+
+# QLIKE clamping bounds (GPU training, log-space)
+QLIKE_CLAMP_MIN = -30.0
+QLIKE_CLAMP_MAX = 30.0
+
+# Winsorization quantiles
+WINSOR_LOWER_Q = 0.05
+WINSOR_UPPER_Q = 0.95
+
+# SARIMAX defaults
+SARIMAX_ORDER = (2, 0, 1)
+SARIMAX_SEASONAL_ORDER = (1, 0, 0, PERIODS_PER_DAY)
+SARIMAX_FIT_WINDOW = 480       # 10 trading days
+SARIMAX_REFIT_FREQUENCY = 48   # once per simulated day
+
+# AE refit frequency (steps between autoencoder refits)
+AE_REFIT_FREQUENCY = 240
 
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {

@@ -3,7 +3,7 @@ import csv
 import numpy as np
 import torch
 from sklearn.decomposition import PCA
-from src.autoencoder import LagAutoEncoder, train_autoencoder
+from src.dl_models import LagAutoEncoder, train_autoencoder
 
 
 # --- Base Class ---
