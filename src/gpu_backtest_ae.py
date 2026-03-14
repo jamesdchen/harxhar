@@ -95,7 +95,7 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
 
                 # Batched Ridge solve: w = (Z^T Z + alpha*I)^{-1} Z^T y
                 ZtZ = torch.bmm(Z_train.transpose(1, 2), Z_train)  # (bs, K, K)
-                reg = ridge_eye[:n_components, :n_components].unsqueeze(0)
+                reg = ridge_eye.unsqueeze(0)
                 Zty = torch.bmm(
                     Z_train.transpose(1, 2),
                     y_chunk.unsqueeze(-1))  # (bs, K, 1)
@@ -105,7 +105,7 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
                 z_test = batch_encode(trained_params, buffers, X_test_chunk)
 
                 # Predict: (batch,)
-                pred = torch.bmm(z_test, w).squeeze()
+                pred = torch.bmm(z_test, w).squeeze(-1).squeeze(-1)
 
             results.append({
                 'chunk_index': idx,
@@ -121,7 +121,7 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
                 log_to_file(f'AE Worker {gpu_id}: Chunk {idx} done')
 
             del X_chunk, y_chunk, X_test_chunk, mean, std
-            del trained_params, exp_avgs, exp_avg_sqs
+            del trained_params, exp_avgs, exp_avg_sqs, step_tensors
             del Z_train, ZtZ, Zty, w, z_test, pred
 
         return results
@@ -175,8 +175,8 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
     num_windows = total_samples - train_window
 
     # Convert to shared-memory tensors
-    X_tensor = torch.tensor(X_np, dtype=torch.float32).share_memory_().pin_memory()
-    y_tensor = torch.tensor(y_np, dtype=torch.float32).share_memory_().pin_memory()
+    X_tensor = torch.tensor(X_np, dtype=torch.float32).pin_memory()
+    y_tensor = torch.tensor(y_np, dtype=torch.float32).pin_memory()
 
     print(f'Windows: {num_windows} | Train Window: {train_window} | '
           f'Features: {n_features}')
