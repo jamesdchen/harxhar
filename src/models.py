@@ -12,6 +12,7 @@ class BaseModel:
     def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None: pass
     def predict(self, x_t: np.ndarray) -> float: pass
     def update(self, x_t: np.ndarray, y_t: float) -> None: pass
+    def get_coefs(self) -> np.ndarray | None: return None
 
 # --- 2. The Engine (Handles all Rolling/Scaling Logic) ---
 class RollingRegressionModel(BaseModel):
@@ -77,6 +78,11 @@ class RollingRegressionModel(BaseModel):
 
         x_input = self._transform_input(x_input.reshape(1, -1))
         return self.model.predict(x_input).item()
+
+    def get_coefs(self):
+        if hasattr(self.model, 'coef_'):
+            return self.model.coef_.ravel()
+        return None
 
     def update(self, x_t, y_t):
         # Update Scaler

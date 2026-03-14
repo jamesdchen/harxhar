@@ -42,6 +42,8 @@ def get_common_parser(description):
     parser.add_argument('--segment', type=str, default=None,
                         choices=['all', 'morning', 'midday', 'closing', 'overnight'],
                         help="Run segmented backtest. 'all' processes every segment; or pick one.")
+    parser.add_argument('--save-coefs', action='store_true', default=False,
+                        help="Save rolling model coefficients to a .npz file alongside results.")
     return parser
 
 def get_common_hparams(args):
@@ -78,7 +80,8 @@ def _build_feature_transform(args, n_features):
         )
     return None
 
-def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, train_win_periods: int, output_file: str) -> bool:
+def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, train_win_periods: int, output_file: str,
+                           feature_names=None) -> bool:
     """Handles model init, backtest execution, and result saving."""
     chunk_idxs = get_chunk_indices_strided(X_np, train_win_periods, args.chunk_id, args.total_chunks)
 
@@ -100,7 +103,11 @@ def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, tr
     )
 
     # Run Backtest
-    preds = run_backtest_agnostic(model=model, indices=chunk_idxs, X=X_np, y=y_np, train_win_periods=train_win_periods)
+    save_coefs = getattr(args, 'save_coefs', False)
+    preds, coef_history = run_backtest_agnostic(
+        model=model, indices=chunk_idxs, X=X_np, y=y_np,
+        train_win_periods=train_win_periods, save_coefs=save_coefs,
+    )
 
     # Save (append _cb_drop suffix when circuit-breaker rows were dropped)
     if hparams.get('cb_drop', False):
@@ -116,4 +123,17 @@ def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, tr
         dates=dates,
         baselines=baselines
     )
+
+    # Save coefficients if collected
+    if coef_history is not None:
+        import numpy as np
+        base, _ = os.path.splitext(output_file)
+        coef_file = f"{base}_coefs.npz"
+        chunk_dates = dates[chunk_idxs].values if hasattr(dates, 'values') else dates[chunk_idxs]
+        save_kwargs = dict(coefficients=coef_history, dates=chunk_dates)
+        if feature_names is not None:
+            save_kwargs['feature_names'] = np.array(feature_names)
+        np.savez_compressed(coef_file, **save_kwargs)
+        print(f"  Saved coefficients to {coef_file}")
+
     return True
