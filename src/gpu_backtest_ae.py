@@ -67,13 +67,24 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
             n = ctx['n_components']
             ZtZ = torch.bmm(Z_train.transpose(1, 2), Z_train)
             reg = ctx['ridge_eye'].unsqueeze(0)
-            Zty = torch.bmm(Z_train.transpose(1, 2),
-                            y_chunk.unsqueeze(-1))
-            w = torch.linalg.solve(ZtZ + reg, Zty)
+
+            # Multi-output Ridge: y_chunk may be (batch, T) or (batch, T, H)
+            if y_chunk.dim() == 3:
+                # Multi-horizon: solve for H targets simultaneously
+                # y_chunk: (batch, T, H), Z_train: (batch, T, n_components)
+                Zty = torch.bmm(Z_train.transpose(1, 2), y_chunk)  # (batch, n, H)
+            else:
+                Zty = torch.bmm(Z_train.transpose(1, 2),
+                                y_chunk.unsqueeze(-1))  # (batch, n, 1)
+            w = torch.linalg.solve(ZtZ + reg, Zty)  # (batch, n, H) or (batch, n, 1)
 
             z_test = ctx['batch_encode'](trained_params, ctx['buffers'],
                                          X_test_chunk)
-            pred = torch.bmm(z_test, w).squeeze(-1).squeeze(-1)
+            pred = torch.bmm(z_test, w)  # (batch, 1, H) or (batch, 1, 1)
+            if pred.shape[-1] > 1:
+                pred = pred.squeeze(1)  # (batch, H)
+            else:
+                pred = pred.squeeze(-1).squeeze(-1)  # (batch,)
 
         if ctx['weights_dir'] is not None:
             _save_chunk_weights(trained_params, ctx['param_keys'], idx,
@@ -105,9 +116,10 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
 
     def make_windows_fn(X_tensor, y_tensor, config):
         train_window = config['train_window']
+        prediction_length = config['model'].get('prediction_length', 1)
         n_feat = X_tensor.shape[1]
         total_samples = X_tensor.shape[0]
-        num_windows = total_samples - train_window
+        num_windows = total_samples - train_window - (prediction_length - 1)
 
         all_train_X = torch.as_strided(
             X_tensor,
@@ -115,12 +127,23 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
             stride=(X_tensor.stride(0), X_tensor.stride(0),
                     X_tensor.stride(1)),
         )
-        all_train_y = torch.as_strided(
-            y_tensor,
-            size=(num_windows, train_window),
-            stride=(y_tensor.stride(0), y_tensor.stride(0)),
-        )
-        all_test_X = X_tensor[train_window:].unsqueeze(1)
+
+        if prediction_length > 1:
+            # Multi-step targets: shape (num_windows, train_window, prediction_length)
+            all_train_y = torch.as_strided(
+                y_tensor,
+                size=(num_windows, train_window, prediction_length),
+                stride=(y_tensor.stride(0), y_tensor.stride(0),
+                        y_tensor.stride(0)),
+            )
+        else:
+            all_train_y = torch.as_strided(
+                y_tensor,
+                size=(num_windows, train_window),
+                stride=(y_tensor.stride(0), y_tensor.stride(0)),
+            )
+
+        all_test_X = X_tensor[train_window:train_window + num_windows].unsqueeze(1)
 
         return all_train_X, all_train_y, all_test_X, num_windows
 
