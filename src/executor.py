@@ -5,6 +5,23 @@ from src.models import create_model
 from src.features import PCATransform, AETransform
 from src.backtest import run_backtest_agnostic
 
+def add_feature_args(parser):
+    """Add feature-related arguments shared between executor and submit parsers."""
+    parser.add_argument('--train-window', type=int, default=500,
+                        help="Training window in days")
+    parser.add_argument('--n-components', type=int, default=5,
+                        help="Number of PCA/AE latent components (--features pca or ae)")
+    parser.add_argument('--ae-alpha', type=float, default=0.5,
+                        help="AE loss weight: alpha*recon + (1-alpha)*pred (--features ae)")
+    parser.add_argument('--ae-epochs', type=int, default=50,
+                        help="Training epochs per AE refit (--features ae)")
+    parser.add_argument('--ae-hidden', type=int, default=0,
+                        help="AE hidden layer width; 0 = auto (n_features // 2) (--features ae)")
+    parser.add_argument('--ae-weights-path', type=str, default=None,
+                        help="Path to pre-trained AE weights .pt file (--features ae)")
+    return parser
+
+
 def get_common_parser(description):
     """Returns a standardized arg parser for all scripts."""
     parser = argparse.ArgumentParser(description=description)
@@ -21,24 +38,13 @@ def get_common_parser(description):
         default='raw',
         help="Feature type: raw lags, HAR rolling means, PCA-compressed, or AE-compressed"
     )
-    parser.add_argument('--n-components', type=int, default=5,
-                        help="Number of PCA/AE latent components (--features pca or ae)")
-    parser.add_argument('--ae-alpha', type=float, default=0.5,
-                        help="AE loss weight: alpha*recon + (1-alpha)*pred (--features ae)")
-    parser.add_argument('--ae-epochs', type=int, default=50,
-                        help="Training epochs per AE refit (--features ae)")
-    parser.add_argument('--ae-hidden', type=int, default=0,
-                        help="AE hidden layer width; 0 = auto (n_features // 2) (--features ae)")
+    add_feature_args(parser)
     parser.add_argument('--ae-loss-path', type=str, default=None,
                         help="File path to save AE training loss log CSV (--features ae)")
-    parser.add_argument('--ae-weights-path', type=str, default=None,
-                        help="Path to pre-trained AE weights .pt file. "
-                             "When set, AE skips training and uses loaded weights (--features ae)")
     parser.add_argument('--input-path', type=str, default="all30min")
     parser.add_argument('--output-file', type=str, required=True)
     parser.add_argument('--chunk-id', type=int, required=True)
     parser.add_argument('--total-chunks', type=int, required=True)
-    parser.add_argument('--train-window', type=int, default=500, help="Training window in DAYS")
     parser.add_argument('--exog-cols', type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument('--lag-scope', type=str, choices=['global', 'intra'], default='global',
                         help="Whether to compute HAR lags on the full dataset ('global') or per-segment ('intra')")

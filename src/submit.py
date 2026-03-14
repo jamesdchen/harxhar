@@ -10,6 +10,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from src.executor import add_feature_args
+
 
 SUBMISSION_SCRIPT = "submit_carc.slurm"
 DEFAULT_TASKS_PER_ARRAY = 100
@@ -153,30 +155,7 @@ def add_common_submit_args(parser):
         "--total-chunks", type=int, default=DEFAULT_TOTAL_CHUNKS,
         help="Total number of dataset chunks to process.",
     )
-    parser.add_argument(
-        "--train-window", type=int, default=500,
-        help="Training window in days (passed to harx.py).",
-    )
-    parser.add_argument(
-        "--n-components", type=int, default=5,
-        help="Number of latent components for --features pca and ae.",
-    )
-    parser.add_argument(
-        "--ae-alpha", type=float, default=0.5,
-        help="AE loss weight: alpha*recon + (1-alpha)*pred.",
-    )
-    parser.add_argument(
-        "--ae-epochs", type=int, default=50,
-        help="Training epochs per AE refit.",
-    )
-    parser.add_argument(
-        "--ae-hidden", type=int, default=0,
-        help="AE hidden layer width; 0 = auto (n_features // 2).",
-    )
-    parser.add_argument(
-        "--ae-weights-path", type=str, default=None,
-        help="Path to pre-trained AE weights .pt file (skip AE training on CPU).",
-    )
+    add_feature_args(parser)
     parser.add_argument(
         "--no-naive", action="store_true",
         help="Skip submitting the naive baseline job.",
