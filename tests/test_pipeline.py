@@ -427,7 +427,7 @@ class TestEndToEnd:
 
     def test_save_and_load_results(self, synthetic_data, tmp_path):
         """Test that save_chunk_results produces valid CSV."""
-        from src.backtest_helper import save_chunk_results
+        from src.backtest import save_chunk_results
 
         n = 100
         rng = np.random.RandomState(42)
@@ -445,7 +445,7 @@ class TestEndToEnd:
         assert set(df.columns) == {'date', 'true_adj', 'pred_adj', 'true_raw', 'pred_raw'}
 
     def test_get_chunk_indices(self):
-        from src.backtest_helper import get_chunk_indices_strided
+        from src.backtest import get_chunk_indices_strided
         X = np.zeros((1000, 5))
         indices = get_chunk_indices_strided(X, train_window_size=200, chunk_id=0, total_chunks=4)
         assert len(indices) > 0

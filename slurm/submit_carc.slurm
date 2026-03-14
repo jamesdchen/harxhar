@@ -60,7 +60,7 @@ echo "Exog Vars: $EXOG_COLS"
 # Note: SLURM_ARRAY_TASK_ID is usually 1-based (1..100).
 # Python lists are 0-based (0..99). We subtract 1 here.
 
-time python3 harx.py \
+time python3 -m src.executor \
     --model "$MODEL_TYPE" \
     --output-file "$OUTPUT_FILE" \
     --chunk-id $((SLURM_ARRAY_TASK_ID-1)) \
