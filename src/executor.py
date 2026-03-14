@@ -31,6 +31,9 @@ def get_common_parser(description):
                         help="AE hidden layer width; 0 = auto (n_features // 2) (--features ae)")
     parser.add_argument('--ae-loss-path', type=str, default=None,
                         help="File path to save AE training loss log CSV (--features ae)")
+    parser.add_argument('--ae-weights-path', type=str, default=None,
+                        help="Path to pre-trained AE weights .pt file. "
+                             "When set, AE skips training and uses loaded weights (--features ae)")
     parser.add_argument('--input-path', type=str, default="all30min")
     parser.add_argument('--output-file', type=str, required=True)
     parser.add_argument('--chunk-id', type=int, required=True)
@@ -73,7 +76,7 @@ def _build_feature_transform(args, n_features):
     if args.features == 'pca':
         return PCATransform(n_components=args.n_components)
     elif args.features == 'ae':
-        return AETransform(
+        transform = AETransform(
             n_features=n_features,
             n_components=args.n_components,
             alpha=args.ae_alpha,
@@ -81,6 +84,9 @@ def _build_feature_transform(args, n_features):
             epochs=args.ae_epochs,
             ae_loss_path=args.ae_loss_path,
         )
+        if args.ae_weights_path is not None:
+            transform.load_weights(args.ae_weights_path)
+        return transform
     return None
 
 def execute_chunk_backtest(args, hparams: dict, X_np, y_np, dates, baselines, train_win_periods: int, output_file: str,

@@ -136,6 +136,8 @@ def build_extra_args(feature_type, args):
         parts.append(f"--ae-epochs {args.ae_epochs}")
         if args.ae_hidden:
             parts.append(f"--ae-hidden {args.ae_hidden}")
+        if getattr(args, 'ae_weights_path', None):
+            parts.append(f"--ae-weights-path {args.ae_weights_path}")
     if args.train_window != 500:
         parts.append(f"--train-window {args.train_window}")
     return " ".join(parts)
@@ -170,6 +172,10 @@ def add_common_submit_args(parser):
     parser.add_argument(
         "--ae-hidden", type=int, default=0,
         help="AE hidden layer width; 0 = auto (n_features // 2).",
+    )
+    parser.add_argument(
+        "--ae-weights-path", type=str, default=None,
+        help="Path to pre-trained AE weights .pt file (skip AE training on CPU).",
     )
     parser.add_argument(
         "--no-naive", action="store_true",
