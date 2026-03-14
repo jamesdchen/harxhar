@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from src import config
 from src.data_main import load_and_clean_base_data
+from src.features import make_har_features
 
 def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     """
@@ -29,23 +30,11 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
     lag_scope = hparams.get('lag_scope', 'global')
     feature_type = hparams.get('feature_type', 'raw')
 
-    def _make_features(src_df, cols):
-        """Return (feat_dict, feat_names) for the given source dataframe."""
-        feat_dict, feat_names = {}, []
-        for col in cols:
-            for lag in config.HAR_LAGS:
-                if feature_type == 'har':
-                    name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-                    feat_dict[name] = src_df[col].rolling(window=lag, min_periods=1).mean().shift(1)
-                else:  # 'raw'
-                    name = f"{col}_lag_{lag}"
-                    feat_dict[name] = src_df[col].shift(lag)
-                feat_names.append(name)
-        return feat_dict, feat_names
-
     # --- GLOBAL MODE: pre-compute lags on full dataset before segmenting ---
     if lag_scope == 'global':
-        feat_dict, all_feature_names = _make_features(data, cols_to_transform)
+        feat_dict, all_feature_names = make_har_features(
+            data, cols_to_transform, config.HAR_LAGS, feature_type, target_col
+        )
         for name, series in feat_dict.items():
             data[name] = series
 
@@ -69,7 +58,9 @@ def load_and_prep_data_strided(hparams, input_path, target_segment=None):
 
         # --- INTRA MODE: compute lags per-segment using the full series for context ---
         if lag_scope == 'intra':
-            new_feats_dict, segment_features = _make_features(seg_df, cols_to_transform)
+            new_feats_dict, segment_features = make_har_features(
+                seg_df, cols_to_transform, config.HAR_LAGS, feature_type, target_col
+            )
             new_feats_df = pd.DataFrame(new_feats_dict, index=seg_df.index)
             seg_df = pd.concat([seg_df, new_feats_df], axis=1)
             feature_names = segment_features

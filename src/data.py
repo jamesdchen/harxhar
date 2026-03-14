@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from src import config
 from src.data_main import load_and_clean_base_data
+from src.features import make_har_features
 
 def load_and_prep_data_strided(hparams, input_path):
     """
@@ -16,25 +17,11 @@ def load_and_prep_data_strided(hparams, input_path):
 
     target_col = 'adj_RV'
     feature_type = hparams.get('feature_type', 'raw')
-    
-    final_features = []
-    new_features_dict = {}
 
-    # 1. Calculate and store in a dictionary (Fast)
-    for col in cols_to_transform:
-        for lag in config.HAR_LAGS:
-            if feature_type == 'har':
-                feat_name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
-                new_features_dict[feat_name] = data[col].rolling(
-                    window=lag,
-                    min_periods=1
-                ).mean().shift(1)
-            else:  # 'raw'
-                feat_name = f"{col}_lag_{lag}"
-                new_features_dict[feat_name] = data[col].shift(lag)
-            final_features.append(feat_name)
-            
-    # 2. Convert dictionary to DataFrame and concatenate all at once (Zero fragmentation)
+    new_features_dict, final_features = make_har_features(
+        data, cols_to_transform, config.HAR_LAGS, feature_type, target_col
+    )
+
     new_features_df = pd.DataFrame(new_features_dict, index=data.index)
     data = pd.concat([data, new_features_df], axis=1)
 

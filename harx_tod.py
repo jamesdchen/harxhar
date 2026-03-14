@@ -17,8 +17,10 @@ def main(args):
         return
 
     if args.model == 'naive':
-        first_ds = next(iter(datasets.values())) 
-        args.naive_lag = first_ds['features'].index('har_ma_125')
+        first_ds = next(iter(datasets.values()))
+        fnames = first_ds['features']
+        lag_key = next(f for f in fnames if 'lag_125' in f or f == 'har_ma_125')
+        args.naive_lag = fnames.index(lag_key)
 
     for seg_name, data in datasets.items():
         print(f"\n" + "="*50)
