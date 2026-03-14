@@ -1,5 +1,5 @@
-import os
-import glob
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 from src.metrics import calculate_global_metrics
@@ -18,8 +18,7 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
         cb_drop is True when every loaded file carries the _cb_drop tag,
         meaning the experiment ran with circuit-breaker rows excluded.
     """
-    search_pattern = os.path.join(exp_dir, "results_chunk_*.csv")
-    all_files = glob.glob(search_pattern)
+    all_files = sorted(Path(exp_dir).glob("results_chunk_*.csv"))
     
     if not all_files:
         return pd.DataFrame(), False
@@ -27,7 +26,7 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     dfs = []
     cb_drop_flags = []
     for filename in all_files:
-        raw_base = os.path.splitext(os.path.basename(filename))[0]
+        raw_base = filename.stem
 
         # Strip _cb_drop before suffix matching so it is never mistaken for a
         # segment name and never accidentally triggers ignore/require filters.
@@ -61,12 +60,12 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
 
 def parse_config(exp_dir):
     """Parses the config.txt file to extract the experiment name, ID, and model type."""
-    config_path = os.path.join(exp_dir, "config.txt")
+    config_path = Path(exp_dir) / "config.txt"
     exp_name = "Unknown"
     exp_id = -1
     model_type = "Unknown"
-    
-    if os.path.exists(config_path):
+
+    if config_path.exists():
         try:
             with open(config_path, "r") as f:
                 for line in f:
@@ -76,14 +75,14 @@ def parse_config(exp_dir):
                         exp_id = int(line.split(":", 1)[1].strip())
                     elif line.startswith("Model Type:"):
                         model_type = line.split(":", 1)[1].strip()
-        except (ValueError, IOError):
-            pass
-            
+        except (ValueError, IOError) as e:
+            print(f"  [Warning] Could not parse config {config_path}: {e}")
+
     if exp_id == -1:
         try:
             exp_id = int(exp_dir.split('_')[-1])
-        except (ValueError, IndexError):
-            pass
+        except (ValueError, IndexError) as e:
+            print(f"  [Warning] Could not infer exp_id from path {exp_dir}: {e}")
             
     return exp_id, exp_name, model_type
 
