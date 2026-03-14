@@ -81,11 +81,12 @@ def apply_duan_smearing(forecasts, y_true, baselines):
     return pred_raw, true_raw
 
 
-def _build_results_dataframe(forecasts, y_subset, dates_subset, baselines_subset):
+def _build_results_dataframe(forecasts, y_subset, dates_subset, baselines_subset, horizon=1):
     """Build a results DataFrame with adjusted and raw-space columns."""
     pred_raw, true_raw = apply_duan_smearing(forecasts, y_subset, baselines_subset)
     return pd.DataFrame({
         'date': dates_subset,
+        'horizon': horizon,
         'true_adj': y_subset,
         'pred_adj': forecasts,
         'true_raw': true_raw,
@@ -98,13 +99,13 @@ def _extract_subset(data, indices):
     return data.iloc[indices].values if hasattr(data, 'iloc') else data[indices]
 
 
-def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines):
+def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines, horizon=1):
     """Saves predictions and reconstructs raw space values for the primary model only."""
     y_subset = y_true[indices]
     base_subset = baselines[indices]
     dates_subset = _extract_subset(dates, indices)
 
-    df = _build_results_dataframe(forecasts, y_subset, dates_subset, base_subset)
+    df = _build_results_dataframe(forecasts, y_subset, dates_subset, base_subset, horizon=horizon)
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_file, index=False)

@@ -129,7 +129,7 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
 
 
 def build_extra_args(feature_type, args):
-    """Build the --features / --n-components / --ae-* CLI string for harx.py."""
+    """Build the --features / --n-components / --ae-* / --horizon CLI string for harx.py."""
     parts = [f"--features {feature_type}"]
     if feature_type in ("pca", "ae"):
         parts.append(f"--n-components {args.n_components}")
@@ -142,6 +142,9 @@ def build_extra_args(feature_type, args):
             parts.append(f"--ae-weights-path {args.ae_weights_path}")
     if args.train_window != 500:
         parts.append(f"--train-window {args.train_window}")
+    horizon = getattr(args, 'horizon', 1)
+    if horizon > 1:
+        parts.append(f"--horizon {horizon}")
     return " ".join(parts)
 
 
@@ -159,5 +162,9 @@ def add_common_submit_args(parser):
     parser.add_argument(
         "--no-naive", action="store_true",
         help="Skip submitting the naive baseline job.",
+    )
+    parser.add_argument(
+        "--horizon", type=int, default=1,
+        help="Final forecast horizon H. Executor runs backtests for h=1..H.",
     )
     return parser

@@ -35,9 +35,10 @@ class PatchTSMixerForecaster(PreTrainedModel):
 
 
 def get_model(cfg):
+    prediction_length = cfg.get('prediction_length', 1)
     config = PatchTSMixerConfig(
         context_length=cfg['context_len'],
-        prediction_length=1,
+        prediction_length=prediction_length,
         num_input_channels=cfg['num_input_channels'],
         d_model=cfg['hidden_dim'],
         num_layers=cfg.get('num_layers', 4),

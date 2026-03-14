@@ -105,19 +105,23 @@ def filter_by_time(df, start_time=None, end_time=None):
         return df
 
 def process_single_experiment(exp_dir, metadata, segment_configs):
-    """Agnostically loads data, applies optional time boundaries, and calculates metrics."""
+    """Agnostically loads data, applies optional time boundaries, and calculates metrics.
+
+    Supports multi-horizon results: if loaded data contains a 'horizon' column,
+    metrics are computed per-horizon and a cross-horizon aggregate row is added.
+    """
     exp_results = []
 
     for seg_conf in segment_configs:
         seg_name = seg_conf['name']
         load_kwargs = seg_conf['load_kwargs']
         time_bounds = seg_conf.get('time_bounds', None)
-        
-        print(f"Processing Exp {metadata['exp_id']:<3} | {metadata['model'].upper():<8} | {metadata['experiment_name'][:16]:<16} | {seg_name:<12}...", end=" ", flush=True)        
-        
+
+        print(f"Processing Exp {metadata['exp_id']:<3} | {metadata['model'].upper():<8} | {metadata['experiment_name'][:16]:<16} | {seg_name:<12}...", end=" ", flush=True)
+
         # 1. Load Data — also returns the cb_drop flag
         df, cb_drop = load_all_chunks(exp_dir, **load_kwargs)
-        
+
         if df.empty:
             print("[EMPTY]")
             continue
@@ -129,15 +133,45 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
                 print("[EMPTY AFTER TOD FILTER]")
                 continue
 
-        # 3. Calculate Metrics
-        m = calculate_global_metrics(df)
-        m.update(metadata)
-        m['segment'] = seg_name
-        m['cb_drop'] = cb_drop
-        
-        cb_tag = " [CB_DROP]" if cb_drop else ""
-        print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse', np.nan):.4e} | MAE: {m.get('mae', np.nan):.4e}{cb_tag}")
-        
-        exp_results.append(m)
+        # 3. Calculate Metrics — horizon-aware
+        if 'horizon' in df.columns:
+            horizons = sorted(df['horizon'].unique())
+            horizon_metrics = []
+
+            for h in horizons:
+                df_h = df[df['horizon'] == h]
+                m = calculate_global_metrics(df_h)
+                m.update(metadata)
+                m['segment'] = seg_name
+                m['horizon'] = int(h)
+                m['cb_drop'] = cb_drop
+                horizon_metrics.append(m)
+                exp_results.append(m)
+
+            # Cross-horizon aggregate
+            if len(horizon_metrics) > 1:
+                agg = dict(metadata)
+                agg['segment'] = seg_name
+                agg['horizon'] = 'mean'
+                agg['cb_drop'] = cb_drop
+                agg['n_samples'] = sum(m['n_samples'] for m in horizon_metrics)
+                for metric_key in ('mse', 'mae', 'qlike'):
+                    vals = [m[metric_key] for m in horizon_metrics if not np.isnan(m.get(metric_key, np.nan))]
+                    agg[metric_key] = np.mean(vals) if vals else np.nan
+                exp_results.append(agg)
+
+            cb_tag = " [CB_DROP]" if cb_drop else ""
+            print(f"[OK] {len(horizons)} horizons | n={sum(m['n_samples'] for m in horizon_metrics)}{cb_tag}")
+        else:
+            m = calculate_global_metrics(df)
+            m.update(metadata)
+            m['segment'] = seg_name
+            m['horizon'] = 1
+            m['cb_drop'] = cb_drop
+
+            cb_tag = " [CB_DROP]" if cb_drop else ""
+            print(f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} | MSE: {m.get('mse', np.nan):.4e} | MAE: {m.get('mae', np.nan):.4e}{cb_tag}")
+
+            exp_results.append(m)
 
     return exp_results
