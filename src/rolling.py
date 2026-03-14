@@ -79,7 +79,7 @@ class RollingRobustScaler:
     Rolling Robust Scaler (JIT Compiled).
     Maintains a physical ring buffer and a synchronized sorted buffer.
     """
-    def __init__(self, window_size, n_features):
+    def __init__(self, window_size: int, n_features: int):
         self.window_size = window_size
         self.n_features = n_features
         
@@ -92,26 +92,26 @@ class RollingRobustScaler:
         self.ptr = 0
         self.is_full = False
 
-    def initialize(self, data_block):
+    def initialize(self, data_block: np.ndarray) -> None:
         if data_block.ndim == 1:
             data_block = data_block.reshape(-1, 1)
-            
+
         n = data_block.shape[0]
         start = max(0, n - self.window_size)
         relevant_data = data_block[start:]
-        
+
         # Fill chronological buffer
         for row in relevant_data:
             self.chrono_buffer[self.ptr] = row
             self.ptr = (self.ptr + 1) % self.window_size
             if self.ptr == 0:
                 self.is_full = True
-                
+
         # Initialize the sorted buffer
         self.sorted_buffer[:, :] = self.chrono_buffer.T
         self.sorted_buffer.sort(axis=1)
 
-    def update(self, x_new):
+    def update(self, x_new: np.ndarray) -> None:
         # Even though you pass x_old from the model, we use the exact float 
         # from our chrono_buffer to guarantee a perfect match in the sorted array.
         x_new_arr = np.atleast_1d(x_new)
@@ -124,7 +124,7 @@ class RollingRobustScaler:
         self.chrono_buffer[self.ptr] = x_new_arr
         self.ptr = (self.ptr + 1) % self.window_size
 
-    def get_scaler(self):
+    def get_scaler(self) -> tuple[np.ndarray, np.ndarray]:
         """Returns tuple: (median, iqr) instantly in O(1) time"""
         return _get_robust_stats(self.sorted_buffer)
         
@@ -167,21 +167,21 @@ class RollingMedian:
 # Helper: Rolling Buffer (For Regression Training)
 # ------------------------------------------------------------------------------
 class RollingBuffer:
-    def __init__(self, window_size, n_features, n_targets):
+    def __init__(self, window_size: int, n_features: int, n_targets: int):
         self.window_size = window_size
         self.ptr = 0
         self.X_buffer = np.zeros((window_size, n_features), dtype=np.float32)
         self.y_buffer = np.zeros((window_size, n_targets), dtype=np.float32)
         
-    def add(self, x_new, y_new):
+    def add(self, x_new: np.ndarray, y_new: float | np.ndarray) -> None:
         self.X_buffer[self.ptr] = x_new
         self.y_buffer[self.ptr] = y_new
         self.ptr = (self.ptr + 1) % self.window_size
-            
-    def get_view(self):
+
+    def get_view(self) -> tuple[np.ndarray, np.ndarray]:
         return self.X_buffer, self.y_buffer
 
-    def get_ordered_view(self):
+    def get_ordered_view(self) -> tuple[np.ndarray, np.ndarray]:
         """Return (X, y) in oldest-to-newest chronological order.
 
         After a direct buffer fill (ptr=0) this is identical to get_view().

@@ -311,7 +311,7 @@ def _make_generator(feature_type, lags_list, target_col):
 
 def _generate_and_concat(generator, df, cols_to_transform):
     """Generate features and concatenate them onto *df*."""
-    feat_dict, feature_names = generator.generate(df, cols_to_transform)
+    feat_dict, feature_names = generator.generate_pandas(df, cols_to_transform)
     feat_df = pd.DataFrame(feat_dict, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names
 
@@ -414,7 +414,7 @@ def _load_segmented(data, cols_to_transform, hparams, target_segment,
     all_feature_names = None
     if lag_scope == 'global':
         generator = _make_generator(feature_type, lags_list, target_col)
-        feat_dict, all_feature_names = generator.generate(data, cols_to_transform)
+        feat_dict, all_feature_names = generator.generate_pandas(data, cols_to_transform)
         for name, series in feat_dict.items():
             data[name] = series
 

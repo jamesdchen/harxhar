@@ -8,6 +8,7 @@ import argparse
 import dataclasses
 import os
 import subprocess
+from pathlib import Path
 
 
 SUBMISSION_SCRIPT = "submit_carc.slurm"
@@ -27,7 +28,7 @@ class ExperimentSpec:
 
 def write_config(exp_dir, spec):
     """Write config.txt matching the format parse_config() in eval_utils.py expects."""
-    with open(os.path.join(exp_dir, "config.txt"), "w") as f:
+    with open(Path(exp_dir) / "config.txt", "w") as f:
         f.write(f"Experiment ID: {spec.exp_id}\n")
         f.write(f"Experiment Name: {spec.exp_name}\n")
         f.write(f"Model Type: {spec.model_type}\n")
@@ -77,8 +78,8 @@ def submit_experiment(spec, base_dir, total_chunks,
     dir_name = f"exp_{spec.exp_id}_{spec.model_type}_{spec.feature_type}_{spec.exp_name}"
     if spec.model_type == "naive":
         dir_name = f"exp_{spec.exp_id}_naive_baseline"
-    exp_dir = os.path.abspath(os.path.join(base_dir, dir_name))
-    os.makedirs(exp_dir, exist_ok=True)
+    exp_dir = str(Path(base_dir).resolve() / dir_name)
+    Path(exp_dir).mkdir(parents=True, exist_ok=True)
 
     write_config(exp_dir, spec)
 
@@ -104,7 +105,7 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
                             include_naive=True,
                             slurm_script=SUBMISSION_SCRIPT):
     """Submit a list of ExperimentSpecs, optionally prepending naive baseline."""
-    os.makedirs(base_dir, exist_ok=True)
+    Path(base_dir).mkdir(parents=True, exist_ok=True)
 
     all_specs = list(specs)
     if include_naive:
@@ -119,7 +120,7 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
         submit_experiment(spec, base_dir, total_chunks, tasks_per_array, slurm_script)
 
     # Mark this base_dir as needing aggregation
-    open(os.path.join(base_dir, ".needs_aggregation"), "w").close()
+    (Path(base_dir) / ".needs_aggregation").touch()
 
     print(f"\nAll {n_total} experiments submitted to {base_dir}.")
     print("Run 'python aggregate.py' to aggregate all pending results.")

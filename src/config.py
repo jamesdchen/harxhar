@@ -33,6 +33,25 @@ SARIMAX_REFIT_FREQUENCY = 48   # once per simulated day
 # AE refit frequency (steps between autoencoder refits)
 AE_REFIT_FREQUENCY = 240
 
+# SARIMAX fitting defaults
+SARIMAX_FIT_METHOD = "lbfgs"
+SARIMAX_FIT_MAXITER = 100
+
+# AdamW optimizer betas (GPU training)
+ADAMW_BETA1 = 0.9
+ADAMW_BETA2 = 0.999
+ADAMW_WEIGHT_DECAY = 0.01
+
+# GPU logging
+GPU_WORKER_LOG = "worker_log.txt"
+
+
+# --- Validation helpers ---
+def check_positive(val: int | float, name: str) -> None:
+    """Raise ValueError if val is not positive."""
+    if val <= 0:
+        raise ValueError(f"{name} must be positive, got {val}")
+
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {
     'morning':   {'start': 510, 'end': 660},   # 08:30 - 11:00
