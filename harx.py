@@ -33,7 +33,8 @@ def _run_global(args, hparams):
     train_win_periods = args.train_window * periods_per_day
 
     success = execute_chunk_backtest(
-        args, hparams, X_np, y_np, dates, baselines, train_win_periods, args.output_file
+        args, hparams, X_np, y_np, dates, baselines, train_win_periods, args.output_file,
+        feature_names=feature_names,
     )
 
     if not success:
@@ -82,8 +83,10 @@ def _run_segmented(args, hparams):
         base, ext = os.path.splitext(args.output_file)
         seg_output_file = f"{base}_{seg_name}{ext}"
 
+        seg_features = data.get('features') if isinstance(data, dict) else None
         success = execute_chunk_backtest(
-            args, hparams, X, y, dates, baselines, train_win_periods, seg_output_file
+            args, hparams, X, y, dates, baselines, train_win_periods, seg_output_file,
+            feature_names=seg_features,
         )
 
         if not success:
