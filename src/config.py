@@ -83,3 +83,22 @@ DL_CONFIG = {
         "loss_fn": "QLIKE",
     }
 }
+
+# --- AE+Ridge GPU Configuration ---
+AE_RIDGE_GPU_CONFIG = {
+    "output_path": "ae_ridge_results.csv",
+    "train_window": 24000,      # 500 days * 48 periods
+    "gpu_count": 2,
+    "model": {
+        "n_features": 0,        # set at runtime from X.shape[1]
+        "n_components": 5,
+        "hidden_dim": 0,        # 0 = auto (n_features // 2)
+        "alpha_recon": 0.5,     # weight: alpha*recon + (1-alpha)*pred
+        "alpha_ridge": 1.0,     # Ridge regularization strength
+    },
+    "train": {
+        "num_epochs": 50,
+        "learning_rate": 1e-3,
+        "batch_size": 10,       # windows per batch (each ~10MB)
+    },
+}
