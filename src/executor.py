@@ -1,6 +1,6 @@
 import argparse
 import os
-from src.data_helper import get_chunk_indices_strided, save_chunk_results
+from src.backtest_helper import get_chunk_indices_strided, save_chunk_results
 from src.models import create_model
 from src.features import PCATransform, AETransform
 from src.backtest import run_backtest_agnostic
