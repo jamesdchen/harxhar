@@ -1,15 +1,10 @@
-import os
-import csv
 import numpy as np
-import torch
 from sklearn.linear_model import Ridge
-from sklearn.decomposition import PCA
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 from src.rolling import RollingRobustScaler, RollingBuffer
-from src.autoencoder import LagAutoEncoder, train_autoencoder
 
 # --- 1. Top-Level Interface ---
 class BaseModel:
@@ -19,29 +14,44 @@ class BaseModel:
 
 # --- 2. The Engine (Handles all Rolling/Scaling Logic) ---
 class RollingRegressionModel(BaseModel):
-    def __init__(self, model, train_win_periods, n_features, use_scaling=True, refit_frequency=1):
+    def __init__(self, model, train_win_periods, n_features, use_scaling=True,
+                 refit_frequency=1, feature_transform=None):
         self.model = model
         self.train_win_periods = train_win_periods
         self.n_features = n_features
         self.use_scaling = use_scaling
         self.refit_frequency = refit_frequency
+        self.feature_transform = feature_transform
         self.steps_since_refit = 0
-        
+
         self.buffer = RollingBuffer(train_win_periods, n_features, 1)
-        
+
         if self.use_scaling:
             self.scaler = RollingRobustScaler(train_win_periods, n_features)
-        
+
         self.mean_x = np.zeros(n_features)
         self.std_x = np.ones(n_features)
-        
+
         self.hist_X = []
         self.hist_y = []
+
+    def _fit_model(self, X, y):
+        """Fit feature transform (if any) and model on the buffer data."""
+        if self.feature_transform is not None:
+            self.feature_transform.fit(X, y)
+            X = self.feature_transform.transform(X)
+        self.model.fit(X, y)
+
+    def _transform_input(self, X):
+        """Apply feature transform (if any) to input data."""
+        if self.feature_transform is not None:
+            return self.feature_transform.transform(X)
+        return X
 
     def initialize(self, X_init, y_init):
         if y_init.ndim == 1:
             y_init = y_init.reshape(-1, 1)
-            
+
         if self.use_scaling:
             self.scaler.initialize(X_init)
             self.mean_x, self.std_x = self.scaler.get_scaler()
@@ -51,20 +61,21 @@ class RollingRegressionModel(BaseModel):
 
         self.buffer.X_buffer[:] = X_buffered
         self.buffer.y_buffer[:] = y_init
-        
+
         self.hist_X = list(X_init)
         self.hist_y = list(y_init)
-        
+
         X_tr, y_tr = self.buffer.get_view()
-        self.model.fit(X_tr, y_tr)
+        self._fit_model(X_tr, y_tr)
 
     def predict(self, x_t):
         if self.use_scaling:
             x_input = (x_t - self.mean_x) / self.std_x
         else:
             x_input = x_t
-            
-        return self.model.predict(x_input.reshape(1, -1)).item()
+
+        x_input = self._transform_input(x_input.reshape(1, -1))
+        return self.model.predict(x_input).item()
 
     def update(self, x_t, y_t):
         # Update Scaler
@@ -84,76 +95,76 @@ class RollingRegressionModel(BaseModel):
         self.steps_since_refit += 1
         if self.steps_since_refit >= self.refit_frequency:
             X_tr, y_tr = self.buffer.get_view()
-            self.model.fit(X_tr, y_tr)
+            self._fit_model(X_tr, y_tr)
             self.steps_since_refit = 0
 
 
 # --- 3. The Specific Algorithms ---
 
 class RidgeModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=True, **ridge_kwargs):
-        # Initialize Ridge and pass it up to the parent engine
+    def __init__(self, train_win_periods, n_features, use_scaling=True,
+                 feature_transform=None, refit_frequency=1, **ridge_kwargs):
         model = Ridge(**ridge_kwargs)
         super().__init__(
             model=model,
             train_win_periods=train_win_periods,
             n_features=n_features,
             use_scaling=use_scaling,
-            refit_frequency=1 # Ridge is fast, refit every step
+            refit_frequency=refit_frequency,
+            feature_transform=feature_transform,
         )
 
 class XGBoostModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **xgb_kwargs):
-        # Apply XGBoost speed tweaks
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
+                 feature_transform=None, **xgb_kwargs):
         if 'tree_method' not in xgb_kwargs:
             xgb_kwargs['tree_method'] = 'hist'
         if 'n_jobs' not in xgb_kwargs:
             xgb_kwargs['n_jobs'] = -1
-            
-        # Initialize XGBoost and pass it up to the parent engine
+
         model = XGBRegressor(**xgb_kwargs)
         super().__init__(
             model=model,
             train_win_periods=train_win_periods,
             n_features=n_features,
             use_scaling=use_scaling,
-            refit_frequency=refit_frequency
+            refit_frequency=refit_frequency,
+            feature_transform=feature_transform,
         )
 
 class LightGBMModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **lgbm_kwargs):
-        # Apply default speed/system tweaks if not provided
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
+                 feature_transform=None, **lgbm_kwargs):
         if 'n_jobs' not in lgbm_kwargs:
             lgbm_kwargs['n_jobs'] = -1
-        # Suppress some common LightGBM verbosity by default
         if 'verbose' not in lgbm_kwargs:
             lgbm_kwargs['verbose'] = -1
-            
-        # Initialize LightGBM and pass it to the parent engine
+
         model = LGBMRegressor(**lgbm_kwargs)
         super().__init__(
             model=model,
             train_win_periods=train_win_periods,
             n_features=n_features,
             use_scaling=use_scaling,
-            refit_frequency=refit_frequency
+            refit_frequency=refit_frequency,
+            feature_transform=feature_transform,
         )
 
 
 class RandomForestModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, **rf_kwargs):
-        # Apply default speed tweaks if not provided
+    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
+                 feature_transform=None, **rf_kwargs):
         if 'n_jobs' not in rf_kwargs:
             rf_kwargs['n_jobs'] = -1
-            
-        # Initialize Random Forest and pass it to the parent engine
+
         model = RandomForestRegressor(**rf_kwargs)
         super().__init__(
             model=model,
             train_win_periods=train_win_periods,
             n_features=n_features,
             use_scaling=use_scaling,
-            refit_frequency=refit_frequency
+            refit_frequency=refit_frequency,
+            feature_transform=feature_transform,
         )
 
 # --- 4. SARIMAX Model ---
@@ -287,114 +298,7 @@ class SARIMAXModel(RollingRegressionModel):
             self.steps_since_refit = 0
 
 
-# --- 5. PCA + Ridge ---
-
-class _PCAridge:
-    """Sklearn-compatible estimator wrapping a PCA → Ridge pipeline."""
-
-    def __init__(self, n_components, alpha=1.0):
-        self.pca = PCA(n_components=n_components)
-        self.ridge = Ridge(alpha=alpha)
-
-    def fit(self, X, y):
-        self.pca.fit(X)
-        self.ridge.fit(self.pca.transform(X), y.ravel())
-        return self
-
-    def predict(self, X):
-        return self.ridge.predict(self.pca.transform(X))
-
-
-class PCALagRidgeModel(RollingRegressionModel):
-    """
-    Compresses robust-scaled raw lag features with PCA then regresses with Ridge.
-    Rolling refit matches Ridge cadence (every step by default).
-    """
-
-    def __init__(self, train_win_periods, n_features, n_components, alpha=1.0, refit_frequency=1):
-        model = _PCAridge(n_components=n_components, alpha=alpha)
-        super().__init__(model, train_win_periods, n_features, use_scaling=True, refit_frequency=refit_frequency)
-
-
-# --- 6. Hybrid AutoEncoder + Ridge ---
-
-class _AERidge:
-    """
-    Sklearn-compatible estimator wrapping a hybrid AE → Ridge pipeline.
-
-    Trains the autoencoder (reconstruction + RV-prediction loss) on each fit(),
-    then fits Ridge on the latent embeddings. Appends per-epoch loss dicts to
-    ae_loss_path (CSV) after every refit when provided.
-    """
-
-    def __init__(self, n_features, n_components, alpha, hidden_dim, epochs, lr, device, ae_loss_path=None):
-        self.ae = LagAutoEncoder(n_features, n_components, hidden_dim).to(device)
-        self.ridge = Ridge(alpha=1.0)
-        self.alpha = alpha
-        self.epochs = epochs
-        self.lr = lr
-        self.device = device
-        self.ae_loss_path = ae_loss_path
-        self._loss_log = []
-
-    def fit(self, X, y):
-        train_autoencoder(
-            self.ae, X, y.ravel(),
-            alpha=self.alpha, epochs=self.epochs, lr=self.lr,
-            device=self.device, loss_log=self._loss_log,
-        )
-        self.ridge.fit(self._encode_np(X), y.ravel())
-        if self.ae_loss_path is not None:
-            self._flush_loss_log()
-        return self
-
-    def predict(self, X):
-        return self.ridge.predict(self._encode_np(X))
-
-    def _encode_np(self, X):
-        X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
-        return self.ae.encode(X_t).cpu().numpy()
-
-    def _flush_loss_log(self):
-        """Write accumulated loss entries to CSV (append mode)."""
-        if not self._loss_log:
-            return
-        write_header = not os.path.exists(self.ae_loss_path)
-        with open(self.ae_loss_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["recon", "pred", "total"])
-            if write_header:
-                writer.writeheader()
-            writer.writerows(self._loss_log)
-        self._loss_log.clear()
-
-
-class AutoEncoderLagRidgeModel(RollingRegressionModel):
-    """
-    Compresses robust-scaled raw lag features with a hybrid autoencoder
-    (reconstruction + RV-prediction loss) then regresses with Ridge.
-
-    Neural-network refit is expensive, so refit_frequency defaults to 240
-    steps (~5 trading days of 30-min bars).
-    """
-
-    def __init__(
-        self,
-        train_win_periods,
-        n_features,
-        n_components,
-        alpha=0.5,
-        hidden_dim=None,
-        epochs=50,
-        lr=1e-3,
-        refit_frequency=240,
-        ae_loss_path=None,
-    ):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = _AERidge(n_features, n_components, alpha, hidden_dim, epochs, lr, device, ae_loss_path)
-        super().__init__(model, train_win_periods, n_features, use_scaling=True, refit_frequency=refit_frequency)
-
-
-# --- 7. The Baseline ---
+# --- 5. The Baseline ---
 
 class NaiveBaseline(BaseModel):
     # Notice this skips the RollingRegressionModel and inherits straight from BaseModel

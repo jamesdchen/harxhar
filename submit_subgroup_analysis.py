@@ -8,10 +8,8 @@ TOTAL_CHUNKS = 100
 TASKS_PER_ARRAY = 100
 SUBMISSION_SCRIPT = "submit_carc.slurm"
 
-# Original model set (backward-compatible default)
-ORIGINAL_MODELS = ["ridge", "xgboost", "lightgbm", "random_forest"]
-LAG_FEATURE_MODELS = ["pca_ridge", "ae_ridge"]
-ALL_MODELS = ORIGINAL_MODELS + LAG_FEATURE_MODELS
+ALL_MODELS = ["ridge", "xgboost", "lightgbm", "random_forest"]
+FEATURE_TYPES = ["raw", "har", "pca", "ae"]
 
 # --- 1. DEFINE THE FEATURE UNIVERSE ---
 FULL_FEATURE_STRING = (
@@ -32,7 +30,7 @@ ALL_FEATURES = FULL_FEATURE_STRING.split("|")
 SUBGROUPS = {
     "baseline": [],
     "moments": [f for f in ALL_FEATURES if f.startswith("sum") and "stock" not in f and "volume" not in f],
-    "liquidity": [f for f in ALL_FEATURES if any(x in f for x in ["volume", "turnover", "spread", "numobs])],
+    "liquidity": [f for f in ALL_FEATURES if any(x in f for x in ["volume", "turnover", "spread", "numobs"])],
     "market_ew": [f for f in ALL_FEATURES if ("ewstock" in f) and not any(x in f for x in ["turnover", "spread"])],
     "market_vw": [f for f in ALL_FEATURES if ("vwstock" in f) and not any(x in f for x in ["turnover", "spread"])],
     "sentiment": [f for f in ALL_FEATURES if "stocktwits" in f],
@@ -48,10 +46,17 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--models", nargs="+", default=ORIGINAL_MODELS,
+        "--models", nargs="+", default=ALL_MODELS,
         help=(
             f"Models to run. Use 'all' to run all models: {ALL_MODELS}. "
-            f"Default: original set {ORIGINAL_MODELS}."
+            f"Default: {ALL_MODELS}."
+        ),
+    )
+    parser.add_argument(
+        "--features", nargs="+", default=["raw"],
+        help=(
+            f"Feature types to run. Use 'all' for all types: {FEATURE_TYPES}. "
+            f"Default: ['raw']."
         ),
     )
     parser.add_argument(
@@ -76,20 +81,20 @@ def parse_args():
     # PCA / AE shared
     parser.add_argument(
         "--n-components", type=int, default=5,
-        help="Number of latent components for pca_ridge and ae_ridge.",
+        help="Number of latent components for --features pca and ae.",
     )
     # AE-specific
     parser.add_argument(
         "--ae-alpha", type=float, default=0.5,
-        help="AE loss weight: alpha*recon + (1-alpha)*pred  (ae_ridge only).",
+        help="AE loss weight: alpha*recon + (1-alpha)*pred  (--features ae only).",
     )
     parser.add_argument(
         "--ae-epochs", type=int, default=50,
-        help="Training epochs per AE refit  (ae_ridge only).",
+        help="Training epochs per AE refit  (--features ae only).",
     )
     parser.add_argument(
         "--ae-hidden", type=int, default=0,
-        help="AE hidden layer width; 0 = auto (n_features // 2)  (ae_ridge only).",
+        help="AE hidden layer width; 0 = auto (n_features // 2)  (--features ae only).",
     )
     parser.add_argument(
         "--no-naive", action="store_true",
@@ -104,18 +109,24 @@ def resolve_models(models_arg):
     return models_arg
 
 
+def resolve_features(features_arg):
+    if len(features_arg) == 1 and features_arg[0] == "all":
+        return FEATURE_TYPES
+    return features_arg
+
+
 def resolve_subgroups(subgroups_arg):
     if len(subgroups_arg) == 1 and subgroups_arg[0] == "all":
         return SUBGROUPS
     return {k: SUBGROUPS[k] for k in subgroups_arg if k in SUBGROUPS}
 
 
-def build_extra_args(model_type, args):
+def build_extra_args(feature_type, args):
     """Return a string of extra CLI flags to be forwarded to harx.py via EXTRA_ARGS."""
-    parts = []
-    if model_type in ("pca_ridge", "ae_ridge"):
+    parts = [f"--features {feature_type}"]
+    if feature_type in ("pca", "ae"):
         parts.append(f"--n-components {args.n_components}")
-    if model_type == "ae_ridge":
+    if feature_type == "ae":
         parts.append(f"--ae-alpha {args.ae_alpha}")
         parts.append(f"--ae-epochs {args.ae_epochs}")
         if args.ae_hidden:
@@ -130,8 +141,6 @@ def short_model_name(model_type):
         "xgboost": "xgb",
         "lightgbm": "lgb",
         "random_forest": "rf",
-        "pca_ridge": "pca",
-        "ae_ridge": "ae",
     }
     return mapping.get(model_type, model_type[:3])
 
@@ -149,16 +158,17 @@ def submit_array(job_name, total_chunks, tasks_per_array, job_env):
 def main():
     args = parse_args()
     models_to_run = resolve_models(args.models)
+    features_to_run = resolve_features(args.features)
     subgroups_to_run = resolve_subgroups(args.subgroups)
     total_chunks = args.total_chunks
     base_result_dir = args.result_dir
 
-    total_experiments = len(subgroups_to_run) * len(models_to_run)
+    total_experiments = len(subgroups_to_run) * len(models_to_run) * len(features_to_run)
     print(
         f"Generating experiments for {len(subgroups_to_run)} subgroups "
-        f"x {len(models_to_run)} models"
+        f"x {len(models_to_run)} models x {len(features_to_run)} feature types"
         + (" + Naive baseline" if not args.no_naive else "")
-        + f"..."
+        + "..."
     )
     os.makedirs(base_result_dir, exist_ok=True)
 
@@ -173,6 +183,7 @@ def main():
             f.write("Experiment ID: 0\n")
             f.write("Experiment Name: naive_baseline\n")
             f.write("Model Type: naive\n")
+            f.write("Features: raw\n")
             f.write("Num Variables: 0\n")
             f.write("Variables: []\n")
 
@@ -191,44 +202,46 @@ def main():
     # --- SUBMIT ML MODELS ---
     # ==========================================
     exp_id = 1
-    for model_type in models_to_run:
-        for exp_name, variables in subgroups_to_run.items():
+    for feature_type in features_to_run:
+        for model_type in models_to_run:
+            for exp_name, variables in subgroups_to_run.items():
 
-            exog_str = "|".join(variables) if variables else "None"
-            exp_dir = os.path.abspath(
-                os.path.join(base_result_dir, f"exp_{exp_id}_{model_type}_{exp_name}")
-            )
-            os.makedirs(exp_dir, exist_ok=True)
+                exog_str = "|".join(variables) if variables else "None"
+                exp_dir = os.path.abspath(
+                    os.path.join(base_result_dir, f"exp_{exp_id}_{model_type}_{feature_type}_{exp_name}")
+                )
+                os.makedirs(exp_dir, exist_ok=True)
 
-            extra_args = build_extra_args(model_type, args)
+                extra_args = build_extra_args(feature_type, args)
 
-            with open(os.path.join(exp_dir, "config.txt"), "w") as f:
-                f.write(f"Experiment ID: {exp_id}\n")
-                f.write(f"Experiment Name: {exp_name}\n")
-                f.write(f"Model Type: {model_type}\n")
-                f.write(f"Num Variables: {len(variables)}\n")
-                f.write(f"Variables: {variables}\n")
-                if extra_args:
-                    f.write(f"Extra Args: {extra_args}\n")
+                with open(os.path.join(exp_dir, "config.txt"), "w") as f:
+                    f.write(f"Experiment ID: {exp_id}\n")
+                    f.write(f"Experiment Name: {exp_name}\n")
+                    f.write(f"Model Type: {model_type}\n")
+                    f.write(f"Features: {feature_type}\n")
+                    f.write(f"Num Variables: {len(variables)}\n")
+                    f.write(f"Variables: {variables}\n")
+                    if extra_args:
+                        f.write(f"Extra Args: {extra_args}\n")
 
-            print(
-                f"--- Submitting ID {exp_id}: {model_type.upper()} - {exp_name.upper()} "
-                f"({len(variables)} vars)"
-                + (f" [{extra_args}]" if extra_args else "")
-                + " ---"
-            )
+                print(
+                    f"--- Submitting ID {exp_id}: {model_type.upper()} + {feature_type.upper()} - {exp_name.upper()} "
+                    f"({len(variables)} vars)"
+                    + (f" [{extra_args}]" if extra_args else "")
+                    + " ---"
+                )
 
-            job_env = os.environ.copy()
-            job_env["TOTAL_CHUNKS"] = str(total_chunks)
-            job_env["EXOG_COLS"] = exog_str
-            job_env["RESULT_DIR"] = exp_dir
-            job_env["MODEL_TYPE"] = model_type
-            job_env["EXTRA_ARGS"] = extra_args
+                job_env = os.environ.copy()
+                job_env["TOTAL_CHUNKS"] = str(total_chunks)
+                job_env["EXOG_COLS"] = exog_str
+                job_env["RESULT_DIR"] = exp_dir
+                job_env["MODEL_TYPE"] = model_type
+                job_env["EXTRA_ARGS"] = extra_args
 
-            job_name = f"{short_model_name(model_type)}_{exp_id}"
-            submit_array(job_name, total_chunks, TASKS_PER_ARRAY, job_env)
+                job_name = f"{short_model_name(model_type)}_{feature_type[:3]}_{exp_id}"
+                submit_array(job_name, total_chunks, TASKS_PER_ARRAY, job_env)
 
-            exp_id += 1
+                exp_id += 1
 
     print(f"\nAll {total_experiments} experiments" + (" + Naive baseline" if not args.no_naive else "") + f" submitted to {base_result_dir}.")
 
