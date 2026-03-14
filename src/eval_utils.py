@@ -76,7 +76,7 @@ def parse_config(exp_dir):
                         exp_id = int(line.split(":", 1)[1].strip())
                     elif line.startswith("Model Type:"):
                         model_type = line.split(":", 1)[1].strip()
-        except Exception:
+        except (ValueError, IOError):
             pass
             
     if exp_id == -1:
