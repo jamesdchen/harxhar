@@ -134,19 +134,23 @@ def run_kernel_and_detach(kernel, params, buffers, exp_avgs, exp_avg_sqs,
 
 
 def aggregate_predictions(results_nested, num_windows):
-    """Flatten, sort, concatenate predictions from all GPU workers."""
+    """Flatten, sort, concatenate predictions from all GPU workers.
+
+    Returns
+    -------
+    preds : np.ndarray
+        Shape (num_windows,) for single-horizon or (num_windows, H) for multi-horizon.
+    """
     flat_results = [item for sublist in results_nested for item in sublist]
     flat_results.sort(key=lambda x: x['chunk_index'])
     preds = torch.cat([r['predictions'] for r in flat_results]).numpy()
 
-    if len(preds) != num_windows:
+    # Multi-horizon: preds may be (N, H) — check first dim
+    n_rows = preds.shape[0] if preds.ndim == 1 else preds.shape[0]
+    if n_rows != num_windows:
         print(f'Warning: Prediction shape mismatch. '
-              f'Expected {num_windows}, got {len(preds)}.')
-        ratio = len(preds) / num_windows
-        if ratio == int(ratio) and ratio > 1:
-            preds = preds.reshape(num_windows, int(ratio))[:, 0]
-        else:
-            preds = preds[:num_windows]
+              f'Expected {num_windows}, got {n_rows}.')
+        preds = preds[:num_windows]
 
     return preds
 
@@ -154,8 +158,48 @@ def aggregate_predictions(results_nested, num_windows):
 def build_results_df(preds, test_indices, y_np, dates, baselines,
                      output_file=None):
     """
-    Apply Duan's smearing, optionally save, and return results DataFrame.
+    Apply Duan's smearing, optionally save, and return results DataFrame(s).
+
+    For multi-horizon predictions (preds.ndim == 2, shape (N, H)), saves
+    separate CSV per horizon and returns a dict {horizon: DataFrame}.
     """
+    if preds.ndim == 2 and preds.shape[1] > 1:
+        H = preds.shape[1]
+        results = {}
+        for h in range(H):
+            # For horizon h+1, targets are shifted by h from test_indices
+            h_indices = test_indices[: len(test_indices) - h] if h > 0 else test_indices
+            h_target_indices = h_indices + h
+            # Ensure target indices don't exceed data length
+            valid = h_target_indices < len(y_np)
+            h_indices = h_indices[valid]
+            h_target_indices = h_target_indices[valid]
+            h_preds = preds[:len(h_indices), h]
+
+            if output_file is not None:
+                import os
+                base, ext = os.path.splitext(output_file)
+                h_file = f"{base}_h{h+1}{ext}"
+                save_chunk_results(
+                    output_file=h_file,
+                    forecasts=h_preds,
+                    indices=h_target_indices,
+                    train_window=test_indices[0],
+                    y_true=y_np,
+                    dates=dates,
+                    baselines=baselines,
+                    horizon=h + 1,
+                )
+
+            dates_subset = _extract_subset(dates, h_indices)
+            y_subset = y_np[h_target_indices]
+            base_subset = baselines[h_target_indices]
+            results[h + 1] = _build_results_dataframe(
+                h_preds, y_subset, dates_subset, base_subset, horizon=h + 1)
+
+        return results
+
+    # Single-horizon path (backward compatible)
     if output_file is not None:
         save_chunk_results(
             output_file=output_file,
@@ -240,9 +284,16 @@ def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X,
             preds = chunk_fn(ctx, current_params, X_chunk, y_chunk,
                              X_test_chunk, curr_bs, idx)
 
+            # Flatten per-window predictions, preserving horizon dim if present
+            if preds.dim() > 1:
+                # Multi-horizon: shape (batch, H) → keep as-is
+                preds_cpu = preds.cpu()
+            else:
+                preds_cpu = preds.view(-1).cpu()
+
             results.append({
                 'chunk_index': idx,
-                'predictions': preds.view(-1).cpu(),
+                'predictions': preds_cpu,
             })
             if i % 10 == 0:
                 log_to_file(f'Worker {gpu_id}: Chunk {idx} done')

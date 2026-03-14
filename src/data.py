@@ -4,6 +4,7 @@ from functools import reduce
 import numpy as np
 import pandas as pd
 from src import config
+from src.config import check_positive
 from src.features import HARFeatures, RawLagFeatures
 
 
@@ -284,6 +285,46 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
         cols_to_transform.append(adj_col)
 
     return data, cols_to_transform
+
+
+# ---------------------------------------------------------------------------
+# Horizon shift utility
+# ---------------------------------------------------------------------------
+
+def apply_horizon_shift(X, y, dates, baselines, horizon):
+    """
+    Shift targets forward by (horizon-1) for direct h-step forecasting.
+
+    At each index t, features X[t] remain unchanged while y[t] becomes the
+    value (horizon-1) steps into the future.  Baselines are aligned with the
+    target time (needed for Duan smearing); dates are kept at prediction time.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (N, F)
+    y : np.ndarray, shape (N,)
+    dates : pd.Series of length N
+    baselines : np.ndarray of length N
+    horizon : int >= 1
+
+    Returns
+    -------
+    (X, y, dates, baselines) with aligned lengths (N - horizon + 1).
+    """
+    check_positive(horizon, "horizon")
+    if horizon > config.PERIODS_PER_DAY:
+        raise ValueError(
+            f"horizon must be <= {config.PERIODS_PER_DAY}, got {horizon}"
+        )
+    if horizon <= 1:
+        return X, y, dates, baselines
+    shift = horizon - 1
+    return (
+        X[:-shift],
+        y[shift:],
+        dates.iloc[:-shift].reset_index(drop=True),
+        baselines[shift:],
+    )
 
 
 # ---------------------------------------------------------------------------

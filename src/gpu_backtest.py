@@ -49,6 +49,7 @@ def gpu_worker(gpu_id, chunk_indices, model_module, model_config, train_config,
             exp_avgs, exp_avg_sqs, step_tensors, X_chunk, y_chunk)
 
         # Predict: convert from log-space to sqrt-space
+        # h_pred shape: (batch, channels, prediction_length)
         with torch.no_grad():
             h_pred = ctx['predict_kernel'](trained, ctx['buffers'], X_test_chunk)
             return torch.exp(h_pred / 2.0)
@@ -64,10 +65,12 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config,
     def make_windows_fn(X_tensor, y_tensor, config):
         train_window = config['train_window']
         context_len = config['model']['context_len']
-        stride_step = config['model']['prediction_length']
+        prediction_length = config['model'].get('prediction_length', 1)
+        stride_step = 1  # always step by 1 for walk-forward
 
         total_samples = X_tensor.shape[0]
-        num_windows = total_samples - train_window
+        # Reduce available windows to account for multi-step targets
+        num_windows = total_samples - train_window - (prediction_length - 1)
         samples_per_window = train_window // context_len
 
         # 3D training windows
@@ -80,13 +83,13 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config,
         all_train_X = torch.as_strided(X_tensor, size=window_shape_X,
                                        stride=strides_X)
 
-        # Aligned targets
+        # Aligned targets — multi-step: shape (num_windows, samples_per_window, prediction_length)
         y_offset = y_tensor[context_len:]
-        window_shape_y = (num_windows, samples_per_window, 1)
+        window_shape_y = (num_windows, samples_per_window, prediction_length)
         strides_y = (
             y_offset.stride(0) * stride_step,
             y_offset.stride(0) * context_len,
-            y_offset.stride(1),
+            y_offset.stride(0),  # consecutive future steps
         )
         all_train_y = torch.as_strided(y_offset, size=window_shape_y,
                                        stride=strides_y)

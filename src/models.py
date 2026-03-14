@@ -185,13 +185,14 @@ class _SARIMAXEstimator:
     Thin sklearn-style wrapper around statsmodels SARIMAX.
 
     Accepts fit(X, y) where X/y are in chronological order, and
-    predict(X) for one-step-ahead forecasting with exogenous data.
+    predict(X) for h-step-ahead forecasting with exogenous data.
     Silently retains the previous fitted result on any failure.
     """
 
-    def __init__(self, order, seasonal_order):
+    def __init__(self, order, seasonal_order, horizon=1):
         self.order = order
         self.seasonal_order = seasonal_order
+        self.horizon = horizon
         self._result = None
 
     def fit(self, X, y):
@@ -216,13 +217,22 @@ class _SARIMAXEstimator:
         return self
 
     def predict(self, X):
-        """Return np.array([scalar]) so .item() in RollingRegressionModel works."""
+        """Return np.array([scalar]) so .item() in RollingRegressionModel works.
+
+        Uses native multi-step forecasting: forecast(steps=horizon) and
+        return the h-th step value.
+        """
         if self._result is None:
             return np.array([0.0])
         exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
+        # For multi-step, exog must have `horizon` rows (one per step)
+        if exog is not None and self.horizon > 1:
+            exog = np.tile(exog, (self.horizon, 1))
         try:
-            fc = self._result.forecast(steps=1, exog=exog)
-            return np.array([float(fc.iloc[0] if hasattr(fc, "iloc") else fc[0])])
+            fc = self._result.forecast(steps=self.horizon, exog=exog)
+            # Take the last value (the h-step-ahead forecast)
+            val = fc.iloc[-1] if hasattr(fc, "iloc") else fc[-1]
+            return np.array([float(val)])
         except (ValueError, IndexError) as e:
             warnings.warn(f"SARIMAX predict failed, returning 0.0: {e}")
             return np.array([0.0])
@@ -261,8 +271,9 @@ class SARIMAXModel(RollingRegressionModel):
         refit_frequency=48,
         order=(2, 0, 1),
         seasonal_order=(1, 0, 0, 48),
+        horizon=1,
     ):
-        estimator = _SARIMAXEstimator(order, seasonal_order)
+        estimator = _SARIMAXEstimator(order, seasonal_order, horizon=horizon)
         # Pass fit_window as train_win_periods so buffer/scaler size = fit_window
         super().__init__(
             model=estimator,
@@ -370,6 +381,7 @@ def create_model(
     feature_transform: "BaseFeatureTransform | None" = None,
     refit_frequency: int = 1,
     naive_lag_index: int | None = None,
+    horizon: int = 1,
     **overrides,
 ) -> BaseModel:
     """
@@ -381,6 +393,8 @@ def create_model(
         Key in MODEL_REGISTRY, or 'naive' for NaiveBaseline.
     naive_lag_index : int or None
         Required when model_name == 'naive'.
+    horizon : int
+        Forecast horizon (used by SARIMAX for native multi-step).
     **overrides
         Override any default hyperparameter from the registry.
     """
@@ -393,11 +407,13 @@ def create_model(
     entry = MODEL_REGISTRY[model_name]
     kwargs = {**entry['defaults'], **overrides}
 
-    # SARIMAX uses its own refit_frequency and doesn't take feature_transform
+    # SARIMAX uses its own refit_frequency, doesn't take feature_transform,
+    # and supports native multi-step via horizon parameter
     if model_name == 'sarimax':
         return entry['class'](
             train_win_periods=train_win_periods,
             n_features=n_features,
+            horizon=horizon,
             **kwargs,
         )
 

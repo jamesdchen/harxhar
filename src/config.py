@@ -10,6 +10,9 @@ START_DATE = '2005-01-01'
 # Temporal constants
 PERIODS_PER_DAY = 48  # 30-min bars per trading day
 
+# Forecast horizon
+DEFAULT_HORIZON = 1   # 1-step ahead; max is PERIODS_PER_DAY (48)
+
 # Normalization
 NORM_EPS = 1e-8
 
