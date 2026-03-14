@@ -2,8 +2,8 @@
 DIURNAL_WINDOW = 20
 DIURNAL_MIN_PERIODS = 5
 
-# HAR Lags (Geometric Sequence)
-HAR_LAGS = [1, 5, 25, 125, 625, 3125]
+# Maximum lag (used to derive geometric or consecutive lag sequences)
+LAG = 3125
 
 START_DATE = '2005-01-01'
 
