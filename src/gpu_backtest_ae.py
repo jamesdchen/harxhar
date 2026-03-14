@@ -69,14 +69,14 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
                                           X_chunk)
             n = ctx['n_components']
             ZtZ = torch.bmm(Z_train.transpose(1, 2), Z_train)
-            reg = ctx['ridge_eye'][:n, :n].unsqueeze(0)
+            reg = ctx['ridge_eye'].unsqueeze(0)
             Zty = torch.bmm(Z_train.transpose(1, 2),
                             y_chunk.unsqueeze(-1))
             w = torch.linalg.solve(ZtZ + reg, Zty)
 
             z_test = ctx['batch_encode'](trained_params, ctx['buffers'],
                                          X_test_chunk)
-            pred = torch.bmm(z_test, w).squeeze()
+            pred = torch.bmm(z_test, w).squeeze(-1).squeeze(-1)
 
         if ctx['weights_dir'] is not None:
             _save_chunk_weights(trained_params, ctx['param_keys'], idx,
