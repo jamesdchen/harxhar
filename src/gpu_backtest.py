@@ -1,11 +1,10 @@
 import torch
 from torch.func import vmap, functional_call
 from src.gpu_kernels import make_train_kernel
-from src import config as cfg
 from src.gpu_utils import (
     log_to_file, load_model, allocate_params,
     init_adam_state, run_kernel_and_detach,
-    run_worker, run_backtest,
+    normalize_chunks, run_worker, run_backtest,
 )
 
 
@@ -38,14 +37,9 @@ def gpu_worker(gpu_id, chunk_indices, model_module, model_config, train_config,
 
     def chunk_fn(ctx, current_params, X_chunk, y_chunk, X_test_chunk,
                  curr_bs, idx):
-        # Instance normalization
-        mean = X_chunk.mean(dim=2, keepdim=True)
-        std = X_chunk.std(dim=2, keepdim=True) + cfg.NORM_EPS
-        X_chunk = (X_chunk - mean) / std
-
-        t_mean = X_test_chunk.mean(dim=2, keepdim=True)
-        t_std = X_test_chunk.std(dim=2, keepdim=True) + cfg.NORM_EPS
-        X_test_chunk = (X_test_chunk - t_mean) / t_std
+        # Instance normalization (each window normalized independently)
+        X_chunk, X_test_chunk = normalize_chunks(
+            X_chunk, X_test_chunk, dim=2, use_train_stats_for_test=False)
 
         # Train
         exp_avgs, exp_avg_sqs, step_tensors = init_adam_state(
