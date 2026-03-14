@@ -4,6 +4,10 @@ Submit full subgroup analysis: models × feature types × subgroups.
 Paper result: Table showing which feature subgroups improve forecasts.
 This is the "run everything" script — use the focused scripts for targeted runs.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from src.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
 from src.submit import (

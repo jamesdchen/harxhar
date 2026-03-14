@@ -37,7 +37,7 @@ ml python
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # --- RUN ---
-python harx.py \
+python -m src.executor \
     --model "$MODEL" \
     --features "$FEATURES" \
     --output-file "$OUTPUT_FILE" \
