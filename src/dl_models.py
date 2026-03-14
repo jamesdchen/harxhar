@@ -100,6 +100,16 @@ class LagAutoEncoder(nn.Module):
             return self.encoder(x)
 
 
+def get_ae_model(cfg):
+    """Factory for LagAutoEncoder, matching get_model interface for GPU backtest."""
+    hidden_dim = cfg.get('hidden_dim', 0) or None
+    return LagAutoEncoder(
+        n_features=cfg['n_features'],
+        n_components=cfg['n_components'],
+        hidden_dim=hidden_dim,
+    )
+
+
 def train_autoencoder(
     model: LagAutoEncoder,
     X_scaled: np.ndarray,
