@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 
@@ -5,14 +7,14 @@ import numpy as np
 
 from src.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
 from src.data import apply_horizon_shift, load_and_prep_data_strided
-from src.features import AETransform, PCATransform
+from src.features import AETransform, BaseFeatureTransform, PCATransform
 from src.log import get_logger
 from src.models import create_model
 
 logger = get_logger(__name__)
 
 
-def add_feature_args(parser):
+def add_feature_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Add feature-related arguments shared between executor and submit parsers."""
     parser.add_argument("--train-window", type=int, default=500, help="Training window in days")
     parser.add_argument(
@@ -31,7 +33,7 @@ def add_feature_args(parser):
     return parser
 
 
-def get_common_parser(description):
+def get_common_parser(description: str) -> argparse.ArgumentParser:
     """Returns a standardized arg parser for all scripts."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
@@ -82,7 +84,7 @@ def get_common_parser(description):
     return parser
 
 
-def get_common_hparams(args):
+def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
     """Dynamically sets hparams based on the model and feature choices."""
     is_tree = args.model in ("xgboost", "lightgbm", "random_forest")
     allow_missing = args.model in ("xgboost", "lightgbm")
@@ -106,7 +108,7 @@ def get_common_hparams(args):
     }
 
 
-def _build_feature_transform(args, n_features):
+def _build_feature_transform(args: argparse.Namespace, n_features: int) -> BaseFeatureTransform | None:
     """Build the feature transform from CLI args, or return None for raw/har."""
     if args.features == "pca":
         return PCATransform(n_components=args.n_components)
@@ -205,7 +207,7 @@ def execute_chunk_backtest(
     return True
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     np.random.seed(42)
     hparams = get_common_hparams(args)
 
@@ -218,7 +220,7 @@ def main(args):
         _run_global(args, hparams)
 
 
-def _run_global(args, hparams):
+def _run_global(args: argparse.Namespace, hparams: dict) -> None:
     X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
 
     if len(X_np) == 0:
@@ -261,7 +263,7 @@ def _run_global(args, hparams):
     logger.info("Run complete!")
 
 
-def _run_segmented(args, hparams):
+def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
     datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment=args.segment)
 
     if args.segment != "all":

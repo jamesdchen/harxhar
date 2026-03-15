@@ -15,7 +15,12 @@ from src.log import get_logger
 logger = get_logger(__name__)
 
 
-def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False):
+def normalize_chunks(
+    X_chunk: torch.Tensor,
+    X_test_chunk: torch.Tensor,
+    dim: int,
+    use_train_stats_for_test: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Standardize training and test chunks using mean/std normalization.
 
     Parameters
@@ -40,7 +45,7 @@ def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False)
     return X_chunk, X_test_chunk
 
 
-def log_to_file(message):
+def log_to_file(message: str) -> None:
     """Log message to the GPU worker log file via a FileHandler."""
     file_logger = logging.getLogger("gpu_worker")
     if not file_logger.handlers:
@@ -51,7 +56,7 @@ def log_to_file(message):
     file_logger.info(message)
 
 
-def setup_device(gpu_id):
+def setup_device(gpu_id: int) -> torch.device:
     """Create CUDA device and configure precision settings."""
     device = torch.device(f"cuda:{gpu_id}")
     torch.cuda.set_device(device)
@@ -59,7 +64,7 @@ def setup_device(gpu_id):
     return device
 
 
-def load_model(model_module, factory_fn, model_config, device):
+def load_model(model_module: str, factory_fn: str, model_config: dict, device: torch.device) -> tuple:
     """
     Load a model via importlib and create train/eval instances.
 
@@ -90,7 +95,7 @@ def load_model(model_module, factory_fn, model_config, device):
     return base_model_train, base_model_eval, buffers, param_keys
 
 
-def allocate_params(base_model, max_batch_size, device):
+def allocate_params(base_model: torch.nn.Module, max_batch_size: int, device: torch.device) -> dict[str, torch.Tensor]:
     """Pre-allocate batched parameter tensors for vmapped training."""
     param_shapes = {n: p.shape for n, p in base_model.named_parameters()}
     params_store = {}
@@ -103,7 +108,7 @@ def allocate_params(base_model, max_batch_size, device):
     return params_store
 
 
-def init_params(params_store, curr_bs, max_batch_size):
+def init_params(params_store: dict[str, torch.Tensor], curr_bs: int, max_batch_size: int) -> dict[str, torch.Tensor]:
     """
     Re-initialize parameters with fan-in uniform for weights, zero for biases.
     Returns current_params (sliced if curr_bs < max_batch_size).
@@ -140,7 +145,7 @@ def run_kernel_and_detach(kernel, params, buffers, exp_avgs, exp_avg_sqs, step_t
     return {k: v.detach().requires_grad_(True) for k, v in final_params.items()}
 
 
-def aggregate_predictions(results_nested, num_windows):
+def aggregate_predictions(results_nested: list[list[dict]], num_windows: int) -> np.ndarray:
     """Flatten, sort, concatenate predictions from all GPU workers.
 
     Returns

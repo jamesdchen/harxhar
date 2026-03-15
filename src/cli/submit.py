@@ -32,7 +32,7 @@ class ExperimentSpec:
     extra_args: str = ""
 
 
-def write_config(exp_dir, spec):
+def write_config(exp_dir: str, spec: ExperimentSpec) -> None:
     """Write config.txt matching the format parse_config() in eval_utils.py expects."""
     with open(Path(exp_dir) / "config.txt", "w") as f:
         f.write(f"Experiment ID: {spec.exp_id}\n")
@@ -45,7 +45,7 @@ def write_config(exp_dir, spec):
             f.write(f"Extra Args: {spec.extra_args}\n")
 
 
-def short_model_name(model_type):
+def short_model_name(model_type: str) -> str:
     mapping = {
         "xgboost": "xgb",
         "lightgbm": "lgb",
@@ -54,7 +54,7 @@ def short_model_name(model_type):
     return mapping.get(model_type, model_type[:3])
 
 
-def build_job_env(spec, exp_dir, total_chunks):
+def build_job_env(spec: ExperimentSpec, exp_dir: str, total_chunks: int) -> dict[str, str]:
     """Build the env dict that submit_carc.slurm expects."""
     env = os.environ.copy()
     env["TOTAL_CHUNKS"] = str(total_chunks)
