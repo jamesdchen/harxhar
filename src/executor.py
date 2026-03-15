@@ -178,11 +178,11 @@ def _run_global(args, hparams):
         print("Dataset is empty. Exiting.")
         return
 
-    if args.model == 'naive':
-        lag_key = next(f for f in feature_names if 'lag_125' in f or f == 'har_ma_125')
-        args.naive_lag = feature_names.index(lag_key)
-
     from src import config as cfg
+
+    if args.model == 'naive':
+        args.naive_lag = cfg.find_naive_lag(feature_names)
+
     periods_per_day = cfg.PERIODS_PER_DAY
     train_win_periods = args.train_window * periods_per_day
     final_horizon = getattr(args, 'horizon', 1)
@@ -223,11 +223,11 @@ def _run_segmented(args, hparams):
         return
 
     if args.model == 'naive':
+        from src import config as cfg
         first_ds = next(iter(datasets.values()))
         fnames = first_ds.get('features', [])
         if fnames:
-            lag_key = next(f for f in fnames if 'lag_125' in f or f == 'har_ma_125')
-            args.naive_lag = fnames.index(lag_key)
+            args.naive_lag = cfg.find_naive_lag(fnames)
 
     final_horizon = getattr(args, 'horizon', 1)
 

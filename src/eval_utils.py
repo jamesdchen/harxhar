@@ -48,7 +48,7 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
                 df = df.set_index('date')
             dfs.append(df)
             cb_drop_flags.append(has_cb_drop)
-        except Exception as e:
+        except (OSError, pd.errors.ParserError) as e:
             print(f"  [Warning] Could not read {raw_base}: {e}")
             
     if not dfs:
@@ -100,7 +100,7 @@ def filter_by_time(df, start_time=None, end_time=None):
         
         # inclusive='left' prevents double-counting the exact overlapping minute (e.g., 11:30)
         return df.between_time(start, end, inclusive='left')
-    except Exception as e:
+    except (TypeError, ValueError) as e:
         print(f"  [Warning] Time filtering failed: {e}")
         return df
 
