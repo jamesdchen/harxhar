@@ -37,7 +37,7 @@ ml python
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # --- RUN ---
-python -m src.executor \
+python3 -m src.cli.executor \
     --model "$MODEL" \
     --features "$FEATURES" \
     --output-file "$OUTPUT_FILE" \

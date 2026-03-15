@@ -10,7 +10,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from src.executor import add_feature_args
+from src.cli.executor import add_feature_args
 
 
 SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.metrics import calculate_global_metrics, calculate_baseline_deltas
+from src.evaluation.metrics import calculate_global_metrics, calculate_baseline_deltas
 
 
 class TestCalculateGlobalMetrics:
