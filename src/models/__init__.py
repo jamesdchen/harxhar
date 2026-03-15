@@ -1,5 +1,14 @@
 """Model implementations and factory."""
 
+from src.models.base import (
+    BaseModel as BaseModel,
+)
+from src.models.base import (
+    NaiveBaseline as NaiveBaseline,
+)
+from src.models.base import (
+    RollingRegressionModel as RollingRegressionModel,
+)
 from src.models.deep_learning import (
     LagAutoEncoder as LagAutoEncoder,
 )
@@ -15,33 +24,22 @@ from src.models.deep_learning import (
 from src.models.deep_learning import (
     train_autoencoder as train_autoencoder,
 )
-from src.models.traditional import (
+from src.models.registry import (
     MODEL_REGISTRY as MODEL_REGISTRY,
 )
-from src.models.traditional import (
-    BaseModel as BaseModel,
+from src.models.registry import (
+    create_model as create_model,
 )
-from src.models.traditional import (
+from src.models.sarimax import SARIMAXModel as SARIMAXModel
+from src.models.sklearn_models import (
     LightGBMModel as LightGBMModel,
 )
-from src.models.traditional import (
-    NaiveBaseline as NaiveBaseline,
-)
-from src.models.traditional import (
+from src.models.sklearn_models import (
     RandomForestModel as RandomForestModel,
 )
-from src.models.traditional import (
+from src.models.sklearn_models import (
     RidgeModel as RidgeModel,
 )
-from src.models.traditional import (
-    RollingRegressionModel as RollingRegressionModel,
-)
-from src.models.traditional import (
-    SARIMAXModel as SARIMAXModel,
-)
-from src.models.traditional import (
+from src.models.sklearn_models import (
     XGBoostModel as XGBoostModel,
-)
-from src.models.traditional import (
-    create_model as create_model,
 )
