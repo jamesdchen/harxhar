@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 from transformers import PatchTSMixerConfig, PatchTSMixerModel, PreTrainedModel
 
-
 # --- PatchTSMixer ---
+
 
 class PatchTSMixerForecaster(PreTrainedModel):
     config_class = PatchTSMixerConfig
@@ -37,24 +37,25 @@ class PatchTSMixerForecaster(PreTrainedModel):
 
 
 def get_model(cfg):
-    prediction_length = cfg.get('prediction_length', 1)
+    prediction_length = cfg.get("prediction_length", 1)
     config = PatchTSMixerConfig(
-        context_length=cfg['context_len'],
+        context_length=cfg["context_len"],
         prediction_length=prediction_length,
-        num_input_channels=cfg['num_input_channels'],
-        d_model=cfg['hidden_dim'],
-        num_layers=cfg.get('num_layers', 4),
-        dropout=cfg['dropout'],
-        patch_length=cfg['patch_len'],
-        patch_stride=cfg['stride'],
+        num_input_channels=cfg["num_input_channels"],
+        d_model=cfg["hidden_dim"],
+        num_layers=cfg.get("num_layers", 4),
+        dropout=cfg["dropout"],
+        patch_length=cfg["patch_len"],
+        patch_stride=cfg["stride"],
         gated_attn=False,
-        norm_type='layernorm',
-        scaling=None
+        norm_type="layernorm",
+        scaling=None,
     )
     return PatchTSMixerForecaster(config)
 
 
 # --- Lag Autoencoder ---
+
 
 class LagAutoEncoder(nn.Module):
     """
@@ -105,10 +106,10 @@ class LagAutoEncoder(nn.Module):
 
 def get_ae_model(cfg):
     """Factory for LagAutoEncoder, matching get_model interface for GPU backtest."""
-    hidden_dim = cfg.get('hidden_dim', 0) or None
+    hidden_dim = cfg.get("hidden_dim", 0) or None
     return LagAutoEncoder(
-        n_features=cfg['n_features'],
-        n_components=cfg['n_components'],
+        n_features=cfg["n_features"],
+        n_components=cfg["n_components"],
         hidden_dim=hidden_dim,
     )
 
@@ -163,11 +164,13 @@ def train_autoencoder(
         optimizer.step()
 
         if loss_log is not None:
-            loss_log.append({
-                "recon": recon_loss.item(),
-                "pred": pred_loss.item(),
-                "total": total_loss.item(),
-            })
+            loss_log.append(
+                {
+                    "recon": recon_loss.item(),
+                    "pred": pred_loss.item(),
+                    "total": total_loss.item(),
+                }
+            )
 
     model.eval()
     return model
