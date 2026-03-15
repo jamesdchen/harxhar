@@ -6,9 +6,7 @@
 #SBATCH --cpus-per-task=1        # CPU cores per task. (See note below*)
 #SBATCH --mem=16G                # Memory per node
 #SBATCH --partition=main         # 'main' or 'debug' partition
-#SBATCH --account=pollok_1603    # <--- ACTION: Replace with your PI's ID (e.g., ttrojan_123)
 #SBATCH --time=1:00:00
-#SBATCH --output=/scratch1/jc_905/logs/slurm-%A_%a.out
 
 # *Note on CPUs: If your script uses heavy Numpy/Pandas matrix math, 
 # you can increase --cpus-per-task to 4 or 8 to speed it up.

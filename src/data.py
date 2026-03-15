@@ -194,7 +194,8 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
             if any(vix in col.lower() for vix in {'vvix', 'vix3m'}):
                 data[col] = pd.to_numeric(data[col], errors='coerce')
             else:
-                assert data[col].dtype != object, f"Unexpected object dtype on {col}"
+                if data[col].dtype == object:
+                    raise ValueError(f"Unexpected object dtype on {col}")
 
     # --- Circuit Breaker Handling ---
     cb_dates = pd.to_datetime(config.CIRCUIT_BREAKER_DATES).date
@@ -205,7 +206,7 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
         import warnings
         warnings.warn(
             f"Circuit breaker ffill left {remaining_zeros.sum()} zero RV values; "
-            "check data around dates: {config.CIRCUIT_BREAKER_DATES}"
+            f"check data around dates: {config.CIRCUIT_BREAKER_DATES}"
         )
 
     # --- Circuit Breaker Date Drop for Non-Moments Features ---

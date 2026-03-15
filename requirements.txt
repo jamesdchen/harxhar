@@ -7,3 +7,5 @@ statsmodels>=0.13,<1.0
 torch>=2.0,<3.0
 numba>=0.57,<1.0
 tqdm>=4.64,<5.0
+transformers>=4.30,<5.0
+pyarrow>=12.0
