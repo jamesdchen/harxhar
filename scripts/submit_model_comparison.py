@@ -3,16 +3,21 @@ Submit model horse race: all models with baseline features (raw target lags only
 
 Paper result: Table comparing model architectures on forecasting ability.
 """
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
-from src.feature_groups import ALL_MODELS
+
 from src.cli.submit import (
-    ExperimentSpec, add_common_submit_args, build_extra_args,
+    ExperimentSpec,
+    add_common_submit_args,
+    build_extra_args,
     submit_experiment_batch,
 )
+from src.feature_groups import ALL_MODELS
 
 
 def main():
@@ -22,7 +27,9 @@ def main():
     )
     add_common_submit_args(parser)
     parser.add_argument(
-        "--models", nargs="+", default=ALL_MODELS,
+        "--models",
+        nargs="+",
+        default=ALL_MODELS,
         help=f"Models to compare. Default: {ALL_MODELS}.",
     )
     parser.set_defaults(result_dir="results_model_comparison")

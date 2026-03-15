@@ -4,16 +4,21 @@ Submit per-feature marginal value experiments within a subgroup.
 Paper result: Appendix table showing each feature's individual contribution.
 Replaces the old submit_moments.py.
 """
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
-from src.feature_groups import SUBGROUPS
+
 from src.cli.submit import (
-    ExperimentSpec, add_common_submit_args, build_extra_args,
+    ExperimentSpec,
+    add_common_submit_args,
+    build_extra_args,
     submit_experiment_batch,
 )
+from src.feature_groups import SUBGROUPS
 
 
 def main():
@@ -23,11 +28,15 @@ def main():
     )
     add_common_submit_args(parser)
     parser.add_argument(
-        "--model", type=str, default="ridge",
+        "--model",
+        type=str,
+        default="ridge",
         help="Model to use.",
     )
     parser.add_argument(
-        "--subgroup", type=str, default="moments",
+        "--subgroup",
+        type=str,
+        default="moments",
         help=f"Subgroup whose features to test individually. Choices: {list(SUBGROUPS.keys())}.",
     )
     parser.set_defaults(result_dir=None)

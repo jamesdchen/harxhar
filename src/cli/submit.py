@@ -4,14 +4,16 @@ Shared experiment submission utilities.
 Handles config.txt creation, SLURM env var construction, and sbatch array submission.
 All submission scripts delegate mechanical work here.
 """
-import argparse
+
 import dataclasses
 import os
 import subprocess
 from pathlib import Path
 
 from src.cli.executor import add_feature_args
+from src.log import get_logger
 
+logger = get_logger(__name__)
 
 SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"
 DEFAULT_TASKS_PER_ARRAY = 100
@@ -30,7 +32,7 @@ class ExperimentSpec:
     extra_args: str = ""
 
 
-def write_config(exp_dir, spec):
+def write_config(exp_dir: str, spec: ExperimentSpec) -> None:
     """Write config.txt matching the format parse_config() in eval_utils.py expects."""
     with open(Path(exp_dir) / "config.txt", "w") as f:
         f.write(f"Experiment ID: {spec.exp_id}\n")
@@ -43,7 +45,7 @@ def write_config(exp_dir, spec):
             f.write(f"Extra Args: {spec.extra_args}\n")
 
 
-def short_model_name(model_type):
+def short_model_name(model_type: str) -> str:
     mapping = {
         "xgboost": "xgb",
         "lightgbm": "lgb",
@@ -52,7 +54,7 @@ def short_model_name(model_type):
     return mapping.get(model_type, model_type[:3])
 
 
-def build_job_env(spec, exp_dir, total_chunks):
+def build_job_env(spec: ExperimentSpec, exp_dir: str, total_chunks: int) -> dict[str, str]:
     """Build the env dict that submit_carc.slurm expects."""
     env = os.environ.copy()
     env["TOTAL_CHUNKS"] = str(total_chunks)
@@ -63,8 +65,7 @@ def build_job_env(spec, exp_dir, total_chunks):
     return env
 
 
-def submit_array(job_name, total_chunks, tasks_per_array, job_env,
-                 slurm_script=SUBMISSION_SCRIPT):
+def submit_array(job_name, total_chunks, tasks_per_array, job_env, slurm_script=SUBMISSION_SCRIPT):
     """Submit SLURM array job(s), chunking if tasks_per_array < total_chunks."""
     account = os.environ.get("SLURM_ACCOUNT", DEFAULT_SLURM_ACCOUNT)
     log_dir = os.environ.get("SLURM_LOG_DIR", DEFAULT_SLURM_LOG_DIR)
@@ -76,19 +77,23 @@ def submit_array(job_name, total_chunks, tasks_per_array, job_env,
         task_range = f"{start_task}-{end_task}"
         cmd = [
             "sbatch",
-            "--array", task_range,
-            "--job-name", job_name,
-            "--account", account,
-            "--output", f"{log_dir}/slurm-%A_%a.out",
+            "--array",
+            task_range,
+            "--job-name",
+            job_name,
+            "--account",
+            account,
+            "--output",
+            f"{log_dir}/slurm-%A_%a.out",
             slurm_script,
         ]
         subprocess.run(cmd, env=job_env, check=True)
         start_task = end_task + 1
 
 
-def submit_experiment(spec, base_dir, total_chunks,
-                      tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
-                      slurm_script=SUBMISSION_SCRIPT):
+def submit_experiment(
+    spec, base_dir, total_chunks, tasks_per_array=DEFAULT_TASKS_PER_ARRAY, slurm_script=SUBMISSION_SCRIPT
+):
     """Submit a single experiment: mkdir, write config, sbatch."""
     dir_name = f"exp_{spec.exp_id}_{spec.model_type}_{spec.feature_type}_{spec.exp_name}"
     if spec.model_type == "naive":
@@ -104,10 +109,14 @@ def submit_experiment(spec, base_dir, total_chunks,
 
     n_vars = len(spec.variables)
     extra_tag = f" [{spec.extra_args}]" if spec.extra_args else ""
-    print(
-        f"--- Submitting ID {spec.exp_id}: {spec.model_type.upper()} + "
-        f"{spec.feature_type.upper()} - {spec.exp_name.upper()} "
-        f"({n_vars} vars){extra_tag} ---"
+    logger.info(
+        "Submitting ID %d: %s + %s - %s (%d vars)%s",
+        spec.exp_id,
+        spec.model_type.upper(),
+        spec.feature_type.upper(),
+        spec.exp_name.upper(),
+        n_vars,
+        extra_tag,
     )
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
@@ -115,21 +124,24 @@ def submit_experiment(spec, base_dir, total_chunks,
     return exp_dir
 
 
-def submit_experiment_batch(specs, base_dir, total_chunks,
-                            tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
-                            include_naive=True,
-                            slurm_script=SUBMISSION_SCRIPT):
+def submit_experiment_batch(
+    specs,
+    base_dir,
+    total_chunks,
+    tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
+    include_naive=True,
+    slurm_script=SUBMISSION_SCRIPT,
+):
     """Submit a list of ExperimentSpecs, optionally prepending naive baseline."""
     Path(base_dir).mkdir(parents=True, exist_ok=True)
 
     all_specs = list(specs)
     if include_naive:
-        naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline",
-                               model_type="naive", feature_type="raw")
+        naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="raw")
         all_specs.insert(0, naive)
 
     n_total = len(all_specs)
-    print(f"Submitting {n_total} experiments to {base_dir}...")
+    logger.info("Submitting %d experiments to %s", n_total, base_dir)
 
     for spec in all_specs:
         submit_experiment(spec, base_dir, total_chunks, tasks_per_array, slurm_script)
@@ -137,8 +149,8 @@ def submit_experiment_batch(specs, base_dir, total_chunks,
     # Mark this base_dir as needing aggregation
     (Path(base_dir) / ".needs_aggregation").touch()
 
-    print(f"\nAll {n_total} experiments submitted to {base_dir}.")
-    print("Run 'python scripts/aggregate.py' to aggregate all pending results.")
+    logger.info("All %d experiments submitted to %s.", n_total, base_dir)
+    logger.info("Run 'python scripts/aggregate.py' to aggregate all pending results.")
 
 
 def build_extra_args(feature_type, args):
@@ -151,11 +163,11 @@ def build_extra_args(feature_type, args):
         parts.append(f"--ae-epochs {args.ae_epochs}")
         if args.ae_hidden:
             parts.append(f"--ae-hidden {args.ae_hidden}")
-        if getattr(args, 'ae_weights_path', None):
+        if getattr(args, "ae_weights_path", None):
             parts.append(f"--ae-weights-path {args.ae_weights_path}")
     if args.train_window != 500:
         parts.append(f"--train-window {args.train_window}")
-    horizon = getattr(args, 'horizon', 1)
+    horizon = getattr(args, "horizon", 1)
     if horizon > 1:
         parts.append(f"--horizon {horizon}")
     return " ".join(parts)
@@ -164,20 +176,27 @@ def build_extra_args(feature_type, args):
 def add_common_submit_args(parser):
     """Add CLI arguments shared across all submission scripts."""
     parser.add_argument(
-        "--result-dir", type=str, default=None,
+        "--result-dir",
+        type=str,
+        default=None,
         help="Base output directory for experiment results.",
     )
     parser.add_argument(
-        "--total-chunks", type=int, default=DEFAULT_TOTAL_CHUNKS,
+        "--total-chunks",
+        type=int,
+        default=DEFAULT_TOTAL_CHUNKS,
         help="Total number of dataset chunks to process.",
     )
     add_feature_args(parser)
     parser.add_argument(
-        "--no-naive", action="store_true",
+        "--no-naive",
+        action="store_true",
         help="Skip submitting the naive baseline job.",
     )
     parser.add_argument(
-        "--horizon", type=int, default=1,
+        "--horizon",
+        type=int,
+        default=1,
         help="Final forecast horizon H. Executor runs backtests for h=1..H.",
     )
     return parser

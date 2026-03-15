@@ -4,16 +4,21 @@ Submit full subgroup analysis: models × feature types × subgroups.
 Paper result: Table showing which feature subgroups improve forecasts.
 This is the "run everything" script — use the focused scripts for targeted runs.
 """
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
-from src.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
+
 from src.cli.submit import (
-    ExperimentSpec, add_common_submit_args, build_extra_args,
+    ExperimentSpec,
+    add_common_submit_args,
+    build_extra_args,
     submit_experiment_batch,
 )
+from src.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
 
 
 def resolve_list(arg, full_list):
@@ -35,15 +40,21 @@ def main():
     )
     add_common_submit_args(parser)
     parser.add_argument(
-        "--models", nargs="+", default=ALL_MODELS,
+        "--models",
+        nargs="+",
+        default=ALL_MODELS,
         help=f"Models to run. Use 'all' for: {ALL_MODELS}.",
     )
     parser.add_argument(
-        "--features", nargs="+", default=["raw"],
+        "--features",
+        nargs="+",
+        default=["raw"],
         help=f"Feature types to run. Use 'all' for: {FEATURE_TYPES}.",
     )
     parser.add_argument(
-        "--subgroups", nargs="+", default=["all"],
+        "--subgroups",
+        nargs="+",
+        default=["all"],
         help=f"Subgroups to run. Use 'all' for: {list(SUBGROUPS.keys())}.",
     )
     parser.set_defaults(result_dir="results_subgroup_analysis")
@@ -53,7 +64,6 @@ def main():
     features_to_run = resolve_list(args.features, FEATURE_TYPES)
     subgroups_to_run = resolve_subgroups(args.subgroups)
 
-    total = len(subgroups_to_run) * len(models_to_run) * len(features_to_run)
     print(
         f"Generating experiments for {len(subgroups_to_run)} subgroups "
         f"x {len(models_to_run)} models x {len(features_to_run)} feature types"
@@ -67,14 +77,16 @@ def main():
         extra_args = build_extra_args(feature_type, args)
         for model_type in models_to_run:
             for exp_name, variables in subgroups_to_run.items():
-                specs.append(ExperimentSpec(
-                    exp_id=exp_id,
-                    exp_name=exp_name,
-                    model_type=model_type,
-                    feature_type=feature_type,
-                    variables=variables,
-                    extra_args=extra_args,
-                ))
+                specs.append(
+                    ExperimentSpec(
+                        exp_id=exp_id,
+                        exp_name=exp_name,
+                        model_type=model_type,
+                        feature_type=feature_type,
+                        variables=variables,
+                        extra_args=extra_args,
+                    )
+                )
                 exp_id += 1
 
     submit_experiment_batch(

@@ -1,9 +1,10 @@
 """Loss functions and compiled training kernels for GPU backtesting."""
 
 import torch
-from torch.func import vmap, functional_call, grad
 from torch.amp import autocast
+from torch.func import functional_call, grad, vmap
 from torch.optim.adamw import adamw
+
 from src import config as cfg
 
 
@@ -43,9 +44,10 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
 
     def train_loop(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y):
 
-        for i in range(1, num_epochs + 1):
+        for _i in range(1, num_epochs + 1):
+
             def mean_loss(p):
-                with autocast('cuda'):
+                with autocast("cuda"):
                     losses = batch_loss_fn(p, buffers, X, y)
                     return losses.mean()
 
@@ -82,7 +84,7 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
                     eps=cfg.NORM_EPS,
                     maximize=False,
                     foreach=False,
-                    capturable=True
+                    capturable=True,
                 )
                 params = {k: mutable_params[idx] for idx, k in enumerate(param_keys)}
 
@@ -99,12 +101,11 @@ def make_train_kernel(base_model, param_keys, num_epochs, base_lr):
         h_pred = functional_call(base_model, (params, buffers), args=(x_in,), kwargs={})
         return functional_qlike_loss(h_pred, y)
 
-    batch_loss_fn = vmap(compute_loss_stateless, in_dims=(0, None, 0, 0), randomness='different')
+    batch_loss_fn = vmap(compute_loss_stateless, in_dims=(0, None, 0, 0), randomness="different")
     return _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr)
 
 
-def make_ae_train_kernel(base_model, param_keys, num_epochs, base_lr,
-                         alpha_recon):
+def make_ae_train_kernel(base_model, param_keys, num_epochs, base_lr, alpha_recon):
     """Build a compiled AE training loop using hybrid MSE loss.
 
     Uses: alpha * MSE(recon, x) + (1-alpha) * MSE(pred, y).
@@ -113,12 +114,10 @@ def make_ae_train_kernel(base_model, param_keys, num_epochs, base_lr,
     """
 
     def compute_loss_stateless(params, buffers, x, y):
-        reconstructed, _z, pred_rv = functional_call(
-            base_model, (params, buffers), args=(x,), kwargs={})
+        reconstructed, _z, pred_rv = functional_call(base_model, (params, buffers), args=(x,), kwargs={})
         recon_loss = ((reconstructed - x) ** 2).mean()
         pred_loss = ((pred_rv - y) ** 2).mean()
         return alpha_recon * recon_loss + (1.0 - alpha_recon) * pred_loss
 
-    batch_loss_fn = vmap(compute_loss_stateless, in_dims=(0, None, 0, 0),
-                         randomness='different')
+    batch_loss_fn = vmap(compute_loss_stateless, in_dims=(0, None, 0, 0), randomness="different")
     return _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr)

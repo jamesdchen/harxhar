@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 import os
+
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.decomposition import PCA
+
 from src.models.deep_learning import LagAutoEncoder, train_autoencoder
 
 
@@ -22,10 +27,10 @@ class BaseFeatureTransform:
        subclasses (HARFeatures, RawLagFeatures).
     """
 
-    def fit(self, X, y=None):
+    def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> BaseFeatureTransform:
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray) -> np.ndarray:
         return X
 
 
@@ -33,26 +38,26 @@ class BaseFeatureTransform:
 class LagFeatureBase(BaseFeatureTransform):
     """Shared iteration logic for lag-based feature generators."""
 
-    def __init__(self, lags, target_col='adj_RV'):
+    def __init__(self, lags: list[int], target_col: str = "adj_RV") -> None:
         self.lags = lags
         self.target_col = target_col
 
-    def _compute_lag(self, col_series, lag):
+    def _compute_lag(self, col_series: pd.Series, lag: int) -> pd.Series:
         """Override: apply per-column, per-lag transform on a pandas Series."""
         raise NotImplementedError
 
-    def _compute_lag_np(self, col_array, lag):
+    def _compute_lag_np(self, col_array: np.ndarray, lag: int) -> np.ndarray:
         """Override: apply per-column, per-lag transform on a numpy array."""
         raise NotImplementedError
 
-    def _feature_name(self, col, lag):
+    def _feature_name(self, col: str, lag: int) -> str:
         """Override: return the feature name string for this col/lag pair."""
         raise NotImplementedError
 
-    def generate_pandas(self, df, cols):
+    def generate_pandas(self, df: pd.DataFrame, cols: list[str]) -> tuple[dict[str, pd.Series], list[str]]:
         """Pandas-level feature builder: iterate cols x lags, return (feature_dict, feature_names)."""
-        feature_dict = {}
-        feature_names = []
+        feature_dict: dict[str, pd.Series] = {}
+        feature_names: list[str] = []
         for col in cols:
             for lag in self.lags:
                 name = self._feature_name(col, lag)
@@ -60,10 +65,10 @@ class LagFeatureBase(BaseFeatureTransform):
                 feature_names.append(name)
         return feature_dict, feature_names
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray) -> np.ndarray:
         """Numpy-level transform: iterate columns x lags, stack results."""
         n_samples, n_cols = X.shape
-        result_cols = []
+        result_cols: list[np.ndarray] = []
         for col_idx in range(n_cols):
             for lag in self.lags:
                 result_cols.append(self._compute_lag_np(X[:, col_idx], lag))
@@ -74,10 +79,10 @@ class LagFeatureBase(BaseFeatureTransform):
 class HARFeatures(LagFeatureBase):
     """Rolling-mean HAR lag features."""
 
-    def _compute_lag(self, col_series, lag):
+    def _compute_lag(self, col_series: pd.Series, lag: int) -> pd.Series:
         return col_series.rolling(window=lag, min_periods=1).mean().shift(1)
 
-    def _compute_lag_np(self, col_array, lag):
+    def _compute_lag_np(self, col_array: np.ndarray, lag: int) -> np.ndarray:
         n = len(col_array)
         cumsum = np.cumsum(col_array, dtype=np.float64)
         rolling_mean = np.empty(n)
@@ -86,14 +91,14 @@ class HARFeatures(LagFeatureBase):
             rolling_mean[i] = cumsum[i]
             if window_start > 0:
                 rolling_mean[i] -= cumsum[window_start - 1]
-            rolling_mean[i] /= (i - window_start + 1)
+            rolling_mean[i] /= i - window_start + 1
         # shift by 1
         result = np.empty(n)
         result[0] = np.nan
         result[1:] = rolling_mean[:-1]
         return result
 
-    def _feature_name(self, col, lag):
+    def _feature_name(self, col: str, lag: int) -> str:
         if col == self.target_col:
             return f"har_ma_{lag}"
         return f"{col}_ma_{lag}"
@@ -103,16 +108,16 @@ class HARFeatures(LagFeatureBase):
 class RawLagFeatures(LagFeatureBase):
     """Individual point-shift lag features."""
 
-    def _compute_lag(self, col_series, lag):
+    def _compute_lag(self, col_series: pd.Series, lag: int) -> pd.Series:
         return col_series.shift(lag)
 
-    def _compute_lag_np(self, col_array, lag):
+    def _compute_lag_np(self, col_array: np.ndarray, lag: int) -> np.ndarray:
         result = np.empty_like(col_array, dtype=float)
         result[:lag] = np.nan
         result[lag:] = col_array[:-lag] if lag > 0 else col_array
         return result
 
-    def _feature_name(self, col, lag):
+    def _feature_name(self, col: str, lag: int) -> str:
         return f"{col}_lag_{lag}"
 
 
@@ -120,14 +125,14 @@ class RawLagFeatures(LagFeatureBase):
 class PCATransform(BaseFeatureTransform):
     """Sklearn-like PCA wrapper for use as a rolling feature transform."""
 
-    def __init__(self, n_components):
+    def __init__(self, n_components: int) -> None:
         self.pca = PCA(n_components=n_components)
 
-    def fit(self, X, y=None):
+    def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> PCATransform:
         self.pca.fit(X)
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray) -> np.ndarray:
         return self.pca.transform(X)
 
 
@@ -135,8 +140,17 @@ class PCATransform(BaseFeatureTransform):
 class AETransform(BaseFeatureTransform):
     """Autoencoder feature transform with reconstruction + prediction loss."""
 
-    def __init__(self, n_features, n_components, alpha=0.5, hidden_dim=None,
-                 epochs=50, lr=1e-3, ae_loss_path=None, ae_weights_dir=None):
+    def __init__(
+        self,
+        n_features: int,
+        n_components: int,
+        alpha: float = 0.5,
+        hidden_dim: int | None = None,
+        epochs: int = 50,
+        lr: float = 1e-3,
+        ae_loss_path: str | None = None,
+        ae_weights_dir: str | None = None,
+    ) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.ae = LagAutoEncoder(n_features, n_components, hidden_dim).to(self.device)
         self.alpha = alpha
@@ -144,18 +158,23 @@ class AETransform(BaseFeatureTransform):
         self.lr = lr
         self.ae_loss_path = ae_loss_path
         self.ae_weights_dir = ae_weights_dir
-        self._loss_log = []
+        self._loss_log: list[dict[str, float]] = []
         self._refit_count = 0
         self.frozen = False
 
-    def fit(self, X, y=None):
+    def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> AETransform:
         if self.frozen:
             return self
         y_flat = y.ravel() if y is not None else np.zeros(X.shape[0])
         train_autoencoder(
-            self.ae, X, y_flat,
-            alpha=self.alpha, epochs=self.epochs, lr=self.lr,
-            device=self.device, loss_log=self._loss_log,
+            self.ae,
+            X,
+            y_flat,
+            alpha=self.alpha,
+            epochs=self.epochs,
+            lr=self.lr,
+            device=self.device,
+            loss_log=self._loss_log,
         )
         if self.ae_loss_path is not None:
             self._flush_loss_log()
@@ -163,7 +182,7 @@ class AETransform(BaseFeatureTransform):
             self._save_weights()
         return self
 
-    def load_weights(self, path):
+    def load_weights(self, path: str) -> AETransform:
         """Load pre-trained AE weights and freeze (skip future fit calls)."""
         state_dict = torch.load(path, map_location=self.device, weights_only=True)
         self.ae.load_state_dict(state_dict)
@@ -171,11 +190,11 @@ class AETransform(BaseFeatureTransform):
         self.frozen = True
         return self
 
-    def transform(self, X):
+    def transform(self, X: np.ndarray) -> np.ndarray:
         X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
         return self.ae.encode(X_t).cpu().numpy()
 
-    def _flush_loss_log(self):
+    def _flush_loss_log(self) -> None:
         import csv
 
         if not self._loss_log:
@@ -188,9 +207,8 @@ class AETransform(BaseFeatureTransform):
             writer.writerows(self._loss_log)
         self._loss_log.clear()
 
-    def _save_weights(self):
+    def _save_weights(self) -> None:
         os.makedirs(self.ae_weights_dir, exist_ok=True)
-        path = os.path.join(self.ae_weights_dir,
-                            f'ae_weights_{self._refit_count:04d}.pt')
+        path = os.path.join(self.ae_weights_dir, f"ae_weights_{self._refit_count:04d}.pt")
         torch.save(self.ae.state_dict(), path)
         self._refit_count += 1

@@ -3,16 +3,21 @@ Submit feature transform comparison: raw vs HAR vs PCA vs AE.
 
 Paper result: Table comparing feature transformation methods.
 """
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
-from src.feature_groups import FEATURE_TYPES, SUBGROUPS
+
 from src.cli.submit import (
-    ExperimentSpec, add_common_submit_args, build_extra_args,
+    ExperimentSpec,
+    add_common_submit_args,
+    build_extra_args,
     submit_experiment_batch,
 )
+from src.feature_groups import FEATURE_TYPES, SUBGROUPS
 
 
 def main():
@@ -22,15 +27,21 @@ def main():
     )
     add_common_submit_args(parser)
     parser.add_argument(
-        "--model", type=str, default="ridge",
+        "--model",
+        type=str,
+        default="ridge",
         help="Model to use for the comparison.",
     )
     parser.add_argument(
-        "--subgroup", type=str, default="all_features",
+        "--subgroup",
+        type=str,
+        default="all_features",
         help=f"Feature subgroup to use. Choices: {list(SUBGROUPS.keys())}.",
     )
     parser.add_argument(
-        "--features", nargs="+", default=FEATURE_TYPES,
+        "--features",
+        nargs="+",
+        default=FEATURE_TYPES,
         help=f"Feature types to compare. Default: {FEATURE_TYPES}.",
     )
     parser.set_defaults(result_dir="results_feature_transforms")
@@ -41,14 +52,16 @@ def main():
     specs = []
     for i, feature_type in enumerate(args.features):
         extra_args = build_extra_args(feature_type, args)
-        specs.append(ExperimentSpec(
-            exp_id=i + 1,
-            exp_name=f"{args.subgroup}_{feature_type}",
-            model_type=args.model,
-            feature_type=feature_type,
-            variables=variables,
-            extra_args=extra_args,
-        ))
+        specs.append(
+            ExperimentSpec(
+                exp_id=i + 1,
+                exp_name=f"{args.subgroup}_{feature_type}",
+                model_type=args.model,
+                feature_type=feature_type,
+                variables=variables,
+                extra_args=extra_args,
+            )
+        )
 
     submit_experiment_batch(
         specs=specs,
