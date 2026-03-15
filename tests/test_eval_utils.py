@@ -2,32 +2,32 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from src.evaluation.aggregation import load_all_chunks, parse_config, filter_by_time
-
+from src.evaluation.aggregation import filter_by_time, load_all_chunks, parse_config
 
 # ---------------------------------------------------------------------------
 # Helper to write a simple chunk CSV
 # ---------------------------------------------------------------------------
 
-def _write_chunk(path, n=5, start_date='2020-01-01'):
-    dates = pd.date_range(start_date, periods=n, freq='h')
-    df = pd.DataFrame({
-        'date': dates,
-        'true_adj': np.random.rand(n),
-        'pred_adj': np.random.rand(n),
-        'true_raw': np.random.rand(n) + 0.1,
-        'pred_raw': np.random.rand(n) + 0.1,
-    })
+
+def _write_chunk(path, n=5, start_date="2020-01-01"):
+    dates = pd.date_range(start_date, periods=n, freq="h")
+    df = pd.DataFrame(
+        {
+            "date": dates,
+            "true_adj": np.random.rand(n),
+            "pred_adj": np.random.rand(n),
+            "true_raw": np.random.rand(n) + 0.1,
+            "pred_raw": np.random.rand(n) + 0.1,
+        }
+    )
     df.to_csv(path, index=False)
 
 
 class TestLoadAllChunks:
     def test_stitches_multiple_csvs(self, tmp_path):
         for i in range(3):
-            _write_chunk(tmp_path / f"results_chunk_{i}.csv", n=5,
-                         start_date=f'2020-01-0{i+1}')
+            _write_chunk(tmp_path / f"results_chunk_{i}.csv", n=5, start_date=f"2020-01-0{i + 1}")
         df, cb_drop = load_all_chunks(str(tmp_path))
         assert len(df) == 15
         assert cb_drop is False
@@ -41,13 +41,13 @@ class TestLoadAllChunks:
     def test_ignore_suffixes(self, tmp_path):
         _write_chunk(tmp_path / "results_chunk_0_morning.csv", n=3)
         _write_chunk(tmp_path / "results_chunk_0_closing.csv", n=4)
-        df, _ = load_all_chunks(str(tmp_path), ignore_suffixes=['morning'])
+        df, _ = load_all_chunks(str(tmp_path), ignore_suffixes=["morning"])
         assert len(df) == 4
 
     def test_require_suffixes(self, tmp_path):
         _write_chunk(tmp_path / "results_chunk_0_morning.csv", n=3)
         _write_chunk(tmp_path / "results_chunk_0_closing.csv", n=4)
-        df, _ = load_all_chunks(str(tmp_path), require_suffixes=['morning'])
+        df, _ = load_all_chunks(str(tmp_path), require_suffixes=["morning"])
         assert len(df) == 3
 
     def test_cb_drop_flag_all_tagged(self, tmp_path):
@@ -66,11 +66,7 @@ class TestLoadAllChunks:
 class TestParseConfig:
     def test_parses_all_fields(self, tmp_path):
         config_file = tmp_path / "config.txt"
-        config_file.write_text(
-            "Experiment Name: test_exp\n"
-            "Experiment ID: 42\n"
-            "Model Type: ridge\n"
-        )
+        config_file.write_text("Experiment Name: test_exp\nExperiment ID: 42\nModel Type: ridge\n")
         exp_id, name, model = parse_config(str(tmp_path))
         assert exp_id == 42
         assert name == "test_exp"
@@ -87,8 +83,8 @@ class TestParseConfig:
 
 class TestFilterByTime:
     def test_filters_to_time_window(self):
-        dates = pd.date_range('2020-01-01', periods=24, freq='h')
-        df = pd.DataFrame({'val': range(24)}, index=dates)
+        dates = pd.date_range("2020-01-01", periods=24, freq="h")
+        df = pd.DataFrame({"val": range(24)}, index=dates)
         result = filter_by_time(df, start_time="09:00:00", end_time="12:00:00")
         # inclusive='left' → hours 9, 10, 11 (12:00 excluded)
         assert len(result) == 3

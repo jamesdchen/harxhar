@@ -2,13 +2,14 @@
 
 import importlib
 import math
+from datetime import datetime
+
+import numpy as np
 import torch
 import torch.multiprocessing as mp
-import numpy as np
-import pandas as pd
-from datetime import datetime
-from src.backtest.engine import save_chunk_results, _build_results_dataframe, _extract_subset
+
 from src import config as cfg
+from src.backtest.engine import _build_results_dataframe, _extract_subset, save_chunk_results
 
 
 def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False):
@@ -37,16 +38,16 @@ def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False)
 
 
 def log_to_file(message):
-    timestamp = datetime.now().strftime('%H:%M:%S')
-    with open(cfg.GPU_WORKER_LOG, 'a') as f:
-        f.write(f'{timestamp} - {message}\n')
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    with open(cfg.GPU_WORKER_LOG, "a") as f:
+        f.write(f"{timestamp} - {message}\n")
 
 
 def setup_device(gpu_id):
     """Create CUDA device and configure precision settings."""
-    device = torch.device(f'cuda:{gpu_id}')
+    device = torch.device(f"cuda:{gpu_id}")
     torch.cuda.set_device(device)
-    torch.set_float32_matmul_precision('high')
+    torch.set_float32_matmul_precision("high")
     return device
 
 
@@ -99,7 +100,7 @@ def init_params(params_store, curr_bs, max_batch_size):
     Re-initialize parameters with fan-in uniform for weights, zero for biases.
     Returns current_params (sliced if curr_bs < max_batch_size).
     """
-    for name, p_tensor in params_store.items():
+    for _name, p_tensor in params_store.items():
         fan_in = p_tensor.shape[-1] if len(p_tensor.shape) > 2 else 1
         bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0.01
 
@@ -125,11 +126,9 @@ def init_adam_state(current_params, device):
     return exp_avgs, exp_avg_sqs, step_tensors
 
 
-def run_kernel_and_detach(kernel, params, buffers, exp_avgs, exp_avg_sqs,
-                          step_tensors, X, y):
+def run_kernel_and_detach(kernel, params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y):
     """Run compiled training kernel and detach the resulting parameters."""
-    final_params = kernel(params, buffers, exp_avgs, exp_avg_sqs,
-                          step_tensors, X, y)
+    final_params = kernel(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y)
     return {k: v.detach().requires_grad_(True) for k, v in final_params.items()}
 
 
@@ -142,21 +141,19 @@ def aggregate_predictions(results_nested, num_windows):
         Shape (num_windows,) for single-horizon or (num_windows, H) for multi-horizon.
     """
     flat_results = [item for sublist in results_nested for item in sublist]
-    flat_results.sort(key=lambda x: x['chunk_index'])
-    preds = torch.cat([r['predictions'] for r in flat_results]).numpy()
+    flat_results.sort(key=lambda x: x["chunk_index"])
+    preds = torch.cat([r["predictions"] for r in flat_results]).numpy()
 
     # Multi-horizon: preds may be (N, H) — check first dim
     n_rows = preds.shape[0] if preds.ndim == 1 else preds.shape[0]
     if n_rows != num_windows:
-        print(f'Warning: Prediction shape mismatch. '
-              f'Expected {num_windows}, got {n_rows}.')
+        print(f"Warning: Prediction shape mismatch. Expected {num_windows}, got {n_rows}.")
         preds = preds[:num_windows]
 
     return preds
 
 
-def build_results_df(preds, test_indices, y_np, dates, baselines,
-                     output_file=None):
+def build_results_df(preds, test_indices, y_np, dates, baselines, output_file=None):
     """
     Apply Duan's smearing, optionally save, and return results DataFrame(s).
 
@@ -174,12 +171,13 @@ def build_results_df(preds, test_indices, y_np, dates, baselines,
             valid = h_target_indices < len(y_np)
             h_indices = h_indices[valid]
             h_target_indices = h_target_indices[valid]
-            h_preds = preds[:len(h_indices), h]
+            h_preds = preds[: len(h_indices), h]
 
             if output_file is not None:
                 import os
+
                 base, ext = os.path.splitext(output_file)
-                h_file = f"{base}_h{h+1}{ext}"
+                h_file = f"{base}_h{h + 1}{ext}"
                 save_chunk_results(
                     output_file=h_file,
                     forecasts=h_preds,
@@ -194,8 +192,7 @@ def build_results_df(preds, test_indices, y_np, dates, baselines,
             dates_subset = _extract_subset(dates, h_indices)
             y_subset = y_np[h_target_indices]
             base_subset = baselines[h_target_indices]
-            results[h + 1] = _build_results_dataframe(
-                h_preds, y_subset, dates_subset, base_subset, horizon=h + 1)
+            results[h + 1] = _build_results_dataframe(h_preds, y_subset, dates_subset, base_subset, horizon=h + 1)
 
         return results
 
@@ -217,8 +214,7 @@ def build_results_df(preds, test_indices, y_np, dates, baselines,
     return _build_results_dataframe(preds, y_subset, dates_subset, base_subset)
 
 
-def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows,
-                       chunk_size):
+def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows, chunk_size):
     """
     Distribute chunks across GPUs and run workers via multiprocessing.
 
@@ -240,17 +236,15 @@ def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows,
     chunk_indices = list(range(num_chunks))
     chunks_per_gpu = [chunk_indices[i::gpu_count] for i in range(gpu_count)]
 
-    ctx = mp.get_context('spawn')
+    ctx = mp.get_context("spawn")
     with ctx.Pool(processes=gpu_count) as pool:
-        args = [worker_args_fn(gpu_id, chunks_per_gpu[gpu_id])
-                for gpu_id in range(gpu_count)]
+        args = [worker_args_fn(gpu_id, chunks_per_gpu[gpu_id]) for gpu_id in range(gpu_count)]
         results_nested = pool.starmap(worker_fn, args)
 
     return results_nested
 
 
-def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X,
-               chunk_size, total_windows, setup_fn, chunk_fn):
+def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X, chunk_size, total_windows, setup_fn, chunk_fn):
     """
     Generic per-GPU worker loop.
 
@@ -281,8 +275,7 @@ def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X,
                 continue
 
             current_params = init_params(params_store, curr_bs, chunk_size)
-            preds = chunk_fn(ctx, current_params, X_chunk, y_chunk,
-                             X_test_chunk, curr_bs, idx)
+            preds = chunk_fn(ctx, current_params, X_chunk, y_chunk, X_test_chunk, curr_bs, idx)
 
             # Flatten per-window predictions, preserving horizon dim if present
             if preds.dim() > 1:
@@ -291,24 +284,36 @@ def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X,
             else:
                 preds_cpu = preds.view(-1).cpu()
 
-            results.append({
-                'chunk_index': idx,
-                'predictions': preds_cpu,
-            })
+            results.append(
+                {
+                    "chunk_index": idx,
+                    "predictions": preds_cpu,
+                }
+            )
             if i % 10 == 0:
-                log_to_file(f'Worker {gpu_id}: Chunk {idx} done')
+                log_to_file(f"Worker {gpu_id}: Chunk {idx} done")
 
         return results
 
     except Exception as e:
         import traceback
-        log_to_file(f'Worker {gpu_id} CRASHED:\n{traceback.format_exc()}')
+
+        log_to_file(f"Worker {gpu_id} CRASHED:\n{traceback.format_exc()}")
         raise e
 
 
-def run_backtest(X_np, y_np, dates, baselines, config, worker_fn,
-                 make_windows_fn, make_worker_args_fn, label='GPU Backtest',
-                 default_output='results.csv'):
+def run_backtest(
+    X_np,
+    y_np,
+    dates,
+    baselines,
+    config,
+    worker_fn,
+    make_windows_fn,
+    make_worker_args_fn,
+    label="GPU Backtest",
+    default_output="results.csv",
+):
     """
     Generic GPU-parallel backtest orchestrator.
 
@@ -320,36 +325,33 @@ def run_backtest(X_np, y_np, dates, baselines, config, worker_fn,
         all_train_y, all_test_X, chunk_size, num_windows) -> tuple
         Build the positional args tuple for worker_fn.
     """
-    gpu_count = config['gpu_count']
-    chunk_size = config['train']['batch_size']
+    gpu_count = config["gpu_count"]
+    chunk_size = config["train"]["batch_size"]
 
-    print(f'Starting {label} on {gpu_count} GPUs')
+    print(f"Starting {label} on {gpu_count} GPUs")
 
     X_tensor = torch.tensor(X_np, dtype=torch.float32).pin_memory()
     y_tensor = torch.tensor(y_np, dtype=torch.float32).pin_memory()
 
-    all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(
-        X_tensor, y_tensor, config)
+    all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(X_tensor, y_tensor, config)
 
-    print(f'Windows: {num_windows}')
-    print(f'Train X Shape: {all_train_X.shape}')
-    print(f'Test X Shape:  {all_test_X.shape}')
+    print(f"Windows: {num_windows}")
+    print(f"Train X Shape: {all_train_X.shape}")
+    print(f"Test X Shape:  {all_test_X.shape}")
 
     def worker_args(gpu_id, chunks):
-        return make_worker_args_fn(gpu_id, chunks, config, all_train_X,
-                                   all_train_y, all_test_X, chunk_size,
-                                   num_windows)
+        return make_worker_args_fn(
+            gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows
+        )
 
-    results_nested = distribute_and_run(
-        worker_fn, worker_args, gpu_count, num_windows, chunk_size)
+    results_nested = distribute_and_run(worker_fn, worker_args, gpu_count, num_windows, chunk_size)
 
-    print('Workers finished. Aggregating results...')
+    print("Workers finished. Aggregating results...")
     preds = aggregate_predictions(results_nested, num_windows)
 
-    train_window = config['train_window']
+    train_window = config["train_window"]
     test_indices = np.arange(train_window, train_window + num_windows)
-    output_file = config.get('output_path', default_output)
-    print(f'Saving {len(test_indices)} results to {output_file}...')
+    output_file = config.get("output_path", default_output)
+    print(f"Saving {len(test_indices)} results to {output_file}...")
 
-    return build_results_df(preds, test_indices, y_np, dates, baselines,
-                            output_file=output_file)
+    return build_results_df(preds, test_indices, y_np, dates, baselines, output_file=output_file)

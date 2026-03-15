@@ -1,7 +1,9 @@
 import os
+
 import numpy as np
 import torch
 from sklearn.decomposition import PCA
+
 from src.models.deep_learning import LagAutoEncoder, train_autoencoder
 
 
@@ -33,7 +35,7 @@ class BaseFeatureTransform:
 class LagFeatureBase(BaseFeatureTransform):
     """Shared iteration logic for lag-based feature generators."""
 
-    def __init__(self, lags, target_col='adj_RV'):
+    def __init__(self, lags, target_col="adj_RV"):
         self.lags = lags
         self.target_col = target_col
 
@@ -86,7 +88,7 @@ class HARFeatures(LagFeatureBase):
             rolling_mean[i] = cumsum[i]
             if window_start > 0:
                 rolling_mean[i] -= cumsum[window_start - 1]
-            rolling_mean[i] /= (i - window_start + 1)
+            rolling_mean[i] /= i - window_start + 1
         # shift by 1
         result = np.empty(n)
         result[0] = np.nan
@@ -135,8 +137,17 @@ class PCATransform(BaseFeatureTransform):
 class AETransform(BaseFeatureTransform):
     """Autoencoder feature transform with reconstruction + prediction loss."""
 
-    def __init__(self, n_features, n_components, alpha=0.5, hidden_dim=None,
-                 epochs=50, lr=1e-3, ae_loss_path=None, ae_weights_dir=None):
+    def __init__(
+        self,
+        n_features,
+        n_components,
+        alpha=0.5,
+        hidden_dim=None,
+        epochs=50,
+        lr=1e-3,
+        ae_loss_path=None,
+        ae_weights_dir=None,
+    ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.ae = LagAutoEncoder(n_features, n_components, hidden_dim).to(self.device)
         self.alpha = alpha
@@ -153,9 +164,14 @@ class AETransform(BaseFeatureTransform):
             return self
         y_flat = y.ravel() if y is not None else np.zeros(X.shape[0])
         train_autoencoder(
-            self.ae, X, y_flat,
-            alpha=self.alpha, epochs=self.epochs, lr=self.lr,
-            device=self.device, loss_log=self._loss_log,
+            self.ae,
+            X,
+            y_flat,
+            alpha=self.alpha,
+            epochs=self.epochs,
+            lr=self.lr,
+            device=self.device,
+            loss_log=self._loss_log,
         )
         if self.ae_loss_path is not None:
             self._flush_loss_log()
@@ -190,7 +206,6 @@ class AETransform(BaseFeatureTransform):
 
     def _save_weights(self):
         os.makedirs(self.ae_weights_dir, exist_ok=True)
-        path = os.path.join(self.ae_weights_dir,
-                            f'ae_weights_{self._refit_count:04d}.pt')
+        path = os.path.join(self.ae_weights_dir, f"ae_weights_{self._refit_count:04d}.pt")
         torch.save(self.ae.state_dict(), path)
         self._refit_count += 1

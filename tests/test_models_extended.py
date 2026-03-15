@@ -3,18 +3,18 @@
 import numpy as np
 import pytest
 
-from src.models import create_model, LightGBMModel, RandomForestModel, XGBoostModel
 from src.features import PCATransform
+from src.models import LightGBMModel, RandomForestModel, create_model
 
 
 class TestModelFactoryExtended:
     def test_create_lightgbm(self):
-        m = create_model('lightgbm', train_win_periods=100, n_features=5)
+        m = create_model("lightgbm", train_win_periods=100, n_features=5)
         assert isinstance(m, LightGBMModel)
         assert m.use_scaling is False
 
     def test_create_random_forest(self):
-        m = create_model('random_forest', train_win_periods=100, n_features=5)
+        m = create_model("random_forest", train_win_periods=100, n_features=5)
         assert isinstance(m, RandomForestModel)
         assert m.use_scaling is False
 
@@ -30,7 +30,7 @@ class TestModelPredictUpdateCycles:
 
     def test_xgboost_predict_update_cycle(self, train_data):
         X_init, y_init, x_t, n_feat, win = train_data
-        m = create_model('xgboost', train_win_periods=win, n_features=n_feat)
+        m = create_model("xgboost", train_win_periods=win, n_features=n_feat)
         m.initialize(X_init, y_init)
         pred = m.predict(x_t)
         assert np.isfinite(pred)
@@ -40,7 +40,7 @@ class TestModelPredictUpdateCycles:
 
     def test_lightgbm_predict_update_cycle(self, train_data):
         X_init, y_init, x_t, n_feat, win = train_data
-        m = create_model('lightgbm', train_win_periods=win, n_features=n_feat)
+        m = create_model("lightgbm", train_win_periods=win, n_features=n_feat)
         m.initialize(X_init, y_init)
         pred = m.predict(x_t)
         assert np.isfinite(pred)
@@ -50,7 +50,7 @@ class TestModelPredictUpdateCycles:
 
     def test_random_forest_predict_update_cycle(self, train_data):
         X_init, y_init, x_t, n_feat, win = train_data
-        m = create_model('random_forest', train_win_periods=win, n_features=n_feat)
+        m = create_model("random_forest", train_win_periods=win, n_features=n_feat)
         m.initialize(X_init, y_init)
         pred = m.predict(x_t)
         assert np.isfinite(pred)
@@ -64,8 +64,7 @@ class TestModelWithPCATransform:
         rng = np.random.RandomState(42)
         n_feat, win = 5, 50
         ft = PCATransform(n_components=2)
-        m = create_model('ridge', train_win_periods=win, n_features=n_feat,
-                         feature_transform=ft, alpha=1.0)
+        m = create_model("ridge", train_win_periods=win, n_features=n_feat, feature_transform=ft, alpha=1.0)
         X_init = rng.randn(win, n_feat)
         y_init = rng.randn(win)
         m.initialize(X_init, y_init)
@@ -81,8 +80,7 @@ class TestModelWithPCATransform:
         rng = np.random.RandomState(42)
         n_feat, win = 5, 50
         ft = PCATransform(n_components=2)
-        m = create_model('ridge', train_win_periods=win, n_features=n_feat,
-                         feature_transform=ft, alpha=1.0)
+        m = create_model("ridge", train_win_periods=win, n_features=n_feat, feature_transform=ft, alpha=1.0)
         m.initialize(rng.randn(win, n_feat), rng.randn(win))
         coefs = m.get_coefs()
         assert coefs is not None
