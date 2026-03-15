@@ -19,7 +19,7 @@ import pytest
 
 class TestRollingBuffer:
     def test_add_wraps_correctly(self):
-        from src.rolling import RollingBuffer
+        from src.data.rolling import RollingBuffer
         buf = RollingBuffer(window_size=3, n_features=2, n_targets=1)
         # Fill buffer past capacity
         for i in range(5):
@@ -33,7 +33,7 @@ class TestRollingBuffer:
         assert buf.ptr == 2
 
     def test_get_ordered_view_chronological(self):
-        from src.rolling import RollingBuffer
+        from src.data.rolling import RollingBuffer
         buf = RollingBuffer(window_size=3, n_features=1, n_targets=1)
         for i in range(5):
             buf.add(np.array([float(i)]), float(i * 10))
@@ -44,7 +44,7 @@ class TestRollingBuffer:
 
     def test_get_ordered_view_no_wrap(self):
         """When ptr=0 (just filled or never wrapped), ordered = raw."""
-        from src.rolling import RollingBuffer
+        from src.data.rolling import RollingBuffer
         buf = RollingBuffer(window_size=3, n_features=1, n_targets=1)
         for i in range(3):
             buf.add(np.array([float(i)]), float(i))
@@ -56,7 +56,7 @@ class TestRollingBuffer:
 
 class TestRollingRobustScaler:
     def test_median_iqr_known_values(self):
-        from src.rolling import RollingRobustScaler
+        from src.data.rolling import RollingRobustScaler
         scaler = RollingRobustScaler(window_size=5, n_features=1)
         data = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
         scaler.initialize(data)
@@ -65,7 +65,7 @@ class TestRollingRobustScaler:
         assert iqr[0] > 0
 
     def test_update_maintains_sorted_invariant(self):
-        from src.rolling import RollingRobustScaler
+        from src.data.rolling import RollingRobustScaler
         scaler = RollingRobustScaler(window_size=4, n_features=1)
         data = np.array([[1.0], [3.0], [5.0], [7.0]])
         scaler.initialize(data)
@@ -78,7 +78,7 @@ class TestRollingRobustScaler:
 
     def test_scaler_matches_numpy(self):
         """Scaler stats should match numpy after several updates."""
-        from src.rolling import RollingRobustScaler
+        from src.data.rolling import RollingRobustScaler
         rng = np.random.RandomState(42)
         window = 20
         n_feat = 3
@@ -460,7 +460,7 @@ class TestEndToEnd:
     def test_hparams_wiring(self):
         """Verify get_common_hparams sets all keys consumed by load_and_clean_base_data."""
         import argparse
-        from src.executor import get_common_hparams
+        from src.cli.executor import get_common_hparams
 
         required_keys = ['is_tree', 'use_transform_exog', 'use_diurnal',
                          'use_winsor', 'allow_missing', 'exog_cols', 'feature_type']

@@ -3,8 +3,8 @@
 import os
 import torch
 from torch.func import vmap, functional_call
-from src.gpu_kernels import make_ae_train_kernel
-from src.gpu_utils import (
+from src.backtest.gpu_kernels import make_ae_train_kernel
+from src.backtest.gpu_utils import (
     log_to_file, load_model, allocate_params,
     init_adam_state, run_kernel_and_detach,
     normalize_chunks, run_worker, run_backtest,
@@ -18,7 +18,7 @@ def ae_gpu_worker(gpu_id, chunk_indices, model_config, train_config,
 
     def setup_fn(device):
         base_model_train, base_model_eval, buffers, param_keys = load_model(
-            'src.dl_models', 'get_ae_model', model_config, device)
+            'src.models.deep_learning', 'get_ae_model', model_config, device)
 
         alpha_recon = model_config['alpha_recon']
         n_components = model_config['n_components']
