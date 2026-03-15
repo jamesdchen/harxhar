@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +11,11 @@ from src.log import get_logger
 logger = get_logger(__name__)
 
 
-def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
+def load_all_chunks(
+    exp_dir: str | Path,
+    ignore_suffixes: list[str] | None = None,
+    require_suffixes: list[str] | None = None,
+) -> tuple[pd.DataFrame, bool]:
     """
     Stitches chunk CSVs into a DataFrame with flexible filtering.
 
@@ -64,7 +70,7 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     return pd.concat(dfs).sort_index(), cb_drop
 
 
-def parse_config(exp_dir):
+def parse_config(exp_dir: str | Path) -> tuple[int, str, str]:
     """Parses the config.txt file to extract the experiment name, ID, and model type."""
     config_path = Path(exp_dir) / "config.txt"
     exp_name = "Unknown"
@@ -93,7 +99,7 @@ def parse_config(exp_dir):
     return exp_id, exp_name, model_type
 
 
-def filter_by_time(df, start_time=None, end_time=None):
+def filter_by_time(df: pd.DataFrame, start_time: str | None = None, end_time: str | None = None) -> pd.DataFrame:
     """Slices the DataFrame to the specified time-of-day window."""
     if df.empty or (start_time is None and end_time is None):
         return df
@@ -112,7 +118,9 @@ def filter_by_time(df, start_time=None, end_time=None):
         return df
 
 
-def process_single_experiment(exp_dir, metadata, segment_configs):
+def process_single_experiment(
+    exp_dir: str | Path, metadata: dict[str, object], segment_configs: list[dict]
+) -> list[dict]:
     """Agnostically loads data, applies optional time boundaries, and calculates metrics.
 
     Supports multi-horizon results: if loaded data contains a 'horizon' column,
