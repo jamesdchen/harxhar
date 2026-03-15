@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # --- PIPELINE CONFIGURATION ---
 DIURNAL_WINDOW = 20
 DIURNAL_MIN_PERIODS = 5
@@ -69,6 +71,38 @@ def check_backtest_inputs(X, y, indices) -> None:
         raise ValueError("indices array is empty")
     if indices[-1] >= X.shape[0]:
         raise ValueError(f"indices out of bounds: max index {indices[-1]} >= X length {X.shape[0]}")
+
+
+def check_sorted_index(index) -> None:
+    """Raise ValueError if a pandas Index is not monotonically increasing."""
+    if not index.is_monotonic_increasing:
+        offender = (index.to_series().diff() < 0).argmax()
+        raise ValueError(
+            f"Index must be sorted — first offender at position {offender}"
+        )
+
+
+def check_finite(arr, name: str) -> None:
+    """Raise ValueError if *arr* contains NaN or Inf."""
+    import numpy as _np
+    if not _np.all(_np.isfinite(arr)):
+        n_bad = int(_np.sum(~_np.isfinite(arr)))
+        raise ValueError(f"{name} contains {n_bad} non-finite values (NaN/Inf)")
+
+
+def find_naive_lag(feature_names: list[str]) -> int:
+    """Return the index of the naive-baseline lag feature.
+
+    Searches for a feature containing 'lag_125' or exactly equal to
+    'har_ma_125'.  Raises ValueError with a clear message if not found.
+    """
+    for i, f in enumerate(feature_names):
+        if 'lag_125' in f or f == 'har_ma_125':
+            return i
+    raise ValueError(
+        "Naive model requires a feature matching 'lag_125' or 'har_ma_125', "
+        f"but none found in {feature_names[:10]}{'...' if len(feature_names) > 10 else ''}"
+    )
 
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {
