@@ -79,7 +79,7 @@ class HARFeatures(LagFeatureBase):
 
     def _compute_lag_np(self, col_array, lag):
         n = len(col_array)
-        cumsum = np.cumsum(col_array)
+        cumsum = np.cumsum(col_array, dtype=np.float64)
         rolling_mean = np.empty(n)
         for i in range(n):
             window_start = max(0, i - lag + 1)

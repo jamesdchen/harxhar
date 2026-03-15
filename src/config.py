@@ -23,6 +23,9 @@ GRAD_CLIP_BOUND = 5.0
 QLIKE_CLAMP_MIN = -30.0
 QLIKE_CLAMP_MAX = 30.0
 
+# Circuit breaker dates (market-wide trading halts)
+CIRCUIT_BREAKER_DATES = ['2020-03-09', '2020-03-12', '2020-03-16', '2020-03-18']
+
 # Winsorization quantiles
 WINSOR_LOWER_Q = 0.05
 WINSOR_UPPER_Q = 0.95
@@ -54,6 +57,18 @@ def check_positive(val: int | float, name: str) -> None:
     """Raise ValueError if val is not positive."""
     if val <= 0:
         raise ValueError(f"{name} must be positive, got {val}")
+
+
+def check_backtest_inputs(X, y, indices) -> None:
+    """Validate backtest array shapes and index bounds."""
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D, got {X.ndim}D")
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(f"X/y row mismatch: {X.shape[0]} vs {y.shape[0]}")
+    if len(indices) == 0:
+        raise ValueError("indices array is empty")
+    if indices[-1] >= X.shape[0]:
+        raise ValueError(f"indices out of bounds: max index {indices[-1]} >= X length {X.shape[0]}")
 
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {

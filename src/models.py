@@ -194,6 +194,8 @@ class _SARIMAXEstimator:
         self.seasonal_order = seasonal_order
         self.horizon = horizon
         self._result = None
+        self._fit_count = 0
+        self._fail_count = 0
 
     def fit(self, X, y):
         y = np.asarray(y, dtype=np.float64).ravel()
@@ -212,8 +214,10 @@ class _SARIMAXEstimator:
                 method=cfg.SARIMAX_FIT_METHOD,
                 maxiter=cfg.SARIMAX_FIT_MAXITER,
             )
+            self._fit_count += 1
         except (np.linalg.LinAlgError, ValueError) as e:
-            warnings.warn(f"SARIMAX fit failed, retaining previous fit: {e}")
+            self._fail_count += 1
+            warnings.warn(f"SARIMAX fit failed ({self._fail_count} total failures), retaining previous fit: {e}")
         return self
 
     def predict(self, X):
@@ -223,6 +227,7 @@ class _SARIMAXEstimator:
         return the h-th step value.
         """
         if self._result is None:
+            warnings.warn("SARIMAX predict called on unfitted model, returning 0.0")
             return np.array([0.0])
         exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
         # For multi-step, exog must have `horizon` rows (one per step)

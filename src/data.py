@@ -198,7 +198,7 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
                 assert data[col].dtype != object, f"Unexpected object dtype on {col}"
 
     # --- Circuit Breaker Handling ---
-    cb_dates = pd.to_datetime(['2020-03-09', '2020-03-12', '2020-03-16', '2020-03-18']).date
+    cb_dates = pd.to_datetime(config.CIRCUIT_BREAKER_DATES).date
     mask_cb = data['t'].dt.date.isin(cb_dates) & (data['RV'] == 0.0)
     data.loc[mask_cb, 'RV'] = data['RV'].copy().where(~mask_cb).ffill()
 
