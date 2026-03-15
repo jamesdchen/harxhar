@@ -6,7 +6,10 @@ import numpy as np
 from src.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
 from src.data import apply_horizon_shift, load_and_prep_data_strided
 from src.features import AETransform, PCATransform
+from src.log import get_logger
 from src.models import create_model
+
+logger = get_logger(__name__)
 
 
 def add_feature_args(parser):
@@ -144,9 +147,12 @@ def execute_chunk_backtest(
     feature_transform = _build_feature_transform(args, n_features)
     refit_frequency = hparams.get("refit_frequency", 1)
 
-    print(
-        f"  Initializing {args.model} (features={args.features}, horizon={horizon}, "
-        f"Train Window: {train_win_periods} periods)..."
+    logger.info(
+        "Initializing %s (features=%s, horizon=%d, Train Window: %d periods)",
+        args.model,
+        args.features,
+        horizon,
+        train_win_periods,
     )
     model = create_model(
         model_name=args.model,
@@ -173,7 +179,7 @@ def execute_chunk_backtest(
     if hparams.get("cb_drop", False):
         base, ext = os.path.splitext(output_file)
         output_file = f"{base}_cb_drop{ext}"
-    print(f"  Saving results to {output_file}...")
+    logger.info("Saving results to %s", output_file)
     save_chunk_results(
         output_file=output_file,
         forecasts=preds,
@@ -194,7 +200,7 @@ def execute_chunk_backtest(
         if feature_names is not None:
             save_kwargs["feature_names"] = np.array(feature_names)
         np.savez_compressed(coef_file, **save_kwargs)
-        print(f"  Saved coefficients to {coef_file}")
+        logger.info("Saved coefficients to %s", coef_file)
 
     return True
 
@@ -203,8 +209,8 @@ def main(args):
     np.random.seed(42)
     hparams = get_common_hparams(args)
 
-    print(f"Loading data from '{args.input_path}'...")
-    print(f"Tree Model: {hparams['is_tree']}")
+    logger.info("Loading data from '%s'", args.input_path)
+    logger.info("Tree Model: %s", hparams["is_tree"])
 
     if args.segment is not None:
         _run_segmented(args, hparams)
@@ -216,7 +222,7 @@ def _run_global(args, hparams):
     X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
 
     if len(X_np) == 0:
-        print("Dataset is empty. Exiting.")
+        logger.info("Dataset is empty. Exiting.")
         return
 
     from src import config as cfg
@@ -229,7 +235,7 @@ def _run_global(args, hparams):
     final_horizon = getattr(args, "horizon", 1)
 
     for h in range(1, final_horizon + 1):
-        print(f"\n--- Horizon {h}/{final_horizon} ---")
+        logger.info("--- Horizon %d/%d ---", h, final_horizon)
         X_h, y_h, dates_h, baselines_h = apply_horizon_shift(X_np, y_np, dates, baselines, h)
 
         # Build output filename with horizon suffix
@@ -250,9 +256,9 @@ def _run_global(args, hparams):
         )
 
         if not success:
-            print(f"  Chunk {args.chunk_id} is empty for horizon {h}. Skipping.")
+            logger.info("Chunk %d is empty for horizon %d. Skipping.", args.chunk_id, h)
 
-    print("Run complete!")
+    logger.info("Run complete!")
 
 
 def _run_segmented(args, hparams):
@@ -262,11 +268,11 @@ def _run_segmented(args, hparams):
         # Single segment returned as tuple
         X_np, y_np, dates, baselines = datasets
         if len(X_np) == 0:
-            print(f"No data for segment '{args.segment}'. Exiting.")
+            logger.info("No data for segment '%s'. Exiting.", args.segment)
             return
         datasets = {args.segment: {"X": X_np, "y": y_np, "dates": dates, "baselines": baselines}}
     elif not datasets:
-        print("No datasets returned. Check data path and dates.")
+        logger.info("No datasets returned. Check data path and dates.")
         return
 
     if args.model == "naive":
@@ -280,9 +286,7 @@ def _run_segmented(args, hparams):
     final_horizon = getattr(args, "horizon", 1)
 
     for seg_name, data in datasets.items():
-        print(f"\n{'=' * 50}")
-        print(f"PROCESSING SEGMENT: {seg_name.upper()}")
-        print("=" * 50)
+        logger.info("%s PROCESSING SEGMENT: %s %s", "=" * 20, seg_name.upper(), "=" * 20)
 
         dates = data["dates"] if isinstance(data, dict) else data[2]
         X = data["X"] if isinstance(data, dict) else data[0]
@@ -293,10 +297,10 @@ def _run_segmented(args, hparams):
         median_slots = int(daily_counts.median())
         train_win_periods = args.train_window * median_slots
 
-        print(f"  Window size: {train_win_periods} rows ({args.train_window} days @ {median_slots} slots/day)")
+        logger.info("Window size: %d rows (%d days @ %d slots/day)", train_win_periods, args.train_window, median_slots)
 
         for h in range(1, final_horizon + 1):
-            print(f"\n  --- Horizon {h}/{final_horizon} ---")
+            logger.info("--- Horizon %d/%d ---", h, final_horizon)
             X_h, y_h, dates_h, baselines_h = apply_horizon_shift(X, y, dates, baselines, h)
 
             base, ext = os.path.splitext(args.output_file)
@@ -317,9 +321,9 @@ def _run_segmented(args, hparams):
             )
 
             if not success:
-                print(f"  [Skipping] Chunk {args.chunk_id} empty for segment {seg_name}, horizon {h}.")
+                logger.info("[Skipping] Chunk %d empty for segment %s, horizon %d.", args.chunk_id, seg_name, h)
 
-    print("\nAll segments processed.")
+    logger.info("All segments processed.")
 
 
 if __name__ == "__main__":
