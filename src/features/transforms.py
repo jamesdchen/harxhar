@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 from sklearn.decomposition import PCA
-from src.dl_models import LagAutoEncoder, train_autoencoder
+from src.models.deep_learning import LagAutoEncoder, train_autoencoder
 
 
 # --- Base Class ---

@@ -1,7 +1,7 @@
 import torch
 from torch.func import vmap, functional_call
-from src.gpu_kernels import make_train_kernel
-from src.gpu_utils import (
+from src.backtest.gpu_kernels import make_train_kernel
+from src.backtest.gpu_utils import (
     log_to_file, load_model, allocate_params,
     init_adam_state, run_kernel_and_detach,
     normalize_chunks, run_worker, run_backtest,
@@ -59,7 +59,7 @@ def gpu_worker(gpu_id, chunk_indices, model_module, model_config, train_config,
 
 
 def run_multigpu_backtest(X_np, y_np, dates, baselines, config,
-                          model_module='src.dl_models'):
+                          model_module='src.models.deep_learning'):
     """GPU-parallel backtest with model-agnostic architecture."""
 
     def make_windows_fn(X_tensor, y_tensor, config):

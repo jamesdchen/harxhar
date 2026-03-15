@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
 from src.feature_groups import ALL_MODELS
-from src.submit import (
+from src.cli.submit import (
     ExperimentSpec, add_common_submit_args, build_extra_args,
     submit_experiment_batch,
 )
