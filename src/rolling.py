@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from numba import njit
 
@@ -170,13 +172,16 @@ class RollingBuffer:
     def __init__(self, window_size: int, n_features: int, n_targets: int):
         self.window_size = window_size
         self.ptr = 0
+        self.count = 0
         self.X_buffer = np.zeros((window_size, n_features), dtype=np.float64)
         self.y_buffer = np.zeros((window_size, n_targets), dtype=np.float64)
-        
+
     def add(self, x_new: np.ndarray, y_new: float | np.ndarray) -> None:
         self.X_buffer[self.ptr] = x_new
         self.y_buffer[self.ptr] = y_new
         self.ptr = (self.ptr + 1) % self.window_size
+        if self.count < self.window_size:
+            self.count += 1
 
     def get_view(self) -> tuple[np.ndarray, np.ndarray]:
         return self.X_buffer, self.y_buffer
@@ -186,7 +191,10 @@ class RollingBuffer:
 
         After a direct buffer fill (ptr=0) this is identical to get_view().
         After k updates (ptr=k) it correctly reorders the ring buffer.
+        When the buffer is not yet full, returns only the filled portion.
         """
+        if self.count < self.window_size:
+            return self.X_buffer[:self.count], self.y_buffer[:self.count]
         p = self.ptr
         X = np.concatenate([self.X_buffer[p:], self.X_buffer[:p]], axis=0)
         y = np.concatenate([self.y_buffer[p:], self.y_buffer[:p]], axis=0)
