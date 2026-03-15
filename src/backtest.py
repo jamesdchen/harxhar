@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 
 from src.models import BaseModel
-from src.config import check_positive, check_backtest_inputs
+from src.config import check_positive, check_backtest_inputs, check_finite
 
 
 def run_backtest_agnostic(
@@ -72,6 +74,9 @@ def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
 
 def apply_duan_smearing(forecasts, y_true, baselines):
     """Apply Duan's smearing estimator to convert from adjusted to raw space."""
+    check_finite(forecasts, "forecasts")
+    check_finite(y_true, "y_true")
+    check_finite(baselines, "baselines")
     smear = np.mean((y_true - forecasts) ** 2)
     pred_raw = (forecasts ** 2 + smear) * baselines
     true_raw = (y_true ** 2) * baselines

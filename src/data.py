@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import os
 from functools import reduce
 
 import numpy as np
 import pandas as pd
 from src import config
-from src.config import check_positive
+from src.config import check_positive, check_sorted_index
 from src.features import HARFeatures, RawLagFeatures
 
 
@@ -119,10 +121,7 @@ def robust_transform(df: pd.DataFrame, col_name: str, time_col: str = "time_of_d
     series = df[col_name]
     has_negatives = bool((series.dropna() < 0).any())
 
-    assert df.index.is_monotonic_increasing, (
-        f"Index must be sorted before diurnal transform — "
-        f"first offender at position {(df.index.to_series().diff() < 0).argmax()}"
-    )
+    check_sorted_index(df.index)
 
     # 1. Diurnal adjustment
     do_diurnal = use_diurnal and (col_name not in diurnal_excluded_cols)
@@ -201,6 +200,13 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
     cb_dates = pd.to_datetime(config.CIRCUIT_BREAKER_DATES).date
     mask_cb = data['t'].dt.date.isin(cb_dates) & (data['RV'] == 0.0)
     data.loc[mask_cb, 'RV'] = data['RV'].copy().where(~mask_cb).ffill()
+    remaining_zeros = data['t'].dt.date.isin(cb_dates) & (data['RV'] == 0.0)
+    if remaining_zeros.any():
+        import warnings
+        warnings.warn(
+            f"Circuit breaker ffill left {remaining_zeros.sum()} zero RV values; "
+            "check data around dates: {config.CIRCUIT_BREAKER_DATES}"
+        )
 
     # --- Circuit Breaker Date Drop for Non-Moments Features ---
     def _is_moments_col(col):

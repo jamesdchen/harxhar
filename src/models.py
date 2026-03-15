@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 
 import numpy as np
@@ -67,6 +69,7 @@ class RollingRegressionModel(BaseModel):
 
         self.buffer.X_buffer[:] = X_buffered
         self.buffer.y_buffer[:] = y_init
+        self.buffer.count = self.buffer.window_size
 
         self.hist_X = list(X_init)
         self.hist_y = list(y_init)
@@ -227,8 +230,10 @@ class _SARIMAXEstimator:
         return the h-th step value.
         """
         if self._result is None:
-            warnings.warn("SARIMAX predict called on unfitted model, returning 0.0")
-            return np.array([0.0])
+            raise RuntimeError(
+                "SARIMAX predict called with no successful fit — "
+                f"all {self._fail_count} fit attempt(s) failed"
+            )
         exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
         # For multi-step, exog must have `horizon` rows (one per step)
         if exog is not None and self.horizon > 1:
@@ -307,6 +312,7 @@ class SARIMAXModel(RollingRegressionModel):
         # Fill buffer directly; ptr stays 0 → data is already chronological
         self.buffer.X_buffer[:] = X_buffered
         self.buffer.y_buffer[:] = y_init
+        self.buffer.count = self.buffer.window_size
 
         # Fit SARIMAX with chronologically ordered data
         X_tr, y_tr = self.buffer.get_ordered_view()
