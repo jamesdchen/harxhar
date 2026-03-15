@@ -1,0 +1,40 @@
+[project]
+name = "harxhar"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.23,<2.0",
+    "pandas>=1.5,<3.0",
+    "scikit-learn>=1.2,<2.0",
+    "xgboost>=1.7,<3.0",
+    "lightgbm>=3.3,<5.0",
+    "statsmodels>=0.13,<1.0",
+    "torch>=2.0,<3.0",
+    "numba>=0.57,<1.0",
+    "tqdm>=4.64,<5.0",
+    "transformers>=4.30,<5.0",
+    "pyarrow>=12.0",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["SIM108"]
+
+[tool.ruff.format]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests requiring CUDA (deselect with '-m \"not gpu\"')",
+]
+filterwarnings = [
+    "ignore::FutureWarning",
+    "ignore::DeprecationWarning:statsmodels",
+    "ignore::UserWarning:lightgbm",
+]

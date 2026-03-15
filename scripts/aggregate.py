@@ -1,37 +1,39 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os
 import argparse
-import re
 import glob
+import os
+import re
+
 import pandas as pd
-import numpy as np
 
 # Import the updated processor
 from src.evaluation.aggregation import parse_config, process_single_experiment
 from src.evaluation.metrics import calculate_baseline_deltas
 
-
-TARGET_SEGMENTS = ['morning', 'midday', 'closing', 'overnight']
+TARGET_SEGMENTS = ["morning", "midday", "closing", "overnight"]
 
 # Define exact boundaries for the memory slicer
 TOD_BOUNDS = {
-    'morning':   {'start': '09:30', 'end': '11:30'},
-    'midday':    {'start': '11:30', 'end': '14:00'},
-    'closing':   {'start': '14:00', 'end': '16:00'},
-    'overnight': {'start': '16:00', 'end': '09:30'}
+    "morning": {"start": "09:30", "end": "11:30"},
+    "midday": {"start": "11:30", "end": "14:00"},
+    "closing": {"start": "14:00", "end": "16:00"},
+    "overnight": {"start": "16:00", "end": "09:30"},
 }
+
 
 def natural_sort_key(s):
     """Sorts strings containing numbers logically (e.g., exp_2 before exp_10)."""
-    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+    return [int(text) if text.isdigit() else text.lower() for text in re.split("([0-9]+)", s)]
+
 
 def aggregate_base_dir(base_dir, eval_mode):
     """Aggregate all experiments in a single base_dir."""
     # 1. --- Route Logic & Dynamic Configurations ---
-    if eval_mode == 'segments':
+    if eval_mode == "segments":
         title_str = f"PRE-SEGMENTED FILES SUMMARY: {TARGET_SEGMENTS}"
         out_filename = "segment_results_summary.csv"
         segment_configs = [
@@ -39,14 +41,14 @@ def aggregate_base_dir(base_dir, eval_mode):
             for seg in TARGET_SEGMENTS
         ]
 
-    elif eval_mode == 'filter_by_tod':
+    elif eval_mode == "filter_by_tod":
         title_str = "GLOBAL DATA (Filtered into TOD Segments in Memory)"
         out_filename = "global_results_tod_filtered.csv"
         segment_configs = [
             {
                 "name": f"GLOBAL_{seg.upper()}",
                 "load_kwargs": {"require_suffixes": None, "ignore_suffixes": TARGET_SEGMENTS},
-                "time_bounds": bounds
+                "time_bounds": bounds,
             }
             for seg, bounds in TOD_BOUNDS.items()
         ]
@@ -63,7 +65,7 @@ def aggregate_base_dir(base_dir, eval_mode):
 
     print("=" * 150)
     print(f"Found {len(exp_dirs)} experiments in '{base_dir}' | Mode: {eval_mode.upper()}")
-    if eval_mode == 'filter_by_tod':
+    if eval_mode == "filter_by_tod":
         print("Feature Active: Slicing global data by Time-of-Day (Morning, Midday, Closing, Overnight)")
     print("=" * 150)
 
@@ -72,11 +74,7 @@ def aggregate_base_dir(base_dir, eval_mode):
     # 2. --- Processing Loop ---
     for exp_dir in exp_dirs:
         exp_id, exp_name, model_type = parse_config(exp_dir)
-        metadata = {
-            'exp_id': exp_id,
-            'experiment_name': exp_name,
-            'model': model_type
-        }
+        metadata = {"exp_id": exp_id, "experiment_name": exp_name, "model": model_type}
 
         # Call the agnostic processor imported from eval_utils
         results.extend(process_single_experiment(exp_dir, metadata, segment_configs))
@@ -91,30 +89,43 @@ def aggregate_base_dir(base_dir, eval_mode):
 
     # 4. --- Final Table Output ---
     final_cols = [
-        'exp_id', 'model', 'experiment_name', 'segment', 'cb_drop',
-        'mse', 'delta_mse', 'oos_r2',
-        'mae', 'delta_mae',
-        'qlike', 'delta_qlike', 'n_samples'
+        "exp_id",
+        "model",
+        "experiment_name",
+        "segment",
+        "cb_drop",
+        "mse",
+        "delta_mse",
+        "oos_r2",
+        "mae",
+        "delta_mae",
+        "qlike",
+        "delta_qlike",
+        "n_samples",
     ]
     final_cols = [c for c in final_cols if c in summary_df.columns]
 
-    print("\n" + "="*175)
+    print("\n" + "=" * 175)
     print(title_str)
-    print("="*165)
+    print("=" * 165)
 
     formatters = {
-        'mse': '{:.4e}'.format,
-        'delta_mse': '{:.4e}'.format,
-        'mae': '{:.4e}'.format,
-        'delta_mae': '{:.4e}'.format,
-        'qlike': '{:.6f}'.format,
-        'delta_qlike': '{:.6f}'.format,
-        'oos_r2': '{:.4%}'.format,
-        'cb_drop': lambda v: 'CB_DROP' if v else ''
+        "mse": "{:.4e}".format,
+        "delta_mse": "{:.4e}".format,
+        "mae": "{:.4e}".format,
+        "delta_mae": "{:.4e}".format,
+        "qlike": "{:.6f}".format,
+        "delta_qlike": "{:.6f}".format,
+        "oos_r2": "{:.4%}".format,
+        "cb_drop": lambda v: "CB_DROP" if v else "",
     }
 
-    pd.set_option('display.width', 1000)
-    print(summary_df[final_cols].to_string(index=False, formatters={k: v for k, v in formatters.items() if k in final_cols}))
+    pd.set_option("display.width", 1000)
+    print(
+        summary_df[final_cols].to_string(
+            index=False, formatters={k: v for k, v in formatters.items() if k in final_cols}
+        )
+    )
 
     output_file = os.path.join(base_dir, out_filename)
     summary_df.to_csv(output_file, index=False)
@@ -144,10 +155,14 @@ def main(args):
         print(f"Cleared .needs_aggregation for {base_dir}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Aggregate Global/Segment Raw MSE, MAE & QLIKE")
-    parser.add_argument("--eval-mode", type=str, choices=['global', 'segments', 'filter_by_tod'], default='global')
-    parser.add_argument("--base_dir", type=str, default=None,
-                        help="Process a specific directory. If omitted, auto-discovers all results_*/ with pending results.")
+    parser.add_argument("--eval-mode", type=str, choices=["global", "segments", "filter_by_tod"], default="global")
+    parser.add_argument(
+        "--base_dir",
+        type=str,
+        default=None,
+        help="Process a specific directory. If omitted, auto-discovers all results_*/ with pending results.",
+    )
 
     main(parser.parse_args())

@@ -1,27 +1,42 @@
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
-from sklearn.linear_model import Ridge
-from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import Ridge
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
-from src.data.rolling import RollingRobustScaler, RollingBuffer
+from xgboost import XGBRegressor
+
 from src import config as cfg
+from src.data.rolling import RollingBuffer, RollingRobustScaler
+
+if TYPE_CHECKING:
+    from src.features.transforms import BaseFeatureTransform
+
 
 # --- 1. Top-Level Interface ---
 class BaseModel:
-    def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None: pass
-    def predict(self, x_t: np.ndarray) -> float: pass
-    def update(self, x_t: np.ndarray, y_t: float) -> None: pass
-    def get_coefs(self) -> np.ndarray | None: return None
+    def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None:
+        pass
+
+    def predict(self, x_t: np.ndarray) -> float:
+        pass
+
+    def update(self, x_t: np.ndarray, y_t: float) -> None:
+        pass
+
+    def get_coefs(self) -> np.ndarray | None:
+        return None
+
 
 # --- 2. The Engine (Handles all Rolling/Scaling Logic) ---
 class RollingRegressionModel(BaseModel):
-    def __init__(self, model, train_win_periods, n_features, use_scaling=True,
-                 refit_frequency=1, feature_transform=None):
+    def __init__(
+        self, model, train_win_periods, n_features, use_scaling=True, refit_frequency=1, feature_transform=None
+    ):
         cfg.check_positive(train_win_periods, "train_win_periods")
         cfg.check_positive(n_features, "n_features")
         self.model = model
@@ -87,7 +102,7 @@ class RollingRegressionModel(BaseModel):
         return self.model.predict(x_input).item()
 
     def get_coefs(self):
-        if hasattr(self.model, 'coef_'):
+        if hasattr(self.model, "coef_"):
             return self.model.coef_.ravel()
         return None
 
@@ -115,9 +130,11 @@ class RollingRegressionModel(BaseModel):
 
 # --- 3. The Specific Algorithms ---
 
+
 class RidgeModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=True,
-                 feature_transform=None, refit_frequency=1, **ridge_kwargs):
+    def __init__(
+        self, train_win_periods, n_features, use_scaling=True, feature_transform=None, refit_frequency=1, **ridge_kwargs
+    ):
         model = Ridge(**ridge_kwargs)
         super().__init__(
             model=model,
@@ -128,13 +145,15 @@ class RidgeModel(RollingRegressionModel):
             feature_transform=feature_transform,
         )
 
+
 class XGBoostModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
-                 feature_transform=None, **xgb_kwargs):
-        if 'tree_method' not in xgb_kwargs:
-            xgb_kwargs['tree_method'] = 'hist'
-        if 'n_jobs' not in xgb_kwargs:
-            xgb_kwargs['n_jobs'] = -1
+    def __init__(
+        self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, feature_transform=None, **xgb_kwargs
+    ):
+        if "tree_method" not in xgb_kwargs:
+            xgb_kwargs["tree_method"] = "hist"
+        if "n_jobs" not in xgb_kwargs:
+            xgb_kwargs["n_jobs"] = -1
 
         model = XGBRegressor(**xgb_kwargs)
         super().__init__(
@@ -146,13 +165,15 @@ class XGBoostModel(RollingRegressionModel):
             feature_transform=feature_transform,
         )
 
+
 class LightGBMModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
-                 feature_transform=None, **lgbm_kwargs):
-        if 'n_jobs' not in lgbm_kwargs:
-            lgbm_kwargs['n_jobs'] = -1
-        if 'verbose' not in lgbm_kwargs:
-            lgbm_kwargs['verbose'] = -1
+    def __init__(
+        self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, feature_transform=None, **lgbm_kwargs
+    ):
+        if "n_jobs" not in lgbm_kwargs:
+            lgbm_kwargs["n_jobs"] = -1
+        if "verbose" not in lgbm_kwargs:
+            lgbm_kwargs["verbose"] = -1
 
         model = LGBMRegressor(**lgbm_kwargs)
         super().__init__(
@@ -166,10 +187,11 @@ class LightGBMModel(RollingRegressionModel):
 
 
 class RandomForestModel(RollingRegressionModel):
-    def __init__(self, train_win_periods, n_features, use_scaling=False, refit_frequency=5,
-                 feature_transform=None, **rf_kwargs):
-        if 'n_jobs' not in rf_kwargs:
-            rf_kwargs['n_jobs'] = -1
+    def __init__(
+        self, train_win_periods, n_features, use_scaling=False, refit_frequency=5, feature_transform=None, **rf_kwargs
+    ):
+        if "n_jobs" not in rf_kwargs:
+            rf_kwargs["n_jobs"] = -1
 
         model = RandomForestRegressor(**rf_kwargs)
         super().__init__(
@@ -181,7 +203,9 @@ class RandomForestModel(RollingRegressionModel):
             feature_transform=feature_transform,
         )
 
+
 # --- 4. SARIMAX Model ---
+
 
 class _SARIMAXEstimator:
     """
@@ -232,13 +256,15 @@ class _SARIMAXEstimator:
             if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
                 warnings.warn(
                     f"SARIMAX fit failed {self._consecutive_failures} times consecutively "
-                    f"({self._fail_count} total); falling back to naive prediction: {e}"
+                    f"({self._fail_count} total); falling back to naive prediction: {e}",
+                    stacklevel=2,
                 )
                 self._result = None
             else:
                 warnings.warn(
                     f"SARIMAX fit failed ({self._fail_count} total, "
-                    f"{self._consecutive_failures} consecutive), retaining previous fit: {e}"
+                    f"{self._consecutive_failures} consecutive), retaining previous fit: {e}",
+                    stacklevel=2,
                 )
         return self
 
@@ -266,7 +292,7 @@ class _SARIMAXEstimator:
             val = fc.iloc[-1] if hasattr(fc, "iloc") else fc[-1]
             return np.array([float(val)])
         except (ValueError, IndexError) as e:
-            warnings.warn(f"SARIMAX predict failed, returning last observed value: {e}")
+            warnings.warn(f"SARIMAX predict failed, returning last observed value: {e}", stacklevel=2)
             return np.array([self._last_y_val if self._last_y_val is not None else 0.0])
 
 
@@ -321,8 +347,8 @@ class SARIMAXModel(RollingRegressionModel):
             y_init = y_init.reshape(-1, 1)
 
         # Slice to the buffer size (fit_window rows)
-        X_init = X_init[-self.train_win_periods:]
-        y_init = y_init[-self.train_win_periods:]
+        X_init = X_init[-self.train_win_periods :]
+        y_init = y_init[-self.train_win_periods :]
 
         if self.use_scaling:
             self.scaler.initialize(X_init)
@@ -360,6 +386,7 @@ class SARIMAXModel(RollingRegressionModel):
 
 # --- 5. The Baseline ---
 
+
 class NaiveBaseline(BaseModel):
     # Notice this skips the RollingRegressionModel and inherits straight from BaseModel
     # because it doesn't need to waste memory on buffers or scaling!
@@ -367,7 +394,7 @@ class NaiveBaseline(BaseModel):
         self.lag_index = lag_index
 
     def initialize(self, X_init, y_init):
-        pass 
+        pass
 
     def predict(self, x_t):
         return x_t[self.lag_index]
@@ -379,29 +406,35 @@ class NaiveBaseline(BaseModel):
 # --- 6. Model Registry & Factory ---
 
 MODEL_REGISTRY = {
-    'ridge': {
-        'class': RidgeModel,
-        'defaults': {'use_scaling': True, 'alpha': 1.0},
+    "ridge": {
+        "class": RidgeModel,
+        "defaults": {"use_scaling": True, "alpha": 1.0},
     },
-    'xgboost': {
-        'class': XGBoostModel,
-        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3, 'learning_rate': 0.1, 'tree_method': 'hist'},
+    "xgboost": {
+        "class": XGBoostModel,
+        "defaults": {
+            "use_scaling": False,
+            "n_estimators": 100,
+            "max_depth": 3,
+            "learning_rate": 0.1,
+            "tree_method": "hist",
+        },
     },
-    'lightgbm': {
-        'class': LightGBMModel,
-        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3, 'learning_rate': 0.1},
+    "lightgbm": {
+        "class": LightGBMModel,
+        "defaults": {"use_scaling": False, "n_estimators": 100, "max_depth": 3, "learning_rate": 0.1},
     },
-    'random_forest': {
-        'class': RandomForestModel,
-        'defaults': {'use_scaling': False, 'n_estimators': 100, 'max_depth': 3},
+    "random_forest": {
+        "class": RandomForestModel,
+        "defaults": {"use_scaling": False, "n_estimators": 100, "max_depth": 3},
     },
-    'sarimax': {
-        'class': SARIMAXModel,
-        'defaults': {
-            'order': cfg.SARIMAX_ORDER,
-            'seasonal_order': cfg.SARIMAX_SEASONAL_ORDER,
-            'fit_window': cfg.SARIMAX_FIT_WINDOW,
-            'refit_frequency': cfg.SARIMAX_REFIT_FREQUENCY,
+    "sarimax": {
+        "class": SARIMAXModel,
+        "defaults": {
+            "order": cfg.SARIMAX_ORDER,
+            "seasonal_order": cfg.SARIMAX_SEASONAL_ORDER,
+            "fit_window": cfg.SARIMAX_FIT_WINDOW,
+            "refit_frequency": cfg.SARIMAX_REFIT_FREQUENCY,
         },
     },
 }
@@ -411,7 +444,7 @@ def create_model(
     model_name: str,
     train_win_periods: int,
     n_features: int,
-    feature_transform: "BaseFeatureTransform | None" = None,
+    feature_transform: BaseFeatureTransform | None = None,
     refit_frequency: int = 1,
     naive_lag_index: int | None = None,
     horizon: int = 1,
@@ -431,26 +464,26 @@ def create_model(
     **overrides
         Override any default hyperparameter from the registry.
     """
-    if model_name == 'naive':
+    if model_name == "naive":
         return NaiveBaseline(lag_index=naive_lag_index)
 
     if model_name not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model type: {model_name}")
 
     entry = MODEL_REGISTRY[model_name]
-    kwargs = {**entry['defaults'], **overrides}
+    kwargs = {**entry["defaults"], **overrides}
 
     # SARIMAX uses its own refit_frequency, doesn't take feature_transform,
     # and supports native multi-step via horizon parameter
-    if model_name == 'sarimax':
-        return entry['class'](
+    if model_name == "sarimax":
+        return entry["class"](
             train_win_periods=train_win_periods,
             n_features=n_features,
             horizon=horizon,
             **kwargs,
         )
 
-    return entry['class'](
+    return entry["class"](
         train_win_periods=train_win_periods,
         n_features=n_features,
         feature_transform=feature_transform,

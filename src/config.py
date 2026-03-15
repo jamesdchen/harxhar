@@ -7,13 +7,13 @@ DIURNAL_MIN_PERIODS = 5
 # Maximum lag (used to derive geometric or consecutive lag sequences)
 LAG = 3125
 
-START_DATE = '2005-01-01'
+START_DATE = "2005-01-01"
 
 # Temporal constants
 PERIODS_PER_DAY = 48  # 30-min bars per trading day
 
 # Forecast horizon
-DEFAULT_HORIZON = 1   # 1-step ahead; max is PERIODS_PER_DAY (48)
+DEFAULT_HORIZON = 1  # 1-step ahead; max is PERIODS_PER_DAY (48)
 
 # Normalization
 NORM_EPS = 1e-8
@@ -26,7 +26,7 @@ QLIKE_CLAMP_MIN = -30.0
 QLIKE_CLAMP_MAX = 30.0
 
 # Circuit breaker dates (market-wide trading halts)
-CIRCUIT_BREAKER_DATES = ['2020-03-09', '2020-03-12', '2020-03-16', '2020-03-18']
+CIRCUIT_BREAKER_DATES = ["2020-03-09", "2020-03-12", "2020-03-16", "2020-03-18"]
 
 # Winsorization quantiles
 WINSOR_LOWER_Q = 0.05
@@ -35,8 +35,8 @@ WINSOR_UPPER_Q = 0.95
 # SARIMAX defaults
 SARIMAX_ORDER = (2, 0, 1)
 SARIMAX_SEASONAL_ORDER = (1, 0, 0, PERIODS_PER_DAY)
-SARIMAX_FIT_WINDOW = 480       # 10 trading days
-SARIMAX_REFIT_FREQUENCY = 48   # once per simulated day
+SARIMAX_FIT_WINDOW = 480  # 10 trading days
+SARIMAX_REFIT_FREQUENCY = 48  # once per simulated day
 
 # AE refit frequency (steps between autoencoder refits)
 AE_REFIT_FREQUENCY = 240
@@ -77,14 +77,13 @@ def check_sorted_index(index) -> None:
     """Raise ValueError if a pandas Index is not monotonically increasing."""
     if not index.is_monotonic_increasing:
         offender = (index.to_series().diff() < 0).argmax()
-        raise ValueError(
-            f"Index must be sorted — first offender at position {offender}"
-        )
+        raise ValueError(f"Index must be sorted — first offender at position {offender}")
 
 
 def check_finite(arr, name: str) -> None:
     """Raise ValueError if *arr* contains NaN or Inf."""
     import numpy as _np
+
     if not _np.all(_np.isfinite(arr)):
         n_bad = int(_np.sum(~_np.isfinite(arr)))
         raise ValueError(f"{name} contains {n_bad} non-finite values (NaN/Inf)")
@@ -97,19 +96,20 @@ def find_naive_lag(feature_names: list[str]) -> int:
     'har_ma_125'.  Raises ValueError with a clear message if not found.
     """
     for i, f in enumerate(feature_names):
-        if 'lag_125' in f or f == 'har_ma_125':
+        if "lag_125" in f or f == "har_ma_125":
             return i
     raise ValueError(
         "Naive model requires a feature matching 'lag_125' or 'har_ma_125', "
         f"but none found in {feature_names[:10]}{'...' if len(feature_names) > 10 else ''}"
     )
 
+
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {
-    'morning':   {'start': 510, 'end': 660},   # 08:30 - 11:00
-    'midday':    {'start': 630, 'end': 870},   # 10:30 - 14:30
-    'closing':   {'start': 840, 'end': 960},   # 14:00 - 16:00
-    'overnight': {'start': 990, 'end': 510}    # 16:30 - 08:30 (Wraps)
+    "morning": {"start": 510, "end": 660},  # 08:30 - 11:00
+    "midday": {"start": 630, "end": 870},  # 10:30 - 14:30
+    "closing": {"start": 840, "end": 960},  # 14:00 - 16:00
+    "overnight": {"start": 990, "end": 510},  # 16:30 - 08:30 (Wraps)
 }
 
 # --- DL (PatchTSMixer) Configuration ---
@@ -133,24 +133,24 @@ DL_CONFIG = {
         "batch_size": 50,
         "optimizer": "ADAMW",
         "loss_fn": "QLIKE",
-    }
+    },
 }
 
 # --- AE+Ridge GPU Configuration ---
 AE_RIDGE_GPU_CONFIG = {
     "output_path": "ae_ridge_results.csv",
-    "train_window": 24000,      # 500 days * 48 periods
+    "train_window": 24000,  # 500 days * 48 periods
     "gpu_count": 2,
     "model": {
-        "n_features": 0,        # set at runtime from X.shape[1]
+        "n_features": 0,  # set at runtime from X.shape[1]
         "n_components": 5,
-        "hidden_dim": 0,        # 0 = auto (n_features // 2)
-        "alpha_recon": 0.5,     # weight: alpha*recon + (1-alpha)*pred
-        "alpha_ridge": 1.0,     # Ridge regularization strength
+        "hidden_dim": 0,  # 0 = auto (n_features // 2)
+        "alpha_recon": 0.5,  # weight: alpha*recon + (1-alpha)*pred
+        "alpha_ridge": 1.0,  # Ridge regularization strength
     },
     "train": {
         "num_epochs": 50,
         "learning_rate": 1e-3,
-        "batch_size": 10,       # windows per batch (each ~10MB)
+        "batch_size": 10,  # windows per batch (each ~10MB)
     },
 }
