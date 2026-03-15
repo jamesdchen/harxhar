@@ -69,7 +69,7 @@ def submit_array(job_name, total_chunks, tasks_per_array, job_env,
         end_task = min(start_task + tasks_per_array - 1, total_chunks)
         task_range = f"{start_task}-{end_task}"
         cmd = ["sbatch", "--array", task_range, "--job-name", job_name, slurm_script]
-        subprocess.run(cmd, env=job_env)
+        subprocess.run(cmd, env=job_env, check=True)
         start_task = end_task + 1
 
 
