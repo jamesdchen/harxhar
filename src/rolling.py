@@ -170,8 +170,8 @@ class RollingBuffer:
     def __init__(self, window_size: int, n_features: int, n_targets: int):
         self.window_size = window_size
         self.ptr = 0
-        self.X_buffer = np.zeros((window_size, n_features), dtype=np.float32)
-        self.y_buffer = np.zeros((window_size, n_targets), dtype=np.float32)
+        self.X_buffer = np.zeros((window_size, n_features), dtype=np.float64)
+        self.y_buffer = np.zeros((window_size, n_targets), dtype=np.float64)
         
     def add(self, x_new: np.ndarray, y_new: float | np.ndarray) -> None:
         self.X_buffer[self.ptr] = x_new

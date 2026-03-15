@@ -4,7 +4,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from src.models import BaseModel
-from src.config import check_positive
+from src.config import check_positive, check_backtest_inputs
 
 
 def run_backtest_agnostic(
@@ -19,10 +19,7 @@ def run_backtest_agnostic(
     A truly model-agnostic walk-forward backtester.
     """
     check_positive(train_win_periods, "train_win_periods")
-    if X.ndim != 2:
-        raise ValueError(f"X must be 2D, got {X.ndim}D")
-    if X.shape[0] != y.shape[0]:
-        raise ValueError(f"X/y row mismatch: {X.shape[0]} vs {y.shape[0]}")
+    check_backtest_inputs(X, y, indices)
 
     first_test_idx = indices[0]
     if first_test_idx < train_win_periods:
