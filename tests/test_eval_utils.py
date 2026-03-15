@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.eval_utils import load_all_chunks, parse_config, filter_by_time
+from src.evaluation.aggregation import load_all_chunks, parse_config, filter_by_time
 
 
 # ---------------------------------------------------------------------------

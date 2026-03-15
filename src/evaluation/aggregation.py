@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
-from src.metrics import calculate_global_metrics
+from src.evaluation.metrics import calculate_global_metrics
 
 def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
     """

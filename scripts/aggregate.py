@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 
 # Import the updated processor
-from src.eval_utils import parse_config, process_single_experiment
-from src.metrics import calculate_baseline_deltas
+from src.evaluation.aggregation import parse_config, process_single_experiment
+from src.evaluation.metrics import calculate_baseline_deltas
 
 
 TARGET_SEGMENTS = ['morning', 'midday', 'closing', 'overnight']

@@ -8,7 +8,7 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
-from src.rolling import RollingRobustScaler, RollingBuffer
+from src.data.rolling import RollingRobustScaler, RollingBuffer
 from src import config as cfg
 
 # --- 1. Top-Level Interface ---
