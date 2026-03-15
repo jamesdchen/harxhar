@@ -1,8 +1,8 @@
 """Shared utilities for GPU backtest pipelines."""
 
 import importlib
+import logging
 import math
-from datetime import datetime
 
 import numpy as np
 import torch
@@ -10,6 +10,9 @@ import torch.multiprocessing as mp
 
 from src import config as cfg
 from src.backtest.engine import _build_results_dataframe, _extract_subset, save_chunk_results
+from src.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False):
@@ -38,9 +41,14 @@ def normalize_chunks(X_chunk, X_test_chunk, dim, use_train_stats_for_test=False)
 
 
 def log_to_file(message):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    with open(cfg.GPU_WORKER_LOG, "a") as f:
-        f.write(f"{timestamp} - {message}\n")
+    """Log message to the GPU worker log file via a FileHandler."""
+    file_logger = logging.getLogger("gpu_worker")
+    if not file_logger.handlers:
+        handler = logging.FileHandler(cfg.GPU_WORKER_LOG)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", datefmt="%H:%M:%S"))
+        file_logger.addHandler(handler)
+        file_logger.setLevel(logging.INFO)
+    file_logger.info(message)
 
 
 def setup_device(gpu_id):
@@ -147,7 +155,7 @@ def aggregate_predictions(results_nested, num_windows):
     # Multi-horizon: preds may be (N, H) — check first dim
     n_rows = preds.shape[0] if preds.ndim == 1 else preds.shape[0]
     if n_rows != num_windows:
-        print(f"Warning: Prediction shape mismatch. Expected {num_windows}, got {n_rows}.")
+        logger.warning("Prediction shape mismatch. Expected %d, got %d.", num_windows, n_rows)
         preds = preds[:num_windows]
 
     return preds
@@ -328,16 +336,16 @@ def run_backtest(
     gpu_count = config["gpu_count"]
     chunk_size = config["train"]["batch_size"]
 
-    print(f"Starting {label} on {gpu_count} GPUs")
+    logger.info("Starting %s on %d GPUs", label, gpu_count)
 
     X_tensor = torch.tensor(X_np, dtype=torch.float32).pin_memory()
     y_tensor = torch.tensor(y_np, dtype=torch.float32).pin_memory()
 
     all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(X_tensor, y_tensor, config)
 
-    print(f"Windows: {num_windows}")
-    print(f"Train X Shape: {all_train_X.shape}")
-    print(f"Test X Shape:  {all_test_X.shape}")
+    logger.info("Windows: %d", num_windows)
+    logger.info("Train X Shape: %s", all_train_X.shape)
+    logger.info("Test X Shape:  %s", all_test_X.shape)
 
     def worker_args(gpu_id, chunks):
         return make_worker_args_fn(
@@ -346,12 +354,12 @@ def run_backtest(
 
     results_nested = distribute_and_run(worker_fn, worker_args, gpu_count, num_windows, chunk_size)
 
-    print("Workers finished. Aggregating results...")
+    logger.info("Workers finished. Aggregating results...")
     preds = aggregate_predictions(results_nested, num_windows)
 
     train_window = config["train_window"]
     test_indices = np.arange(train_window, train_window + num_windows)
     output_file = config.get("output_path", default_output)
-    print(f"Saving {len(test_indices)} results to {output_file}...")
+    logger.info("Saving %d results to %s", len(test_indices), output_file)
 
     return build_results_df(preds, test_indices, y_np, dates, baselines, output_file=output_file)

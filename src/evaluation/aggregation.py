@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation.metrics import calculate_global_metrics
+from src.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
@@ -51,7 +54,7 @@ def load_all_chunks(exp_dir, ignore_suffixes=None, require_suffixes=None):
             dfs.append(df)
             cb_drop_flags.append(has_cb_drop)
         except (OSError, pd.errors.ParserError) as e:
-            print(f"  [Warning] Could not read {raw_base}: {e}")
+            logger.warning("Could not read %s: %s", raw_base, e)
 
     if not dfs:
         return pd.DataFrame(), False
@@ -79,13 +82,13 @@ def parse_config(exp_dir):
                     elif line.startswith("Model Type:"):
                         model_type = line.split(":", 1)[1].strip()
         except (OSError, ValueError) as e:
-            print(f"  [Warning] Could not parse config {config_path}: {e}")
+            logger.warning("Could not parse config %s: %s", config_path, e)
 
     if exp_id == -1:
         try:
             exp_id = int(exp_dir.split("_")[-1])
         except (ValueError, IndexError) as e:
-            print(f"  [Warning] Could not infer exp_id from path {exp_dir}: {e}")
+            logger.warning("Could not infer exp_id from path %s: %s", exp_dir, e)
 
     return exp_id, exp_name, model_type
 
@@ -105,7 +108,7 @@ def filter_by_time(df, start_time=None, end_time=None):
         # inclusive='left' prevents double-counting the exact overlapping minute (e.g., 11:30)
         return df.between_time(start, end, inclusive="left")
     except (TypeError, ValueError) as e:
-        print(f"  [Warning] Time filtering failed: {e}")
+        logger.warning("Time filtering failed: %s", e)
         return df
 
 
@@ -122,25 +125,26 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
         load_kwargs = seg_conf["load_kwargs"]
         time_bounds = seg_conf.get("time_bounds", None)
 
-        print(
-            f"Processing Exp {metadata['exp_id']:<3} | {metadata['model'].upper():<8} "
-            f"| {metadata['experiment_name'][:16]:<16} | {seg_name:<12}...",
-            end=" ",
-            flush=True,
+        logger.info(
+            "Processing Exp %s | %s | %s | %s...",
+            str(metadata["exp_id"]).ljust(3),
+            metadata["model"].upper().ljust(8),
+            metadata["experiment_name"][:16].ljust(16),
+            seg_name.ljust(12),
         )
 
         # 1. Load Data — also returns the cb_drop flag
         df, cb_drop = load_all_chunks(exp_dir, **load_kwargs)
 
         if df.empty:
-            print("[EMPTY]")
+            logger.info("[EMPTY]")
             continue
 
         # 2. Apply Time-of-Day Filter in Memory
         if time_bounds:
             df = filter_by_time(df, time_bounds["start"], time_bounds["end"])
             if df.empty:
-                print("[EMPTY AFTER TOD FILTER]")
+                logger.info("[EMPTY AFTER TOD FILTER]")
                 continue
 
         # 3. Calculate Metrics — horizon-aware
@@ -171,7 +175,12 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
                 exp_results.append(agg)
 
             cb_tag = " [CB_DROP]" if cb_drop else ""
-            print(f"[OK] {len(horizons)} horizons | n={sum(m['n_samples'] for m in horizon_metrics)}{cb_tag}")
+            logger.info(
+                "[OK] %d horizons | n=%d%s",
+                len(horizons),
+                sum(m["n_samples"] for m in horizon_metrics),
+                cb_tag,
+            )
         else:
             m = calculate_global_metrics(df)
             m.update(metadata)
@@ -180,9 +189,13 @@ def process_single_experiment(exp_dir, metadata, segment_configs):
             m["cb_drop"] = cb_drop
 
             cb_tag = " [CB_DROP]" if cb_drop else ""
-            print(
-                f"[OK] n={m.get('n_samples', 0):<6} | QLIKE: {m.get('qlike', np.nan):.6f} "
-                f"| MSE: {m.get('mse', np.nan):.4e} | MAE: {m.get('mae', np.nan):.4e}{cb_tag}"
+            logger.info(
+                "[OK] n=%-6d | QLIKE: %.6f | MSE: %.4e | MAE: %.4e%s",
+                m.get("n_samples", 0),
+                m.get("qlike", np.nan),
+                m.get("mse", np.nan),
+                m.get("mae", np.nan),
+                cb_tag,
             )
 
             exp_results.append(m)

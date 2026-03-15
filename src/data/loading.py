@@ -10,6 +10,9 @@ import pandas as pd
 
 from src import config
 from src.data.transforms import robust_transform
+from src.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFrame, list[str]]:
@@ -87,9 +90,11 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
         mask_cb_rows = data["t"].dt.date.isin(cb_dates)
         n_dropped = mask_cb_rows.sum()
         if n_dropped:
-            print(
-                f"  [CB Drop] Dropping {n_dropped} rows on circuit-breaker dates "
-                f"(non-moments cols present: {non_moments_exog[:3]}{'...' if len(non_moments_exog) > 3 else ''})"
+            logger.info(
+                "[CB Drop] Dropping %d rows on circuit-breaker dates (non-moments cols present: %s%s)",
+                n_dropped,
+                non_moments_exog[:3],
+                "..." if len(non_moments_exog) > 3 else "",
             )
         data = data[~mask_cb_rows].reset_index(drop=True)
         hparams["cb_drop"] = True

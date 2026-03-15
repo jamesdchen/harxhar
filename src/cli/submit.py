@@ -11,6 +11,9 @@ import subprocess
 from pathlib import Path
 
 from src.cli.executor import add_feature_args
+from src.log import get_logger
+
+logger = get_logger(__name__)
 
 SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"
 DEFAULT_TASKS_PER_ARRAY = 100
@@ -106,10 +109,14 @@ def submit_experiment(
 
     n_vars = len(spec.variables)
     extra_tag = f" [{spec.extra_args}]" if spec.extra_args else ""
-    print(
-        f"--- Submitting ID {spec.exp_id}: {spec.model_type.upper()} + "
-        f"{spec.feature_type.upper()} - {spec.exp_name.upper()} "
-        f"({n_vars} vars){extra_tag} ---"
+    logger.info(
+        "Submitting ID %d: %s + %s - %s (%d vars)%s",
+        spec.exp_id,
+        spec.model_type.upper(),
+        spec.feature_type.upper(),
+        spec.exp_name.upper(),
+        n_vars,
+        extra_tag,
     )
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
@@ -134,7 +141,7 @@ def submit_experiment_batch(
         all_specs.insert(0, naive)
 
     n_total = len(all_specs)
-    print(f"Submitting {n_total} experiments to {base_dir}...")
+    logger.info("Submitting %d experiments to %s", n_total, base_dir)
 
     for spec in all_specs:
         submit_experiment(spec, base_dir, total_chunks, tasks_per_array, slurm_script)
@@ -142,8 +149,8 @@ def submit_experiment_batch(
     # Mark this base_dir as needing aggregation
     (Path(base_dir) / ".needs_aggregation").touch()
 
-    print(f"\nAll {n_total} experiments submitted to {base_dir}.")
-    print("Run 'python scripts/aggregate.py' to aggregate all pending results.")
+    logger.info("All %d experiments submitted to %s.", n_total, base_dir)
+    logger.info("Run 'python scripts/aggregate.py' to aggregate all pending results.")
 
 
 def build_extra_args(feature_type, args):

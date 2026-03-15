@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
 
+from src.log import get_logger
+
+logger = get_logger(__name__)
+
 
 def calculate_global_metrics(df: pd.DataFrame) -> dict[str, float]:
     """Calculates MSE, MAE, and QLIKE (both filtered and non-filtered)."""
@@ -35,7 +39,7 @@ def calculate_baseline_deltas(summary_df: pd.DataFrame) -> pd.DataFrame:
     baseline_df = summary_df[baseline_mask]
 
     if baseline_df.empty:
-        print("\n[Warning] No baseline experiment found. Deltas and OOS R2 will be NaN.")
+        logger.warning("No baseline experiment found. Deltas and OOS R2 will be NaN.")
         for col in ["delta_mse", "delta_mae", "delta_qlike", "oos_r2"]:
             summary_df[col] = np.nan
         return summary_df
