@@ -16,6 +16,8 @@ from src.executor import add_feature_args
 SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
+DEFAULT_SLURM_ACCOUNT = "pollok_1603"
+DEFAULT_SLURM_LOG_DIR = "logs"
 
 
 @dataclasses.dataclass
@@ -64,12 +66,23 @@ def build_job_env(spec, exp_dir, total_chunks):
 def submit_array(job_name, total_chunks, tasks_per_array, job_env,
                  slurm_script=SUBMISSION_SCRIPT):
     """Submit SLURM array job(s), chunking if tasks_per_array < total_chunks."""
+    account = os.environ.get("SLURM_ACCOUNT", DEFAULT_SLURM_ACCOUNT)
+    log_dir = os.environ.get("SLURM_LOG_DIR", DEFAULT_SLURM_LOG_DIR)
+    os.makedirs(log_dir, exist_ok=True)
+
     start_task = 1
     while start_task <= total_chunks:
         end_task = min(start_task + tasks_per_array - 1, total_chunks)
         task_range = f"{start_task}-{end_task}"
-        cmd = ["sbatch", "--array", task_range, "--job-name", job_name, slurm_script]
-        subprocess.run(cmd, env=job_env)
+        cmd = [
+            "sbatch",
+            "--array", task_range,
+            "--job-name", job_name,
+            "--account", account,
+            "--output", f"{log_dir}/slurm-%A_%a.out",
+            slurm_script,
+        ]
+        subprocess.run(cmd, env=job_env, check=True)
         start_task = end_task + 1
 
 

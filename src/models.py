@@ -189,8 +189,12 @@ class _SARIMAXEstimator:
 
     Accepts fit(X, y) where X/y are in chronological order, and
     predict(X) for h-step-ahead forecasting with exogenous data.
-    Silently retains the previous fitted result on any failure.
+    Retains the previous fitted result on transient failures. After
+    MAX_CONSECUTIVE_FAILURES consecutive fit failures, resets to naive
+    fallback (last observed value) to avoid stale predictions.
     """
+
+    MAX_CONSECUTIVE_FAILURES = 5
 
     def __init__(self, order, seasonal_order, horizon=1):
         self.order = order
@@ -199,9 +203,12 @@ class _SARIMAXEstimator:
         self._result = None
         self._fit_count = 0
         self._fail_count = 0
+        self._consecutive_failures = 0
+        self._last_y_val = None
 
     def fit(self, X, y):
         y = np.asarray(y, dtype=np.float64).ravel()
+        self._last_y_val = float(y[-1])
         exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
         try:
             m = _SARIMAX(
@@ -218,20 +225,35 @@ class _SARIMAXEstimator:
                 maxiter=cfg.SARIMAX_FIT_MAXITER,
             )
             self._fit_count += 1
+            self._consecutive_failures = 0
         except (np.linalg.LinAlgError, ValueError) as e:
             self._fail_count += 1
-            warnings.warn(f"SARIMAX fit failed ({self._fail_count} total failures), retaining previous fit: {e}")
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                warnings.warn(
+                    f"SARIMAX fit failed {self._consecutive_failures} times consecutively "
+                    f"({self._fail_count} total); falling back to naive prediction: {e}"
+                )
+                self._result = None
+            else:
+                warnings.warn(
+                    f"SARIMAX fit failed ({self._fail_count} total, "
+                    f"{self._consecutive_failures} consecutive), retaining previous fit: {e}"
+                )
         return self
 
     def predict(self, X):
         """Return np.array([scalar]) so .item() in RollingRegressionModel works.
 
         Uses native multi-step forecasting: forecast(steps=horizon) and
-        return the h-th step value.
+        return the h-th step value. Falls back to naive (last observed value)
+        when no successful fit is available.
         """
         if self._result is None:
+            if self._last_y_val is not None:
+                return np.array([self._last_y_val])
             raise RuntimeError(
-                "SARIMAX predict called with no successful fit — "
+                "SARIMAX predict called with no successful fit and no observed data — "
                 f"all {self._fail_count} fit attempt(s) failed"
             )
         exog = np.asarray(X, dtype=np.float64) if X.shape[1] > 0 else None
@@ -244,8 +266,8 @@ class _SARIMAXEstimator:
             val = fc.iloc[-1] if hasattr(fc, "iloc") else fc[-1]
             return np.array([float(val)])
         except (ValueError, IndexError) as e:
-            warnings.warn(f"SARIMAX predict failed, returning 0.0: {e}")
-            return np.array([0.0])
+            warnings.warn(f"SARIMAX predict failed, returning last observed value: {e}")
+            return np.array([self._last_y_val if self._last_y_val is not None else 0.0])
 
 
 class SARIMAXModel(RollingRegressionModel):
