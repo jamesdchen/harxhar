@@ -4,10 +4,7 @@ import os
 
 import numpy as np
 import pandas as pd
-import torch
 from sklearn.decomposition import PCA
-
-from src.models.deep_learning import LagAutoEncoder, train_autoencoder
 
 
 # --- Base Class ---
@@ -151,6 +148,10 @@ class AETransform(BaseFeatureTransform):
         ae_loss_path: str | None = None,
         ae_weights_dir: str | None = None,
     ) -> None:
+        import torch
+
+        from src.models.deep_learning import LagAutoEncoder
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.ae = LagAutoEncoder(n_features, n_components, hidden_dim).to(self.device)
         self.alpha = alpha
@@ -165,6 +166,9 @@ class AETransform(BaseFeatureTransform):
     def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> AETransform:
         if self.frozen:
             return self
+
+        from src.models.deep_learning import train_autoencoder
+
         y_flat = y.ravel() if y is not None else np.zeros(X.shape[0])
         train_autoencoder(
             self.ae,
@@ -184,6 +188,8 @@ class AETransform(BaseFeatureTransform):
 
     def load_weights(self, path: str) -> AETransform:
         """Load pre-trained AE weights and freeze (skip future fit calls)."""
+        import torch
+
         state_dict = torch.load(path, map_location=self.device, weights_only=True)
         self.ae.load_state_dict(state_dict)
         self.ae.eval()
@@ -191,6 +197,8 @@ class AETransform(BaseFeatureTransform):
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
+        import torch
+
         X_t = torch.tensor(X, dtype=torch.float32, device=self.device)
         return self.ae.encode(X_t).cpu().numpy()
 
@@ -208,6 +216,8 @@ class AETransform(BaseFeatureTransform):
         self._loss_log.clear()
 
     def _save_weights(self) -> None:
+        import torch
+
         os.makedirs(self.ae_weights_dir, exist_ok=True)
         path = os.path.join(self.ae_weights_dir, f"ae_weights_{self._refit_count:04d}.pt")
         torch.save(self.ae.state_dict(), path)
