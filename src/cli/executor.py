@@ -7,7 +7,7 @@ import numpy as np
 
 from src.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
 from src.data import apply_horizon_shift, load_and_prep_data_strided
-from src.features import AETransform, BaseFeatureTransform, PCATransform
+from src.features import BaseFeatureTransform, PCATransform
 from src.log import get_logger
 from src.models import create_model
 
@@ -113,6 +113,8 @@ def _build_feature_transform(args: argparse.Namespace, n_features: int) -> BaseF
     if args.features == "pca":
         return PCATransform(n_components=args.n_components)
     elif args.features == "ae":
+        from src.features import AETransform
+
         transform = AETransform(
             n_features=n_features,
             n_components=args.n_components,
