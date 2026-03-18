@@ -9,21 +9,6 @@ from src.models.base import (
 from src.models.base import (
     RollingRegressionModel as RollingRegressionModel,
 )
-from src.models.deep_learning import (
-    LagAutoEncoder as LagAutoEncoder,
-)
-from src.models.deep_learning import (
-    PatchTSMixerForecaster as PatchTSMixerForecaster,
-)
-from src.models.deep_learning import (
-    get_ae_model as get_ae_model,
-)
-from src.models.deep_learning import (
-    get_model as get_model,
-)
-from src.models.deep_learning import (
-    train_autoencoder as train_autoencoder,
-)
 from src.models.registry import (
     MODEL_REGISTRY as MODEL_REGISTRY,
 )
@@ -43,3 +28,20 @@ from src.models.sklearn_models import (
 from src.models.sklearn_models import (
     XGBoostModel as XGBoostModel,
 )
+
+# Lazy imports for torch-dependent deep learning models
+_DEEP_LEARNING_ATTRS = {
+    "LagAutoEncoder",
+    "PatchTSMixerForecaster",
+    "get_ae_model",
+    "get_model",
+    "train_autoencoder",
+}
+
+
+def __getattr__(name: str):
+    if name in _DEEP_LEARNING_ATTRS:
+        from src.models import deep_learning
+
+        return getattr(deep_learning, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
