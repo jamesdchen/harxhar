@@ -15,11 +15,13 @@ from src.log import get_logger
 
 logger = get_logger(__name__)
 
-SUBMISSION_SCRIPT = "slurm/submit_carc.slurm"
+# Resolve paths relative to the project root (two levels up from src/cli/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SUBMISSION_SCRIPT = str(PROJECT_ROOT / "slurm" / "submit_carc.slurm")
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
 DEFAULT_SLURM_ACCOUNT = "pollok_1603"
-DEFAULT_SLURM_LOG_DIR = "logs"
+DEFAULT_SLURM_LOG_DIR = str(PROJECT_ROOT / "logs")
 
 
 @dataclasses.dataclass
@@ -87,12 +89,7 @@ def submit_array(job_name, total_chunks, tasks_per_array, job_env, slurm_script=
             f"{log_dir}/slurm-%A_%a.out",
             slurm_script,
         ]
-        result = subprocess.run(cmd, env=job_env, capture_output=True, text=True)
-        if result.stdout:
-            logger.info(result.stdout.strip())
-        if result.returncode != 0:
-            logger.error("sbatch failed (exit %d): %s", result.returncode, result.stderr.strip())
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+        subprocess.run(cmd, env=job_env, check=True, cwd=PROJECT_ROOT)
         start_task = end_task + 1
 
 
