@@ -13,6 +13,9 @@ from src.data.pipeline import (
 from src.data.rolling import (
     RollingBuffer as RollingBuffer,
 )
+from src.data.synth_data import (
+    MovingBlockBootstrap as MovingBlockBootstrap,
+)
 from src.data.rolling import (
     RollingMedian as RollingMedian,
 )
