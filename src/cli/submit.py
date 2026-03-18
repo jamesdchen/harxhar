@@ -87,7 +87,12 @@ def submit_array(job_name, total_chunks, tasks_per_array, job_env, slurm_script=
             f"{log_dir}/slurm-%A_%a.out",
             slurm_script,
         ]
-        subprocess.run(cmd, env=job_env, check=True)
+        result = subprocess.run(cmd, env=job_env, capture_output=True, text=True)
+        if result.stdout:
+            logger.info(result.stdout.strip())
+        if result.returncode != 0:
+            logger.error("sbatch failed (exit %d): %s", result.returncode, result.stderr.strip())
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
         start_task = end_task + 1
 
 
