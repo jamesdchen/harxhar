@@ -42,7 +42,7 @@ def main():
     parser.add_argument(
         "--models",
         nargs="+",
-        default=ALL_MODELS,
+        default=["ridge"],
         help=f"Models to run. Use 'all' for: {ALL_MODELS}.",
     )
     parser.add_argument(
@@ -57,7 +57,7 @@ def main():
         default=["all"],
         help=f"Subgroups to run. Use 'all' for: {list(SUBGROUPS.keys())}.",
     )
-    parser.set_defaults(result_dir="results_subgroup_analysis")
+    parser.set_defaults(result_dir="results_ridge_subgroups")
     args = parser.parse_args()
 
     models_to_run = resolve_list(args.models, ALL_MODELS)
