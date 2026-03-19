@@ -28,39 +28,25 @@ class TestLoadAllChunks:
     def test_stitches_multiple_csvs(self, tmp_path):
         for i in range(3):
             _write_chunk(tmp_path / f"results_chunk_{i}.csv", n=5, start_date=f"2020-01-0{i + 1}")
-        df, cb_drop = load_all_chunks(str(tmp_path))
+        df = load_all_chunks(str(tmp_path))
         assert len(df) == 15
-        assert cb_drop is False
         assert isinstance(df.index, pd.DatetimeIndex)
 
     def test_empty_directory_returns_empty(self, tmp_path):
-        df, cb_drop = load_all_chunks(str(tmp_path))
+        df = load_all_chunks(str(tmp_path))
         assert df.empty
-        assert cb_drop is False
 
     def test_ignore_suffixes(self, tmp_path):
         _write_chunk(tmp_path / "results_chunk_0_morning.csv", n=3)
         _write_chunk(tmp_path / "results_chunk_0_closing.csv", n=4)
-        df, _ = load_all_chunks(str(tmp_path), ignore_suffixes=["morning"])
+        df = load_all_chunks(str(tmp_path), ignore_suffixes=["morning"])
         assert len(df) == 4
 
     def test_require_suffixes(self, tmp_path):
         _write_chunk(tmp_path / "results_chunk_0_morning.csv", n=3)
         _write_chunk(tmp_path / "results_chunk_0_closing.csv", n=4)
-        df, _ = load_all_chunks(str(tmp_path), require_suffixes=["morning"])
+        df = load_all_chunks(str(tmp_path), require_suffixes=["morning"])
         assert len(df) == 3
-
-    def test_cb_drop_flag_all_tagged(self, tmp_path):
-        _write_chunk(tmp_path / "results_chunk_0_cb_drop.csv", n=3)
-        _write_chunk(tmp_path / "results_chunk_1_cb_drop.csv", n=3)
-        _, cb_drop = load_all_chunks(str(tmp_path))
-        assert cb_drop is True
-
-    def test_cb_drop_flag_mixed(self, tmp_path):
-        _write_chunk(tmp_path / "results_chunk_0_cb_drop.csv", n=3)
-        _write_chunk(tmp_path / "results_chunk_1.csv", n=3)
-        _, cb_drop = load_all_chunks(str(tmp_path))
-        assert cb_drop is False
 
 
 class TestParseConfig:

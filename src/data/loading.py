@@ -85,25 +85,6 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
             stacklevel=2,
         )
 
-    # --- Circuit Breaker Date Drop for Non-Moments Features ---
-    def _is_moments_col(col):
-        return col.startswith("sum") and "stock" not in col and "volume" not in col
-
-    non_moments_exog = [c for c in exog_col_names if not _is_moments_col(c)]
-    if non_moments_exog:
-        mask_cb_rows = data["t"].dt.date.isin(cb_dates)
-        n_dropped = mask_cb_rows.sum()
-        if n_dropped:
-            logger.info(
-                "[CB Drop] Dropping %d rows on circuit-breaker dates (non-moments cols present: %s%s)",
-                n_dropped,
-                non_moments_exog[:3],
-                "..." if len(non_moments_exog) > 3 else "",
-            )
-        data = data[~mask_cb_rows].reset_index(drop=True)
-        hparams["cb_drop"] = True
-    else:
-        hparams["cb_drop"] = False
 
     # --- Read toggles ---
     allow_missing = hparams.get("allow_missing", False)
