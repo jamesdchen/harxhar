@@ -75,9 +75,9 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
     data.loc[mask_cb, "RV"] = data["RV"].copy().where(~mask_cb).ffill()
     remaining_zeros = data["t"].dt.date.isin(cb_dates) & (data["RV"] == 0.0)
     if remaining_zeros.any():
+        zero_times = data.loc[remaining_zeros, "t"].dt.strftime("%Y-%m-%d %H:%M").tolist()
         warnings.warn(
-            f"Circuit breaker ffill left {remaining_zeros.sum()} zero RV values; "
-            f"check data around dates: {config.CIRCUIT_BREAKER_DATES}",
+            f"Circuit breaker ffill left {remaining_zeros.sum()} zero RV values at: {zero_times}",
             stacklevel=2,
         )
 

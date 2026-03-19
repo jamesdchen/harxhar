@@ -1,0 +1,7 @@
+Experiment ID: 1
+Experiment Name: baseline
+Model Type: ridge
+Features: raw
+Num Variables: 0
+Variables: []
+Extra Args: --features raw
