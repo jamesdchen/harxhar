@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
 
+from src.cli.backends import get_backend
 from src.cli.submit import (
     ExperimentSpec,
     add_common_submit_args,
@@ -50,11 +51,13 @@ def main():
         for i, model in enumerate(args.models)
     ]
 
+    backend = get_backend(args.backend)
     submit_experiment_batch(
         specs=specs,
         base_dir=args.result_dir,
         total_chunks=args.total_chunks,
         include_naive=not args.no_naive,
+        backend=backend,
     )
 
 
