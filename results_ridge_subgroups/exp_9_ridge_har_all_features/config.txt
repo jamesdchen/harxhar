@@ -1,0 +1,7 @@
+Experiment ID: 9
+Experiment Name: all_features
+Model Type: ridge
+Features: har
+Num Variables: 45
+Variables: ['endbartime', 'sumret', 'sumabsret', 'sumret3', 'sumret4', 'sumpret2', 'sumbipow', 'sumautocov', 'sumvolume', 'numobs', 'sumret2_ewstock', 'sumret3_ewstock', 'sumret4_ewstock', 'sumabsret_ewstock', 'sumbipow_ewstock', 'sumpret2_ewstock', 'turnover_ewstock', 'buyturnover_ewstock', 'sellturnover_ewstock', 'effspread_ewstock', 'spread_ewstock', 'sumret2_vwstock', 'sumret3_vwstock', 'sumret4_vwstock', 'sumabsret_vwstock', 'sumbipow_vwstock', 'sumpret2_vwstock', 'turnover_vwstock', 'buyturnover_vwstock', 'sellturnover_vwstock', 'effspread_vwstock', 'spread_vwstock', 'turnover_spy', 'buyturnover_spy', 'sellturnover_spy', 'stocktwits_attention', 'stocktwits_sentiment', 'stocktwits_sentcount', 'vix', 'vvix', 'vix3m', 'voldemand_spx_open_and_close', 'voldemand_spx_open_only', 'voldemand_all_open_and_close', 'voldemand_all_open_only']
+Extra Args: --features har
