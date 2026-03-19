@@ -1,7 +1,0 @@
-Experiment ID: 7
-Experiment Name: implied_vol
-Model Type: ridge
-Features: raw
-Num Variables: 3
-Variables: ['vix', 'vvix', 'vix3m']
-Extra Args: --features raw

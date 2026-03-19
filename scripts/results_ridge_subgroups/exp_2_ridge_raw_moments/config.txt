@@ -1,7 +1,0 @@
-Experiment ID: 2
-Experiment Name: moments
-Model Type: ridge
-Features: raw
-Num Variables: 7
-Variables: ['sumret', 'sumabsret', 'sumret3', 'sumret4', 'sumpret2', 'sumbipow', 'sumautocov']
-Extra Args: --features raw

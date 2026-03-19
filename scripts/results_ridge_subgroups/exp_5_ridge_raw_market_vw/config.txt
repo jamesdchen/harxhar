@@ -1,7 +1,0 @@
-Experiment ID: 5
-Experiment Name: market_vw
-Model Type: ridge
-Features: raw
-Num Variables: 6
-Variables: ['sumret2_vwstock', 'sumret3_vwstock', 'sumret4_vwstock', 'sumabsret_vwstock', 'sumbipow_vwstock', 'sumpret2_vwstock']
-Extra Args: --features raw
