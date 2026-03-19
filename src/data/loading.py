@@ -69,11 +69,15 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
                 if data[col].dtype == object:
                     raise ValueError(f"Unexpected object dtype on {col}")
 
-    # --- Circuit Breaker Handling ---
+    # --- Circuit Breaker Handling (market hours only: 09:30–16:00) ---
     cb_dates = pd.to_datetime(config.CIRCUIT_BREAKER_DATES).date
-    mask_cb = data["t"].dt.date.isin(cb_dates) & (data["RV"] == 0.0)
+    market_open = pd.to_datetime("09:30").time()
+    market_close = pd.to_datetime("16:00").time()
+    tod = data["t"].dt.time
+    in_market_hours = (tod >= market_open) & (tod <= market_close)
+    mask_cb = data["t"].dt.date.isin(cb_dates) & (data["RV"] == 0.0) & in_market_hours
     data.loc[mask_cb, "RV"] = data["RV"].copy().where(~mask_cb).ffill()
-    remaining_zeros = data["t"].dt.date.isin(cb_dates) & (data["RV"] == 0.0)
+    remaining_zeros = data["t"].dt.date.isin(cb_dates) & (data["RV"] == 0.0) & in_market_hours
     if remaining_zeros.any():
         zero_times = data.loc[remaining_zeros, "t"].dt.strftime("%Y-%m-%d %H:%M").tolist()
         warnings.warn(
