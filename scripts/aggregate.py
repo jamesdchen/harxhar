@@ -139,7 +139,7 @@ def main(args):
         return
 
     # Auto-discover: find all base_dirs with .needs_aggregation marker
-    marker_files = glob.glob("results/.needs_aggregation") + glob.glob("results_*/.needs_aggregation")
+    marker_files = glob.glob("results/*/.needs_aggregation") + glob.glob("results_*/.needs_aggregation")
     if not marker_files:
         print("No pending results directories found. Nothing to aggregate.")
         return
@@ -162,7 +162,7 @@ if __name__ == "__main__":
         "--base_dir",
         type=str,
         default=None,
-        help="Process a specific directory. If omitted, auto-discovers all results_*/ with pending results.",
+        help="Process a specific directory. If omitted, auto-discovers all results/*/ with pending results.",
     )
 
     main(parser.parse_args())

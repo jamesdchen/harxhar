@@ -33,7 +33,7 @@ def main():
         default=ALL_MODELS,
         help=f"Models to compare. Default: {ALL_MODELS}.",
     )
-    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
+    parser.set_defaults(result_dir="results/model_comparison")
     args = parser.parse_args()
 
     feature_type = "har"
