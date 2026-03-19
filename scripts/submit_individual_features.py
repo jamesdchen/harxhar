@@ -19,6 +19,7 @@ from src.cli.submit import (
     build_extra_args,
     submit_experiment_batch,
 )
+from src.config import DEFAULT_RESULTS_DIR
 from src.feature_groups import SUBGROUPS
 
 
@@ -40,8 +41,10 @@ def main():
         default="moments",
         help=f"Subgroup whose features to test individually. Choices: {list(SUBGROUPS.keys())}.",
     )
-    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
     args = parser.parse_args()
+
+    if args.result_dir == DEFAULT_RESULTS_DIR:
+        args.result_dir = f"results/individual_{args.subgroup}"
 
     features = SUBGROUPS[args.subgroup]
     if not features:

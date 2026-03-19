@@ -58,7 +58,7 @@ def main():
         default=["all"],
         help=f"Subgroups to run. Use 'all' for: {list(SUBGROUPS.keys())}.",
     )
-    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
+    parser.set_defaults(result_dir="results/subgroup_analysis")
     args = parser.parse_args()
 
     models_to_run = resolve_list(args.models, ALL_MODELS)
