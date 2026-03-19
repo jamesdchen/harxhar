@@ -92,7 +92,12 @@ def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
 
     from src import config as cfg
 
-    refit_frequency = cfg.AE_REFIT_FREQUENCY if args.features == "ae" else 1
+    if args.features == "ae":
+        refit_frequency = cfg.AE_REFIT_FREQUENCY
+    elif args.model in ("xgboost", "lightgbm", "random_forest"):
+        refit_frequency = 5
+    else:
+        refit_frequency = 1
 
     return {
         "diurnal_adjust": True,
