@@ -1,15 +1,18 @@
 """
 Shared experiment submission utilities.
 
-Handles config.txt creation, SLURM env var construction, and sbatch array submission.
-All submission scripts delegate mechanical work here.
+Handles config.txt creation, env var construction, and array job submission.
+All submission scripts delegate mechanical work here.  The actual scheduler
+interaction is handled by pluggable backends (see src.cli.backends).
 """
+
+from __future__ import annotations
 
 import dataclasses
 import os
-import subprocess
 from pathlib import Path
 
+from src.cli.backends import HPCBackend, get_backend
 from src.cli.executor import add_feature_args
 from src.log import get_logger
 
@@ -17,11 +20,8 @@ logger = get_logger(__name__)
 
 # Resolve paths relative to the project root (two levels up from src/cli/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SUBMISSION_SCRIPT = str(PROJECT_ROOT / "slurm" / "submit_carc.slurm")
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
-DEFAULT_SLURM_ACCOUNT = "pollok_1603"
-DEFAULT_SLURM_LOG_DIR = "/scratch1/jc_905/logs"
 
 
 @dataclasses.dataclass
@@ -67,34 +67,12 @@ def build_job_env(spec: ExperimentSpec, exp_dir: str, total_chunks: int) -> dict
     return env
 
 
-def submit_array(job_name, total_chunks, tasks_per_array, job_env, slurm_script=SUBMISSION_SCRIPT):
-    """Submit SLURM array job(s), chunking if tasks_per_array < total_chunks."""
-    account = os.environ.get("SLURM_ACCOUNT", DEFAULT_SLURM_ACCOUNT)
-    log_dir = os.environ.get("SLURM_LOG_DIR", DEFAULT_SLURM_LOG_DIR)
-    os.makedirs(log_dir, exist_ok=True)
-
-    start_task = 1
-    while start_task <= total_chunks:
-        end_task = min(start_task + tasks_per_array - 1, total_chunks)
-        task_range = f"{start_task}-{end_task}"
-        cmd = [
-            "sbatch",
-            "--array",
-            task_range,
-            "--job-name",
-            job_name,
-            "--account",
-            account,
-            "--output",
-            f"{log_dir}/slurm-%A_%a.out",
-            slurm_script,
-        ]
-        subprocess.run(cmd, env=job_env, check=True, cwd=PROJECT_ROOT)
-        start_task = end_task + 1
-
-
 def submit_experiment(
-    spec, base_dir, total_chunks, tasks_per_array=DEFAULT_TASKS_PER_ARRAY, slurm_script=SUBMISSION_SCRIPT
+    spec,
+    base_dir,
+    total_chunks,
+    tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
+    backend: HPCBackend | None = None,
 ):
     """Submit a single experiment: mkdir, write config, sbatch."""
     dir_name = f"exp_{spec.exp_id}_{spec.model_type}_{spec.feature_type}_{spec.exp_name}"
@@ -121,8 +99,11 @@ def submit_experiment(
         extra_tag,
     )
 
+    if backend is None:
+        backend = get_backend("slurm")
+
     job_env = build_job_env(spec, exp_dir, total_chunks)
-    submit_array(job_name, total_chunks, tasks_per_array, job_env, slurm_script)
+    backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
     return exp_dir
 
 
@@ -132,7 +113,7 @@ def submit_experiment_batch(
     total_chunks,
     tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
     include_naive=True,
-    slurm_script=SUBMISSION_SCRIPT,
+    backend: HPCBackend | None = None,
 ):
     """Submit a list of ExperimentSpecs, optionally prepending naive baseline."""
     Path(base_dir).mkdir(parents=True, exist_ok=True)
@@ -146,7 +127,7 @@ def submit_experiment_batch(
     logger.info("Submitting %d experiments to %s", n_total, base_dir)
 
     for spec in all_specs:
-        submit_experiment(spec, base_dir, total_chunks, tasks_per_array, slurm_script)
+        submit_experiment(spec, base_dir, total_chunks, tasks_per_array, backend)
 
     # Mark this base_dir as needing aggregation
     (Path(base_dir) / ".needs_aggregation").touch()
@@ -188,6 +169,12 @@ def add_common_submit_args(parser):
         type=int,
         default=DEFAULT_TOTAL_CHUNKS,
         help="Total number of dataset chunks to process.",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="slurm",
+        help="HPC backend to use for job submission (e.g. slurm, sge).",
     )
     add_feature_args(parser)
     parser.add_argument(
