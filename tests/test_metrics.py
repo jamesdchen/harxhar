@@ -88,6 +88,30 @@ class TestCalculateBaselineDeltas:
         # oos_r2 = 1 - model_mse / baseline_mse = 1 - 1/2 = 0.5
         assert result.loc[1, "oos_r2"] == pytest.approx(0.5)
 
+    def test_deltas_multi_horizon(self):
+        """Each horizon should be compared against its own naive baseline horizon."""
+        summary = pd.DataFrame(
+            {
+                "exp_id": [0, 0, 1, 1],
+                "experiment_name": ["naive_baseline", "naive_baseline", "my_model", "my_model"],
+                "segment": ["full", "full", "full", "full"],
+                "horizon": [1, 2, 1, 2],
+                "mse": [2.0, 4.0, 1.0, 3.0],
+                "mae": [1.5, 3.0, 1.0, 2.0],
+                "qlike": [0.5, 1.0, 0.3, 0.7],
+            }
+        )
+        result = calculate_baseline_deltas(summary)
+        model_rows = result[result["exp_id"] == 1].set_index("horizon")
+
+        # horizon=1: delta_mse = 1.0 - 2.0 = -1.0
+        assert model_rows.loc[1, "delta_mse"] == pytest.approx(-1.0)
+        assert model_rows.loc[1, "oos_r2"] == pytest.approx(0.5)
+
+        # horizon=2: delta_mse = 3.0 - 4.0 = -1.0 (NOT 3.0 - 2.0 = 1.0)
+        assert model_rows.loc[2, "delta_mse"] == pytest.approx(-1.0)
+        assert model_rows.loc[2, "oos_r2"] == pytest.approx(0.25)
+
     def test_no_baseline_returns_nan(self):
         summary = pd.DataFrame(
             {

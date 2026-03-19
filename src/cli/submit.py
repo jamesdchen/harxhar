@@ -108,6 +108,26 @@ def submit_experiment(
     return exp_dir
 
 
+def _try_link_cached_naive(base_dir: str | Path) -> bool:
+    """Symlink pre-computed naive results into *base_dir* if available.
+
+    Returns True if the link was created (or already exists), False otherwise.
+    """
+    cached_naive = PROJECT_ROOT / "results" / "naive" / "exp_0_naive_baseline"
+    link_path = Path(base_dir) / "exp_0_naive_baseline"
+
+    # Already present (previous symlink or a real directory) — nothing to do.
+    if link_path.exists():
+        return True
+
+    if cached_naive.is_dir():
+        link_path.symlink_to(cached_naive.resolve())
+        logger.info("Linked cached naive results: %s -> %s", link_path, cached_naive.resolve())
+        return True
+
+    return False
+
+
 def submit_experiment_batch(
     specs,
     base_dir,
@@ -121,8 +141,15 @@ def submit_experiment_batch(
 
     all_specs = list(specs)
     if include_naive:
-        naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="har")
-        all_specs.insert(0, naive)
+        if _try_link_cached_naive(base_dir):
+            logger.info("Reusing cached naive baseline from results/naive/.")
+        else:
+            logger.warning(
+                "Cached naive results not found at results/naive/exp_0_naive_baseline. "
+                "Submitting a new naive baseline job. Run submit_naive.py first to avoid this."
+            )
+            naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="har")
+            all_specs.insert(0, naive)
 
     n_total = len(all_specs)
     logger.info("Submitting %d experiments to %s", n_total, base_dir)
