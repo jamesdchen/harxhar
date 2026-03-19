@@ -1,5 +1,5 @@
 """
-Submit model horse race: all models with baseline features (raw target lags only).
+Submit model horse race: all models with baseline features (HAR target lags only).
 
 Paper result: Table comparing model architectures on forecasting ability.
 """
@@ -36,7 +36,7 @@ def main():
     parser.set_defaults(result_dir="results_model_comparison")
     args = parser.parse_args()
 
-    feature_type = "raw"
+    feature_type = "har"
     extra_args = build_extra_args(feature_type, args)
 
     specs = [

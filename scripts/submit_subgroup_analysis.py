@@ -49,7 +49,7 @@ def main():
     parser.add_argument(
         "--features",
         nargs="+",
-        default=["raw"],
+        default=["har"],
         help=f"Feature types to run. Use 'all' for: {FEATURE_TYPES}.",
     )
     parser.add_argument(

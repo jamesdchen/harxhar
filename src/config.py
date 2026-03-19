@@ -7,6 +7,9 @@ DIURNAL_MIN_PERIODS = 5
 # Maximum lag (used to derive geometric or consecutive lag sequences)
 LAG = 3125
 
+# Naive baseline uses a fixed 144 raw lags (3 days × 48 periods)
+NAIVE_LAG = 144
+
 START_DATE = "2005-01-01"
 
 # Temporal constants

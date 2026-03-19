@@ -17,7 +17,7 @@
 
 # --- CONFIGURATION (edit these) ---
 MODEL="ridge"
-FEATURES="raw"                         # raw | har | pca | ae
+FEATURES="har"                         # har | pca | ae
 EXOG_COLS=""                           # pipe-separated, or "" for none
 RESULT_DIR="results_single"
 TOTAL_CHUNKS=100
