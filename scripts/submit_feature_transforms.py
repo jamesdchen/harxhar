@@ -45,7 +45,7 @@ def main():
         default=FEATURE_TYPES,
         help=f"Feature types to compare. Default: {FEATURE_TYPES}.",
     )
-    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
+    parser.set_defaults(result_dir="results/feature_transforms")
     args = parser.parse_args()
 
     variables = SUBGROUPS[args.subgroup]
