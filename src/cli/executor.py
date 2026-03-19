@@ -184,10 +184,6 @@ def execute_chunk_backtest(
         save_coefs=save_coefs,
     )
 
-    # Save (append _cb_drop suffix when circuit-breaker rows were dropped)
-    if hparams.get("cb_drop", False):
-        base, ext = os.path.splitext(output_file)
-        output_file = f"{base}_cb_drop{ext}"
     logger.info("Saving results to %s", output_file)
     save_chunk_results(
         output_file=output_file,
