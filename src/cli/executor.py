@@ -45,9 +45,9 @@ def get_common_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--features",
         type=str,
-        choices=["raw", "har", "pca", "ae"],
-        default="raw",
-        help="Feature type: raw lags, HAR rolling means, PCA-compressed, or AE-compressed",
+        choices=["har", "pca", "ae"],
+        default="har",
+        help="Feature type: HAR rolling means, PCA-compressed, or AE-compressed",
     )
     add_feature_args(parser)
     parser.add_argument(
@@ -223,13 +223,20 @@ def main(args: argparse.Namespace) -> None:
 
 
 def _run_global(args: argparse.Namespace, hparams: dict) -> None:
-    X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
+    from src import config as cfg
+
+    # Naive baseline uses hardcoded raw lags
+    if args.model == "naive":
+        hparams = {**hparams, "feature_type": "raw"}
+        X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(
+            hparams, args.input_path, lag=cfg.NAIVE_LAG
+        )
+    else:
+        X_np, y_np, dates, baselines, feature_names = load_and_prep_data_strided(hparams, args.input_path)
 
     if len(X_np) == 0:
         logger.info("Dataset is empty. Exiting.")
         return
-
-    from src import config as cfg
 
     if args.model == "naive":
         args.naive_lag = cfg.find_naive_lag(feature_names)
@@ -266,7 +273,16 @@ def _run_global(args: argparse.Namespace, hparams: dict) -> None:
 
 
 def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
-    datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment=args.segment)
+    from src import config as cfg
+
+    # Naive baseline uses hardcoded raw lags
+    if args.model == "naive":
+        hparams = {**hparams, "feature_type": "raw"}
+        datasets = load_and_prep_data_strided(
+            hparams, args.input_path, target_segment=args.segment, lag=cfg.NAIVE_LAG
+        )
+    else:
+        datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment=args.segment)
 
     if args.segment != "all":
         # Single segment returned as tuple
@@ -280,8 +296,6 @@ def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
         return
 
     if args.model == "naive":
-        from src import config as cfg
-
         first_ds = next(iter(datasets.values()))
         fnames = first_ds.get("features", [])
         if fnames:
