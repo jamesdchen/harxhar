@@ -487,7 +487,7 @@ class TestEndToEnd:
         ]
 
         for model in ["ridge", "xgboost", "lightgbm", "random_forest", "sarimax"]:
-            args = argparse.Namespace(model=model, features="raw", exog_cols=None, lag_scope="global")
+            args = argparse.Namespace(model=model, features="har", exog_cols=None, lag_scope="global")
             hp = get_common_hparams(args)
             for key in required_keys:
                 assert key in hp, f"Missing key '{key}' for model '{model}'"

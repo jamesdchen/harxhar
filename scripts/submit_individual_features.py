@@ -50,7 +50,7 @@ def main():
         print(f"Subgroup '{args.subgroup}' has no features to test individually.")
         return
 
-    feature_type = "raw"
+    feature_type = "har"
     extra_args = build_extra_args(feature_type, args)
 
     specs = [

@@ -29,7 +29,7 @@ class ExperimentSpec:
     exp_id: int
     exp_name: str
     model_type: str
-    feature_type: str = "raw"
+    feature_type: str = "har"
     variables: list = dataclasses.field(default_factory=list)
     extra_args: str = ""
 
@@ -139,7 +139,7 @@ def submit_experiment_batch(
 
     all_specs = list(specs)
     if include_naive:
-        naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="raw")
+        naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="har")
         all_specs.insert(0, naive)
 
     n_total = len(all_specs)
