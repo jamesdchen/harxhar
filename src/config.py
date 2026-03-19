@@ -10,6 +10,8 @@ LAG = 3125
 # Naive baseline uses a fixed 144 raw lags (3 days × 48 periods)
 NAIVE_LAG = 144
 
+DEFAULT_RESULTS_DIR = "results"
+
 START_DATE = "2005-01-01"
 
 # Temporal constants
