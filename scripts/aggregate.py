@@ -94,7 +94,6 @@ def aggregate_base_dir(base_dir, eval_mode):
         "experiment_name",
         "segment",
         "horizon",
-        "cb_drop",
         "mse",
         "delta_mse",
         "oos_r2",
@@ -118,7 +117,6 @@ def aggregate_base_dir(base_dir, eval_mode):
         "qlike": "{:.6f}".format,
         "delta_qlike": "{:.6f}".format,
         "oos_r2": "{:.4%}".format,
-        "cb_drop": lambda v: "CB_DROP" if v else "",
     }
 
     pd.set_option("display.width", 1000)
