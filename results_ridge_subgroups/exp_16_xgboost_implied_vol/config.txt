@@ -1,5 +1,0 @@
-Experiment ID: 16
-Experiment Name: implied_vol
-Model Type: xgboost
-Num Variables: 3
-Variables: ['vix', 'vvix', 'vix3m']

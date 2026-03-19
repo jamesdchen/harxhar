@@ -1,5 +1,0 @@
-Experiment ID: 24
-Experiment Name: sentiment
-Model Type: lightgbm
-Num Variables: 3
-Variables: ['stocktwits_attention', 'stocktwits_sentiment', 'stocktwits_sentcount']

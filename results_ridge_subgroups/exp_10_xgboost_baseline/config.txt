@@ -1,5 +1,0 @@
-Experiment ID: 10
-Experiment Name: baseline
-Model Type: xgboost
-Num Variables: 0
-Variables: []

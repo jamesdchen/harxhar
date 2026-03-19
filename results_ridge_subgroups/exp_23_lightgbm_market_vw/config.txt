@@ -1,5 +1,0 @@
-Experiment ID: 23
-Experiment Name: market_vw
-Model Type: lightgbm
-Num Variables: 11
-Variables: ['sumret2_vwstock', 'sumret3_vwstock', 'sumret4_vwstock', 'sumabsret_vwstock', 'sumbipow_vwstock', 'sumpret2_vwstock', 'turnover_vwstock', 'buyturnover_vwstock', 'sellturnover_vwstock', 'effspread_vwstock', 'spread_vwstock']

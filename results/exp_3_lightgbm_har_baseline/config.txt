@@ -1,0 +1,7 @@
+Experiment ID: 3
+Experiment Name: baseline
+Model Type: lightgbm
+Features: har
+Num Variables: 0
+Variables: []
+Extra Args: --features har

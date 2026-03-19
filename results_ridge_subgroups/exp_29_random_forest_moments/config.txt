@@ -1,5 +1,0 @@
-Experiment ID: 29
-Experiment Name: moments
-Model Type: random_forest
-Num Variables: 7
-Variables: ['sumret', 'sumabsret', 'sumret3', 'sumret4', 'sumpret2', 'sumbipow', 'sumautocov']

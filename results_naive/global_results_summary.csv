@@ -1,2 +1,0 @@
-n_samples,mse,mae,qlike,exp_id,experiment_name,model,segment,horizon,cb_drop,delta_mse,delta_mae,delta_qlike,oos_r2
-221915,0.22480740914395578,0.34306991521398034,0.35179318083724004,0,naive_baseline,naive,GLOBAL,1,False,0.0,0.0,0.0,0.0
