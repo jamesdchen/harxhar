@@ -44,23 +44,22 @@ def calculate_baseline_deltas(summary_df: pd.DataFrame) -> pd.DataFrame:
             summary_df[col] = np.nan
         return summary_df
 
-    def get_baseline_val(segment_name, metric):
-        b_row = baseline_df[baseline_df["segment"] == segment_name]
-        return b_row.iloc[0].get(metric, np.nan) if not b_row.empty else np.nan
+    # Build a segment -> baseline metrics lookup via merge (vectorized)
+    baseline_lookup = (
+        baseline_df.groupby("segment")[["mse", "mae", "qlike"]]
+        .first()
+        .rename(columns={"mse": "b_mse", "mae": "b_mae", "qlike": "b_qlike"})
+    )
+    summary_df = summary_df.merge(baseline_lookup, on="segment", how="left")
 
-    # Vectorized comparisons
-    summary_df["delta_mse"] = summary_df.apply(lambda r: r["mse"] - get_baseline_val(r["segment"], "mse"), axis=1)
-    summary_df["delta_mae"] = summary_df.apply(lambda r: r["mae"] - get_baseline_val(r["segment"], "mae"), axis=1)
-    summary_df["delta_qlike"] = summary_df.apply(lambda r: r["qlike"] - get_baseline_val(r["segment"], "qlike"), axis=1)
-
-    # OOS R2 Calculation (1 - MSE_model / MSE_baseline)
-    summary_df["oos_r2"] = summary_df.apply(
-        lambda r: (
-            1.0 - (r["mse"] / get_baseline_val(r["segment"], "mse"))
-            if get_baseline_val(r["segment"], "mse") > 0
-            else np.nan
-        ),
-        axis=1,
+    summary_df["delta_mse"] = summary_df["mse"] - summary_df["b_mse"]
+    summary_df["delta_mae"] = summary_df["mae"] - summary_df["b_mae"]
+    summary_df["delta_qlike"] = summary_df["qlike"] - summary_df["b_qlike"]
+    summary_df["oos_r2"] = np.where(
+        summary_df["b_mse"] > 0,
+        1.0 - summary_df["mse"] / summary_df["b_mse"],
+        np.nan,
     )
 
+    summary_df.drop(columns=["b_mse", "b_mae", "b_qlike"], inplace=True)
     return summary_df

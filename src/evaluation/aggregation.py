@@ -53,11 +53,7 @@ def load_all_chunks(
             continue
 
         try:
-            df = pd.read_csv(filename)
-            if "date" in df.columns:
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.set_index("date")
-            dfs.append(df)
+            dfs.append(pd.read_csv(filename))
             cb_drop_flags.append(has_cb_drop)
         except (OSError, pd.errors.ParserError) as e:
             logger.warning("Could not read %s: %s", raw_base, e)
@@ -67,7 +63,16 @@ def load_all_chunks(
 
     # cb_drop is True only when every chunk file in this experiment was tagged.
     cb_drop = len(cb_drop_flags) > 0 and all(cb_drop_flags)
-    return pd.concat(dfs).sort_index(), cb_drop
+
+    # Concat first, then parse dates once on the combined frame
+    combined = pd.concat(dfs, ignore_index=True)
+    if "date" in combined.columns:
+        combined["date"] = pd.to_datetime(combined["date"])
+        combined = combined.set_index("date").sort_index()
+    else:
+        combined = combined.sort_index()
+
+    return combined, cb_drop
 
 
 def parse_config(exp_dir: str | Path) -> tuple[int, str, str]:
@@ -128,6 +133,10 @@ def process_single_experiment(
     """
     exp_results = []
 
+    # Cache: when multiple segments share the same load_kwargs (e.g. filter_by_tod
+    # mode), load the data once and reuse it instead of re-reading CSVs each time.
+    _chunk_cache: dict[tuple, tuple[pd.DataFrame, bool]] = {}
+
     for seg_conf in segment_configs:
         seg_name = seg_conf["name"]
         load_kwargs = seg_conf["load_kwargs"]
@@ -141,8 +150,16 @@ def process_single_experiment(
             seg_name.ljust(12),
         )
 
-        # 1. Load Data — also returns the cb_drop flag
-        df, cb_drop = load_all_chunks(exp_dir, **load_kwargs)
+        # 1. Load Data — cache by (require_suffixes, ignore_suffixes) to avoid
+        #    redundant disk I/O when only the time filter differs between segments.
+        cache_key = (
+            tuple(load_kwargs.get("require_suffixes") or []),
+            tuple(load_kwargs.get("ignore_suffixes") or []),
+        )
+        if cache_key not in _chunk_cache:
+            _chunk_cache[cache_key] = load_all_chunks(exp_dir, **load_kwargs)
+        base_df, cb_drop = _chunk_cache[cache_key]
+        df = base_df
 
         if df.empty:
             logger.info("[EMPTY]")
