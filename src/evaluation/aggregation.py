@@ -15,34 +15,22 @@ def load_all_chunks(
     exp_dir: str | Path,
     ignore_suffixes: list[str] | None = None,
     require_suffixes: list[str] | None = None,
-) -> tuple[pd.DataFrame, bool]:
+) -> pd.DataFrame:
     """
     Stitches chunk CSVs into a DataFrame with flexible filtering.
 
-    Files tagged with _cb_drop (e.g. results_chunk_1_cb_drop.csv) are treated
-    identically to their non-tagged counterparts for the purpose of suffix
-    matching — the _cb_drop token is stripped before any ignore/require check.
-
     Returns
     -------
-    (df, cb_drop) : (pd.DataFrame, bool)
-        cb_drop is True when every loaded file carries the _cb_drop tag,
-        meaning the experiment ran with circuit-breaker rows excluded.
+    pd.DataFrame
     """
     all_files = sorted(Path(exp_dir).glob("results_chunk_*.csv"))
 
     if not all_files:
-        return pd.DataFrame(), False
+        return pd.DataFrame()
 
     dfs = []
-    cb_drop_flags = []
     for filename in all_files:
-        raw_base = filename.stem
-
-        # Strip _cb_drop before suffix matching so it is never mistaken for a
-        # segment name and never accidentally triggers ignore/require filters.
-        has_cb_drop = raw_base.endswith("_cb_drop")
-        base_name = raw_base[: -len("_cb_drop")] if has_cb_drop else raw_base
+        base_name = filename.stem
 
         # 1. Check if we should ignore this file
         if ignore_suffixes and any(base_name.endswith(f"_{seg}") for seg in ignore_suffixes):
@@ -54,15 +42,11 @@ def load_all_chunks(
 
         try:
             dfs.append(pd.read_csv(filename))
-            cb_drop_flags.append(has_cb_drop)
         except (OSError, pd.errors.ParserError) as e:
-            logger.warning("Could not read %s: %s", raw_base, e)
+            logger.warning("Could not read %s: %s", base_name, e)
 
     if not dfs:
-        return pd.DataFrame(), False
-
-    # cb_drop is True only when every chunk file in this experiment was tagged.
-    cb_drop = len(cb_drop_flags) > 0 and all(cb_drop_flags)
+        return pd.DataFrame()
 
     # Concat first, then parse dates once on the combined frame
     combined = pd.concat(dfs, ignore_index=True)
@@ -72,7 +56,7 @@ def load_all_chunks(
     else:
         combined = combined.sort_index()
 
-    return combined, cb_drop
+    return combined
 
 
 def parse_config(exp_dir: str | Path) -> tuple[int, str, str]:
@@ -135,7 +119,7 @@ def process_single_experiment(
 
     # Cache: when multiple segments share the same load_kwargs (e.g. filter_by_tod
     # mode), load the data once and reuse it instead of re-reading CSVs each time.
-    _chunk_cache: dict[tuple, tuple[pd.DataFrame, bool]] = {}
+    _chunk_cache: dict[tuple, pd.DataFrame] = {}
 
     for seg_conf in segment_configs:
         seg_name = seg_conf["name"]
@@ -158,7 +142,7 @@ def process_single_experiment(
         )
         if cache_key not in _chunk_cache:
             _chunk_cache[cache_key] = load_all_chunks(exp_dir, **load_kwargs)
-        base_df, cb_drop = _chunk_cache[cache_key]
+        base_df = _chunk_cache[cache_key]
         df = base_df
 
         if df.empty:
@@ -183,7 +167,6 @@ def process_single_experiment(
                 m.update(metadata)
                 m["segment"] = seg_name
                 m["horizon"] = int(h)
-                m["cb_drop"] = cb_drop
                 horizon_metrics.append(m)
                 exp_results.append(m)
 
@@ -192,35 +175,29 @@ def process_single_experiment(
                 agg = dict(metadata)
                 agg["segment"] = seg_name
                 agg["horizon"] = "mean"
-                agg["cb_drop"] = cb_drop
                 agg["n_samples"] = sum(m["n_samples"] for m in horizon_metrics)
                 for metric_key in ("mse", "mae", "qlike"):
                     vals = [m[metric_key] for m in horizon_metrics if not np.isnan(m.get(metric_key, np.nan))]
                     agg[metric_key] = np.mean(vals) if vals else np.nan
                 exp_results.append(agg)
 
-            cb_tag = " [CB_DROP]" if cb_drop else ""
             logger.info(
-                "[OK] %d horizons | n=%d%s",
+                "[OK] %d horizons | n=%d",
                 len(horizons),
                 sum(m["n_samples"] for m in horizon_metrics),
-                cb_tag,
             )
         else:
             m = calculate_global_metrics(df)
             m.update(metadata)
             m["segment"] = seg_name
             m["horizon"] = 1
-            m["cb_drop"] = cb_drop
 
-            cb_tag = " [CB_DROP]" if cb_drop else ""
             logger.info(
-                "[OK] n=%-6d | QLIKE: %.6f | MSE: %.4e | MAE: %.4e%s",
+                "[OK] n=%-6d | QLIKE: %.6f | MSE: %.4e | MAE: %.4e",
                 m.get("n_samples", 0),
                 m.get("qlike", np.nan),
                 m.get("mse", np.nan),
                 m.get("mae", np.nan),
-                cb_tag,
             )
 
             exp_results.append(m)
