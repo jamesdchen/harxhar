@@ -21,7 +21,7 @@ SUBMISSION_SCRIPT = str(PROJECT_ROOT / "slurm" / "submit_carc.slurm")
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
 DEFAULT_SLURM_ACCOUNT = "pollok_1603"
-DEFAULT_SLURM_LOG_DIR = str(PROJECT_ROOT / "logs")
+DEFAULT_SLURM_LOG_DIR = "/scratch1/jc_905/logs"
 
 
 @dataclasses.dataclass

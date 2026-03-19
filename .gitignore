@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 results_chunk_*.csv
 .needs_aggregation
+*.out

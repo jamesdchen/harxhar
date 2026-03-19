@@ -1,0 +1,7 @@
+Experiment ID: 6
+Experiment Name: sentiment
+Model Type: ridge
+Features: raw
+Num Variables: 3
+Variables: ['stocktwits_attention', 'stocktwits_sentiment', 'stocktwits_sentcount']
+Extra Args: --features raw

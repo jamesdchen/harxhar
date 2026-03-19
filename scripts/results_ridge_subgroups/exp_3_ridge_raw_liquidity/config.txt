@@ -1,0 +1,7 @@
+Experiment ID: 3
+Experiment Name: liquidity
+Model Type: ridge
+Features: raw
+Num Variables: 15
+Variables: ['sumvolume', 'numobs', 'turnover_ewstock', 'buyturnover_ewstock', 'sellturnover_ewstock', 'effspread_ewstock', 'spread_ewstock', 'turnover_vwstock', 'buyturnover_vwstock', 'sellturnover_vwstock', 'effspread_vwstock', 'spread_vwstock', 'turnover_spy', 'buyturnover_spy', 'sellturnover_spy']
+Extra Args: --features raw
