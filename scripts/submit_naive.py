@@ -24,7 +24,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_submit_args(parser)
-    parser.set_defaults(result_dir="results_naive")
+    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
     args = parser.parse_args()
 
     # Naive-only: submit_experiment_batch with an empty spec list + include_naive=True

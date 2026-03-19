@@ -40,11 +40,8 @@ def main():
         default="moments",
         help=f"Subgroup whose features to test individually. Choices: {list(SUBGROUPS.keys())}.",
     )
-    parser.set_defaults(result_dir=None)
+    # Uses common default from add_common_submit_args (DEFAULT_RESULTS_DIR)
     args = parser.parse_args()
-
-    if args.result_dir is None:
-        args.result_dir = f"results_individual_{args.subgroup}"
 
     features = SUBGROUPS[args.subgroup]
     if not features:
