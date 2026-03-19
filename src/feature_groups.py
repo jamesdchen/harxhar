@@ -19,7 +19,7 @@ FULL_FEATURE_STRING = (
 ALL_FEATURES = [f for f in FULL_FEATURE_STRING.split("|") if f]
 
 ALL_MODELS = ["ridge", "xgboost", "lightgbm", "random_forest"]
-FEATURE_TYPES = ["raw", "har", "pca", "ae"]
+FEATURE_TYPES = ["har", "pca", "ae"]
 
 SUBGROUPS = {
     "baseline": [],
