@@ -1,0 +1,7 @@
+Experiment ID: 4
+Experiment Name: market_ew
+Model Type: ridge
+Features: har
+Num Variables: 6
+Variables: ['sumret2_ewstock', 'sumret3_ewstock', 'sumret4_ewstock', 'sumabsret_ewstock', 'sumbipow_ewstock', 'sumpret2_ewstock']
+Extra Args: --features har
