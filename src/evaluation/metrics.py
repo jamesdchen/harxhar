@@ -44,13 +44,14 @@ def calculate_baseline_deltas(summary_df: pd.DataFrame) -> pd.DataFrame:
             summary_df[col] = np.nan
         return summary_df
 
-    # Build a segment -> baseline metrics lookup via merge (vectorized)
+    # Build a (segment, horizon) -> baseline metrics lookup via merge (vectorized)
+    group_cols = ["segment", "horizon"] if "horizon" in summary_df.columns else ["segment"]
     baseline_lookup = (
-        baseline_df.groupby("segment")[["mse", "mae", "qlike"]]
+        baseline_df.groupby(group_cols)[["mse", "mae", "qlike"]]
         .first()
         .rename(columns={"mse": "b_mse", "mae": "b_mae", "qlike": "b_qlike"})
     )
-    summary_df = summary_df.merge(baseline_lookup, on="segment", how="left")
+    summary_df = summary_df.merge(baseline_lookup, on=group_cols, how="left")
 
     summary_df["delta_mse"] = summary_df["mse"] - summary_df["b_mse"]
     summary_df["delta_mae"] = summary_df["mae"] - summary_df["b_mae"]

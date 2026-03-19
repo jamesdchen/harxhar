@@ -93,6 +93,7 @@ def aggregate_base_dir(base_dir, eval_mode):
         "model",
         "experiment_name",
         "segment",
+        "horizon",
         "cb_drop",
         "mse",
         "delta_mse",
