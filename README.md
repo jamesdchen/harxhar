@@ -72,7 +72,8 @@ pytest -m "not slow and not gpu"  # skip slow/GPU tests
 Submit experiment batches via the scripts in `scripts/`:
 
 ```bash
-python scripts/submit_model_comparison.py --result-dir results_comparison
+python scripts/submit.py model_comparison --result-dir results_comparison
+python scripts/submit.py subgroup_analysis --models all --features all
 python scripts/aggregate.py              # aggregate after jobs complete
 ```
 
