@@ -14,8 +14,8 @@ from pathlib import Path
 
 from src.cli.backends import HPCBackend, get_backend
 from src.cli.executor import add_feature_args
-from src.config import DEFAULT_RESULTS_DIR
-from src.log import get_logger
+from src.core.config import DEFAULT_RESULTS_DIR
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 

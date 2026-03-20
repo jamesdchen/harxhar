@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 
-from src import config as cfg
+from src.core import config as cfg
 from src.models.base import RollingRegressionModel
 
 

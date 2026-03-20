@@ -18,7 +18,7 @@ from src.cli.submit import (
     build_extra_args,
     submit_experiment_batch,
 )
-from src.feature_groups import FEATURE_TYPES, SUBGROUPS
+from src.features.feature_groups import FEATURE_TYPES, SUBGROUPS
 
 
 def main():

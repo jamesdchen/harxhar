@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src import config
-from src.config import check_sorted_index
+from src.core import config
+from src.core.config import check_sorted_index
 
 SKIP_VARS = {"hour", "DOW", "t", "date"}
 DEFAULT_DIURNAL_EXCLUDED = SKIP_VARS | {"vix", "sentiment"}

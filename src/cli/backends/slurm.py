@@ -7,7 +7,7 @@ from src.cli.backends import HPCBackend, PROJECT_ROOT, register
 
 DEFAULT_SLURM_ACCOUNT = "pollok_1603"
 DEFAULT_SLURM_LOG_DIR = "/scratch1/jc_905/logs"
-DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "slurm" / "submit_carc.slurm")
+DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "infra" / "slurm" / "submit_carc.slurm")
 
 
 @register("slurm")

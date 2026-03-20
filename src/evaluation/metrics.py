@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from src.config import WINSOR_LOWER_Q, WINSOR_UPPER_Q
-from src.log import get_logger
+from src.core.config import WINSOR_LOWER_Q, WINSOR_UPPER_Q
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 
