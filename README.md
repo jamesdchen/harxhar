@@ -24,8 +24,7 @@ src/
 ├── backtest/
 │   ├── engine.py          # CPU backtest loop, Duan smearing, result saving
 │   ├── gpu_utils.py       # GPU parallelization, batched training utilities
-│   ├── gpu_engine.py      # PatchTSMixer GPU backtest
-│   ├── gpu_engine_ae.py   # AE+Ridge GPU backtest
+│   ├── gpu_engine.py      # PatchTSMixer and AE+Ridge GPU backtests
 │   └── gpu_kernels.py     # Compiled vmap training kernels
 ├── evaluation/
 │   ├── metrics.py         # MSE, MAE, QLIKE, OOS R²

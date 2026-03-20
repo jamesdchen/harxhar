@@ -72,7 +72,7 @@ def _run_patchts(args: argparse.Namespace) -> None:
 
 def _run_ae_ridge(args: argparse.Namespace) -> None:
     """Run AE+Ridge GPU backtest."""
-    from src.backtest.gpu_engine_ae import run_ae_multigpu_backtest
+    from src.backtest.gpu_engine import run_ae_multigpu_backtest
 
     config = copy.deepcopy(AE_RIDGE_GPU_CONFIG)
     config["data_path"] = args.input_path
