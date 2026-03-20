@@ -1,5 +1,5 @@
 """
-Submit feature transform comparison: raw vs HAR vs PCA vs AE.
+Submit feature transform comparison: HAR vs PCA vs AE.
 
 Paper result: Table comparing feature transformation methods.
 """
@@ -19,6 +19,9 @@ from src.cli.submit import (
     submit_experiment_batch,
 )
 from src.feature_groups import FEATURE_TYPES, SUBGROUPS
+from src.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def main():
@@ -48,10 +51,25 @@ def main():
     parser.set_defaults(result_dir="results/feature_transforms")
     args = parser.parse_args()
 
+    # Filter out raw features — this script compares transform methods only.
+    feature_types = [f for f in args.features if f != "raw"]
+    if len(feature_types) < len(args.features):
+        logger.warning("Skipping 'raw' feature type — not applicable for transform comparison.")
+
+    # Skip AE if no pre-trained weights are available.
+    ae_weights = getattr(args, "ae_weights_path", None)
+    if "ae" in feature_types and (ae_weights is None or not Path(ae_weights).exists()):
+        logger.warning("Skipping 'ae' feature type — no saved AE weights found (--ae-weights-path).")
+        feature_types = [f for f in feature_types if f != "ae"]
+
+    if not feature_types:
+        logger.error("No feature types remaining after filtering. Nothing to submit.")
+        return
+
     variables = SUBGROUPS[args.subgroup]
 
     specs = []
-    for i, feature_type in enumerate(args.features):
+    for i, feature_type in enumerate(feature_types):
         extra_args = build_extra_args(feature_type, args)
         specs.append(
             ExperimentSpec(
