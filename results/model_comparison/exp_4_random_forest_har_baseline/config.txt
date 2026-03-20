@@ -1,7 +1,0 @@
-Experiment ID: 4
-Experiment Name: baseline
-Model Type: random_forest
-Features: har
-Num Variables: 0
-Variables: []
-Extra Args: --features har

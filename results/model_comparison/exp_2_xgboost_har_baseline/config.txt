@@ -1,7 +1,0 @@
-Experiment ID: 2
-Experiment Name: baseline
-Model Type: xgboost
-Features: har
-Num Variables: 0
-Variables: []
-Extra Args: --features har
