@@ -146,7 +146,7 @@ def submit_experiment_batch(
         else:
             logger.warning(
                 "Cached naive results not found at results/naive/exp_0_naive_baseline. "
-                "Submitting a new naive baseline job. Run submit_naive.py first to avoid this."
+                "Submitting a new naive baseline job. Run 'scripts/submit.py naive' first to avoid this."
             )
             naive = ExperimentSpec(exp_id=0, exp_name="naive_baseline", model_type="naive", feature_type="har")
             all_specs.insert(0, naive)
