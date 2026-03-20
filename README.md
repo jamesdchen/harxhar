@@ -10,7 +10,7 @@ src/
 ├── log.py                 # Logging setup
 ├── data/
 │   ├── transforms.py      # Diurnal adjustment, winsorization, data transforms
-│   ├── loading.py         # Parquet loading, gridding, circuit-breaker handling
+│   ├── loading.py         # Parquet loading, gridding, data cleaning
 │   ├── pipeline.py        # Lag feature generation, horizon shifts, segmentation
 │   └── rolling.py         # RollingBuffer, RollingRobustScaler, RollingMedian
 ├── features/
