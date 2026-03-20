@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from src.config import check_backtest_inputs, check_finite, check_positive
+from src.core.config import check_backtest_inputs, check_finite, check_positive
 from src.models import BaseModel
 
 

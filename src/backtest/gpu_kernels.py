@@ -5,7 +5,7 @@ from torch.amp import autocast
 from torch.func import functional_call, grad, vmap
 from torch.optim.adamw import adamw
 
-from src import config as cfg
+from src.core import config as cfg
 
 
 def functional_qlike_loss(h_pred, target_sqrt):

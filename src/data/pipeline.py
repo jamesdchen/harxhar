@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src import config
-from src.config import check_positive
+from src.core import config
+from src.core.config import check_positive
 from src.data.loading import load_and_clean_base_data
 from src.features import HARFeatures, RawLagFeatures
 

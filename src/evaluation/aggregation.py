@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation.metrics import calculate_global_metrics
-from src.log import get_logger
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 

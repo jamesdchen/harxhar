@@ -8,9 +8,9 @@ from functools import reduce
 
 import pandas as pd
 
-from src import config
+from src.core import config
 from src.data.transforms import robust_transform
-from src.log import get_logger
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 
