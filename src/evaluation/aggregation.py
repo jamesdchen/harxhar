@@ -176,7 +176,7 @@ def process_single_experiment(
                 agg["segment"] = seg_name
                 agg["horizon"] = "mean"
                 agg["n_samples"] = sum(m["n_samples"] for m in horizon_metrics)
-                for metric_key in ("mse", "mae", "qlike"):
+                for metric_key in ("mse", "mae", "qlike", "w_mse", "w_mae", "w_qlike"):
                     vals = [m[metric_key] for m in horizon_metrics if not np.isnan(m.get(metric_key, np.nan))]
                     agg[metric_key] = np.mean(vals) if vals else np.nan
                 exp_results.append(agg)
