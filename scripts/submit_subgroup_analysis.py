@@ -19,7 +19,7 @@ from src.cli.submit import (
     build_extra_args,
     submit_experiment_batch,
 )
-from src.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
+from src.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
 
 
 def resolve_list(arg, full_list):

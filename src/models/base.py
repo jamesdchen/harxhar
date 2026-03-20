@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src import config as cfg
+from src.core import config as cfg
 from src.data.rolling import RollingBuffer, RollingRobustScaler
 
 

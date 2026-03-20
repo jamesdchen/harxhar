@@ -8,7 +8,7 @@ import numpy as np
 from src.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
 from src.data import apply_horizon_shift, load_and_prep_data_strided
 from src.features import BaseFeatureTransform, PCATransform
-from src.log import get_logger
+from src.core.log import get_logger
 from src.models import create_model
 
 logger = get_logger(__name__)
@@ -90,7 +90,7 @@ def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
     allow_missing = args.model in ("xgboost", "lightgbm")
     feature_type = "har" if args.features == "har" else "raw"
 
-    from src import config as cfg
+    from src.core import config as cfg
 
     if args.features == "ae":
         refit_frequency = cfg.AE_REFIT_FREQUENCY
@@ -224,7 +224,7 @@ def main(args: argparse.Namespace) -> None:
 
 
 def _run_global(args: argparse.Namespace, hparams: dict) -> None:
-    from src import config as cfg
+    from src.core import config as cfg
 
     # Naive baseline uses hardcoded raw lags
     if args.model == "naive":
@@ -274,7 +274,7 @@ def _run_global(args: argparse.Namespace, hparams: dict) -> None:
 
 
 def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
-    from src import config as cfg
+    from src.core import config as cfg
 
     # Naive baseline uses hardcoded raw lags
     if args.model == "naive":

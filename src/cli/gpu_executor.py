@@ -14,9 +14,9 @@ import os
 
 import torch
 
-from src.config import AE_RIDGE_GPU_CONFIG, DL_CONFIG
+from src.core.config import AE_RIDGE_GPU_CONFIG, DL_CONFIG
 from src.data import load_and_prep_data_strided
-from src.log import get_logger
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 

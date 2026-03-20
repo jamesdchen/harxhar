@@ -16,9 +16,9 @@ import pandas as pd
 import torch
 
 from src.backtest.gpu_engine_scaling import run_scaling_experiment
-from src.config import DL_CONFIG
+from src.core.config import DL_CONFIG
 from src.data import load_and_prep_data_strided
-from src.log import get_logger
+from src.core.log import get_logger
 
 logger = get_logger(__name__)
 
