@@ -24,8 +24,7 @@ src/
 ├── backtest/
 │   ├── engine.py          # CPU backtest loop, Duan smearing, result saving
 │   ├── gpu_utils.py       # GPU parallelization, batched training utilities
-│   ├── gpu_engine.py      # PatchTSMixer GPU backtest
-│   ├── gpu_engine_ae.py   # AE+Ridge GPU backtest
+│   ├── gpu_engine.py      # PatchTSMixer and AE+Ridge GPU backtests
 │   └── gpu_kernels.py     # Compiled vmap training kernels
 ├── evaluation/
 │   ├── metrics.py         # MSE, MAE, QLIKE, OOS R²
@@ -73,7 +72,8 @@ pytest -m "not slow and not gpu"  # skip slow/GPU tests
 Submit experiment batches via the scripts in `scripts/`:
 
 ```bash
-python scripts/submit_model_comparison.py --result-dir results_comparison
+python scripts/submit.py model_comparison --result-dir results_comparison
+python scripts/submit.py subgroup_analysis --models all --features all
 python scripts/aggregate.py              # aggregate after jobs complete
 ```
 
