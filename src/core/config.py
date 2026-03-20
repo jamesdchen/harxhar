@@ -30,9 +30,6 @@ GRAD_CLIP_BOUND = 5.0
 QLIKE_CLAMP_MIN = -30.0
 QLIKE_CLAMP_MAX = 30.0
 
-# Circuit breaker dates (market-wide trading halts)
-CIRCUIT_BREAKER_DATES = ["2020-03-09", "2020-03-12", "2020-03-16", "2020-03-18"]
-
 # Winsorization quantiles
 WINSOR_LOWER_Q = 0.05
 WINSOR_UPPER_Q = 0.95
