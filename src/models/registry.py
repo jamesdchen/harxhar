@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src import config as cfg
+from src.core import config as cfg
 from src.models.base import BaseModel, NaiveBaseline
 from src.models.sarimax import SARIMAXModel
 from src.models.sklearn_models import LightGBMModel, RandomForestModel, RidgeModel, XGBoostModel

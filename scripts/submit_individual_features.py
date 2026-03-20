@@ -19,8 +19,8 @@ from src.cli.submit import (
     build_extra_args,
     submit_experiment_batch,
 )
-from src.config import DEFAULT_RESULTS_DIR
-from src.feature_groups import SUBGROUPS
+from src.core.config import DEFAULT_RESULTS_DIR
+from src.features.feature_groups import SUBGROUPS
 
 
 def main():

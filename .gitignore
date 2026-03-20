@@ -4,3 +4,10 @@ __pycache__/
 results_chunk_*.csv
 .needs_aggregation
 *.out
+
+# Data and results (large / generated)
+all30min/
+results/
+
+# Build artifacts
+*.egg-info/
