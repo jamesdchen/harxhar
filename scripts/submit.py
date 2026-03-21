@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import argparse
 
 from src.cli.backends import get_backend
+from src.cli.experiment_config import load_experiment_config
 from src.cli.submit import (
     ExperimentSpec,
     add_common_submit_args,
@@ -236,6 +237,61 @@ def _run_naive(_args):
 
 
 # ---------------------------------------------------------------------------
+# Mode: from-config (YAML experiment config)
+# ---------------------------------------------------------------------------
+
+
+def _add_from_config_args(sub):
+    sub.add_argument("config_file", type=str, help="Path to YAML/JSON experiment config file.")
+
+
+def _run_from_config(args):
+    """Load experiment specs from a YAML config file."""
+    cfg = load_experiment_config(args.config_file)
+
+    # Override args from config
+    if cfg.result_dir:
+        args.result_dir = cfg.result_dir
+    else:
+        args.result_dir = f"results/{cfg.name}"
+    args.total_chunks = cfg.total_chunks
+    args.backend = cfg.backend
+    args.no_naive = cfg.no_naive
+    args.train_window = cfg.train_window
+    args.n_components = cfg.n_components
+    args.ae_alpha = cfg.ae_alpha
+    args.ae_epochs = cfg.ae_epochs
+    args.ae_hidden = cfg.ae_hidden
+    args.ae_weights_path = cfg.ae_weights_path
+    args.horizon = cfg.horizon
+
+    # Delegate to the appropriate mode runner
+    inner_mode = cfg.mode
+    if inner_mode == "model_comparison":
+        args.models = cfg.models
+        return _run_model_comparison(args)
+    elif inner_mode == "feature_transforms":
+        args.model = cfg.models[0] if cfg.models else "ridge"
+        args.features = cfg.features
+        args.subgroup = cfg.subgroups[0] if cfg.subgroups else "all_features"
+        return _run_feature_transforms(args)
+    elif inner_mode == "individual_features":
+        args.model = cfg.models[0] if cfg.models else "ridge"
+        args.subgroup = cfg.subgroups[0] if cfg.subgroups else "moments"
+        return _run_individual_features(args)
+    elif inner_mode == "subgroup_analysis":
+        args.models = cfg.models
+        args.features = cfg.features
+        args.subgroups = cfg.subgroups
+        return _run_subgroup_analysis(args)
+    elif inner_mode == "naive":
+        return _run_naive(args)
+    else:
+        print(f"Unknown mode '{inner_mode}' in config file.")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -245,6 +301,7 @@ MODES = {
     "individual_features": (_add_individual_features_args, _run_individual_features),
     "subgroup_analysis": (_add_subgroup_analysis_args, _run_subgroup_analysis),
     "naive": (_add_naive_args, _run_naive),
+    "from-config": (_add_from_config_args, _run_from_config),
 }
 
 
@@ -260,7 +317,9 @@ def main():
             mode_name,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
-        add_common_submit_args(sub)
+        # from-config doesn't need common submit args (they come from the config file)
+        if mode_name != "from-config":
+            add_common_submit_args(sub)
         add_args_fn(sub)
 
     args = parser.parse_args()
@@ -269,13 +328,13 @@ def main():
     specs = run_fn(args)
 
     # For naive mode, force include_naive=True
-    include_naive = not args.no_naive if args.mode != "naive" else True
+    include_naive = not getattr(args, "no_naive", False) if args.mode != "naive" else True
 
-    backend = get_backend(args.backend)
+    backend = get_backend(getattr(args, "backend", "slurm"))
     submit_experiment_batch(
         specs=specs,
         base_dir=args.result_dir,
-        total_chunks=args.total_chunks,
+        total_chunks=getattr(args, "total_chunks", 100),
         include_naive=include_naive,
         backend=backend,
     )

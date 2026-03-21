@@ -50,6 +50,7 @@ def register(name: str):
 def get_backend(name: str = "slurm", **kwargs) -> HPCBackend:
     """Instantiate a backend by name.  *kwargs* are forwarded to the constructor."""
     # Lazy imports to populate registry
+    from src.cli.backends import local as _local  # noqa: F401
     from src.cli.backends import sge as _sge  # noqa: F401
     from src.cli.backends import slurm as _slurm  # noqa: F401
 
