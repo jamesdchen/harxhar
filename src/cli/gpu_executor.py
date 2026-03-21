@@ -51,6 +51,12 @@ def _run_patchts(args: argparse.Namespace) -> None:
     if args.train_window:
         config["train_window"] = args.train_window
 
+    if args.checkpoint_dir:
+        config["checkpoint_dir"] = args.checkpoint_dir
+        config["checkpoint_every"] = args.checkpoint_every
+    if args.loss_log_path:
+        config["loss_log_path"] = args.loss_log_path
+
     hparams = {
         "exog_cols": "none",
         "use_transform_exog": False,
@@ -92,6 +98,11 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         config["train_window"] = args.train_window
     if args.weights_dir:
         config["weights_dir"] = args.weights_dir
+    if args.checkpoint_dir:
+        config["checkpoint_dir"] = args.checkpoint_dir
+        config["checkpoint_every"] = args.checkpoint_every
+    if args.loss_log_path:
+        config["loss_log_path"] = args.loss_log_path
 
     hparams = {
         "exog_cols": "none",
@@ -136,6 +147,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
     parser.add_argument("--train-window", type=int, default=None, help="Training window size (periods).")
     parser.add_argument("--weights-dir", type=str, default=None, help="Directory to save AE weights (ae_ridge only).")
+    parser.add_argument("--checkpoint-dir", type=str, default=None, help="Directory for training checkpoints (enables crash recovery).")
+    parser.add_argument("--checkpoint-every", type=int, default=10, help="Save checkpoint every N chunks (0=disabled).")
+    parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
     return parser
 
 

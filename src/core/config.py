@@ -55,6 +55,9 @@ ADAMW_WEIGHT_DECAY = 0.01
 # GPU logging
 GPU_WORKER_LOG = "worker_log.txt"
 
+# Training checkpoints
+CHECKPOINT_EVERY_N_CHUNKS = 10  # save checkpoint every N chunks (0 = disabled)
+
 
 # --- Validation helpers ---
 def check_positive(val: int | float, name: str) -> None:
