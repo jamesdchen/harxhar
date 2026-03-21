@@ -121,5 +121,3 @@ class TestDryRunBackend:
         captured = capsys.readouterr()
         assert "DRY RUN" in captured.out
         assert "ridge" in captured.out
-
-
