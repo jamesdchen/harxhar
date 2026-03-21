@@ -36,6 +36,7 @@ def download_results(csv_path):
     """Download results via Colab files API, or print local path."""
     try:
         from google.colab import files
+
         files.download(csv_path)
     except ImportError:
         print(f"Not running on Colab. Results at: {os.path.abspath(csv_path)}")

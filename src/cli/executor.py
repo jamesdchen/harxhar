@@ -6,9 +6,9 @@ import os
 import numpy as np
 
 from src.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
+from src.core.log import get_logger
 from src.data import apply_horizon_shift, load_and_prep_data_strided
 from src.features import BaseFeatureTransform, PCATransform
-from src.core.log import get_logger
 from src.models import create_model
 
 logger = get_logger(__name__)
@@ -279,9 +279,7 @@ def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
     # Naive baseline uses hardcoded raw lags
     if args.model == "naive":
         hparams = {**hparams, "feature_type": "raw"}
-        datasets = load_and_prep_data_strided(
-            hparams, args.input_path, target_segment=args.segment, lag=cfg.NAIVE_LAG
-        )
+        datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment=args.segment, lag=cfg.NAIVE_LAG)
     else:
         datasets = load_and_prep_data_strided(hparams, args.input_path, target_segment=args.segment)
 
