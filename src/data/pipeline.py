@@ -94,7 +94,11 @@ def load_and_prep_data_strided(
     # Step 2: Generate features
     if target_segment is not None:
         return generate_lag_features_segmented(
-            data, cols_to_transform, hparams, target_segment, lag=lag,
+            data,
+            cols_to_transform,
+            hparams,
+            target_segment,
+            lag=lag,
         )
 
     return generate_lag_features(data, cols_to_transform, hparams, lag=lag)
