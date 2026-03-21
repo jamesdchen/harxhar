@@ -29,7 +29,7 @@ from src.models.sklearn_models import (
     XGBoostModel as XGBoostModel,
 )
 
-# Lazy imports for torch-dependent deep learning models
+# Lazy imports for torch-dependent modules
 _DEEP_LEARNING_ATTRS = {
     "LagAutoEncoder",
     "PatchTSMixerForecaster",
@@ -38,10 +38,24 @@ _DEEP_LEARNING_ATTRS = {
     "train_autoencoder",
 }
 
+_LOSSES_ATTRS = {
+    "functional_qlike_loss",
+}
+
 
 def __getattr__(name: str):
     if name in _DEEP_LEARNING_ATTRS:
-        from src.models import deep_learning
-
+        try:
+            from src.models import deep_learning
+        except ImportError as e:
+            raise ImportError(
+                f"'{name}' requires PyTorch and transformers. Install them with: pip install torch transformers"
+            ) from e
         return getattr(deep_learning, name)
+    if name in _LOSSES_ATTRS:
+        try:
+            from src.models import losses
+        except ImportError as e:
+            raise ImportError(f"'{name}' requires PyTorch. Install it with: pip install torch") from e
+        return getattr(losses, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
