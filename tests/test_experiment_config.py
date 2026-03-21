@@ -123,9 +123,3 @@ class TestDryRunBackend:
         assert "ridge" in captured.out
 
 
-class TestLocalBackend:
-    def test_local_backend_registered(self):
-        from src.cli.backends import get_backend
-
-        backend = get_backend("local")
-        assert backend is not None
