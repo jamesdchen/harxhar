@@ -440,6 +440,10 @@ def run_worker(
             else:
                 preds_cpu = preds.view(-1).cpu()
 
+            # Free GPU memory from this chunk before the next iteration
+            del X_chunk, y_chunk, X_test_chunk, preds, current_params
+            torch.cuda.empty_cache()
+
             results.append(
                 {
                     "chunk_index": idx,
