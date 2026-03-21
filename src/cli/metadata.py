@@ -20,9 +20,7 @@ def _get_git_info() -> dict[str, str | bool]:
     """Capture current git state."""
     info: dict[str, str | bool] = {}
     try:
-        git_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
-        ).strip()
+        git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True).strip()
         info["git_hash"] = git_hash
         info["git_short_hash"] = git_hash[:8]
         info["git_branch"] = subprocess.check_output(
