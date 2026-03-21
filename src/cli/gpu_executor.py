@@ -15,8 +15,8 @@ import os
 import torch
 
 from src.core.config import AE_RIDGE_GPU_CONFIG, DL_CONFIG
-from src.data import load_and_prep_data_strided
 from src.core.log import get_logger
+from src.data import load_and_prep_data_strided
 
 logger = get_logger(__name__)
 
@@ -64,10 +64,9 @@ def _run_patchts(args: argparse.Namespace) -> None:
     )
     logger.info("Data: %d samples, %d features", X_np.shape[0], X_np.shape[1])
 
-    results = run_multigpu_backtest(
-        X_np, y_np, dates, baselines, config, model_module="src.models.deep_learning"
-    )
-    logger.info("PatchTSMixer backtest complete. Results shape: %s", results.shape if hasattr(results, 'shape') else len(results))
+    results = run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="src.models.deep_learning")
+    shape = results.shape if hasattr(results, "shape") else len(results)
+    logger.info("PatchTSMixer backtest complete. Results shape: %s", shape)
 
 
 def _run_ae_ridge(args: argparse.Namespace) -> None:
@@ -104,9 +103,7 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
     }
 
     logger.info("Loading data from '%s'", args.input_path)
-    X_np, y_np, dates, baselines, features = load_and_prep_data_strided(
-        hparams, config["data_path"]
-    )
+    X_np, y_np, dates, baselines, features = load_and_prep_data_strided(hparams, config["data_path"])
     config["model"]["n_features"] = X_np.shape[1]
     logger.info("Data: %d samples, %d features", X_np.shape[0], X_np.shape[1])
 
@@ -114,7 +111,8 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         os.makedirs(config["weights_dir"], exist_ok=True)
 
     results = run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config)
-    logger.info("AE+Ridge backtest complete. Results shape: %s", results.shape if hasattr(results, 'shape') else len(results))
+    shape = results.shape if hasattr(results, "shape") else len(results)
+    logger.info("AE+Ridge backtest complete. Results shape: %s", shape)
 
 
 def build_parser() -> argparse.ArgumentParser:

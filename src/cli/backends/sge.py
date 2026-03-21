@@ -3,7 +3,7 @@
 import os
 import subprocess
 
-from src.cli.backends import HPCBackend, PROJECT_ROOT, register
+from src.cli.backends import PROJECT_ROOT, HPCBackend, register
 
 DEFAULT_SGE_LOG_DIR = str(PROJECT_ROOT / "logs")
 DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "infra" / "sge" / "submit_hoffman2.sh")

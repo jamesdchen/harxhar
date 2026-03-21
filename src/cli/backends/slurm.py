@@ -3,7 +3,7 @@
 import os
 import subprocess
 
-from src.cli.backends import HPCBackend, PROJECT_ROOT, register
+from src.cli.backends import PROJECT_ROOT, HPCBackend, register
 
 DEFAULT_SLURM_ACCOUNT = "pollok_1603"
 DEFAULT_SLURM_LOG_DIR = "/scratch1/jc_905/logs"

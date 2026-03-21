@@ -1,3 +1,9 @@
+# Runtime dependencies are defined in pyproject.toml.
+# Install with: pip install -e .
+# For development: pip install -e ".[dev]"
+#
+# This file is kept for compatibility with legacy workflows that
+# reference requirements.txt directly (e.g., existing SLURM scripts).
 numpy>=1.23,<2.0
 pandas>=1.5,<3.0
 scikit-learn>=1.2,<2.0
