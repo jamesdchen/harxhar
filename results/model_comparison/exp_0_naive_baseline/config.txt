@@ -1,6 +1,0 @@
-Experiment ID: 0
-Experiment Name: naive_baseline
-Model Type: naive
-Features: har
-Num Variables: 0
-Variables: []
