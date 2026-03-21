@@ -426,6 +426,8 @@ def run_worker(
     except Exception as e:
         import traceback
 
+        tb_str = traceback.format_exc()
+
         # Save emergency checkpoint on crash
         if checkpoint_dir and results:
             try:
@@ -434,8 +436,11 @@ def run_worker(
             except Exception:
                 pass
 
-        log_to_file(f"Worker {gpu_id} CRASHED:\n{traceback.format_exc()}")
-        raise e
+        log_to_file(f"Worker {gpu_id} CRASHED:\n{tb_str}")
+        # Re-raise as a plain RuntimeError so the traceback (which may
+        # reference unpicklable closure cells) is not sent across the
+        # multiprocessing boundary.
+        raise RuntimeError(f"Worker {gpu_id} failed:\n{tb_str}") from None
 
 
 def run_backtest(
