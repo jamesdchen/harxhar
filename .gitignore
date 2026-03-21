@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.nbc
+*.nbi
 results_chunk_*.csv
 .needs_aggregation
 *.out

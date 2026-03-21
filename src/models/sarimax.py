@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 
 from src.core import config as cfg
+from src.core.log import get_logger
 from src.models.base import RollingRegressionModel
+
+logger = get_logger(__name__)
 
 
 class _SARIMAXEstimator:
@@ -58,17 +59,19 @@ class _SARIMAXEstimator:
             self._fail_count += 1
             self._consecutive_failures += 1
             if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-                warnings.warn(
-                    f"SARIMAX fit failed {self._consecutive_failures} times consecutively "
-                    f"({self._fail_count} total); falling back to naive prediction: {e}",
-                    stacklevel=2,
+                logger.warning(
+                    "SARIMAX fit failed %d times consecutively (%d total); falling back to naive prediction: %s",
+                    self._consecutive_failures,
+                    self._fail_count,
+                    e,
                 )
                 self._result = None
             else:
-                warnings.warn(
-                    f"SARIMAX fit failed ({self._fail_count} total, "
-                    f"{self._consecutive_failures} consecutive), retaining previous fit: {e}",
-                    stacklevel=2,
+                logger.warning(
+                    "SARIMAX fit failed (%d total, %d consecutive), retaining previous fit: %s",
+                    self._fail_count,
+                    self._consecutive_failures,
+                    e,
                 )
         return self
 
@@ -96,7 +99,7 @@ class _SARIMAXEstimator:
             val = fc.iloc[-1] if hasattr(fc, "iloc") else fc[-1]
             return np.array([float(val)])
         except (ValueError, IndexError) as e:
-            warnings.warn(f"SARIMAX predict failed, returning last observed value: {e}", stacklevel=2)
+            logger.warning("SARIMAX predict failed, returning last observed value: %s", e)
             return np.array([self._last_y_val if self._last_y_val is not None else 0.0])
 
 

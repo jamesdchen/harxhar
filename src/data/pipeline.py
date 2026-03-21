@@ -54,7 +54,7 @@ def apply_horizon_shift(X, y, dates, baselines, horizon):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_lags(feature_type, lag):
+def resolve_lags(feature_type, lag):
     """Return the lag index list for the given feature type and max lag."""
     if feature_type == "har":
         # Geometric sequence base 5: [1, 5, 25, …] up to lag
@@ -134,7 +134,7 @@ def load_and_prep_data_strided(
     target_col = "adj_RV"
     allow_missing = hparams.get("allow_missing", False)
     feature_type = hparams.get("feature_type", "raw")
-    lags_list = _resolve_lags(feature_type, lag)
+    lags_list = resolve_lags(feature_type, lag)
 
     # --- Segmented mode ---
     if target_segment is not None:

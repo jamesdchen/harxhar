@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 
-from src.backtest.engine import _build_results_dataframe, _extract_subset, save_chunk_results
+from src.backtest.engine import build_results_dataframe, extract_subset, save_chunk_results
 from src.core import config as cfg
 from src.core.log import get_logger
 
@@ -257,10 +257,10 @@ def build_results_df(preds, test_indices, y_np, dates, baselines, output_file=No
                     horizon=h + 1,
                 )
 
-            dates_subset = _extract_subset(dates, h_indices)
+            dates_subset = extract_subset(dates, h_indices)
             y_subset = y_np[h_target_indices]
             base_subset = baselines[h_target_indices]
-            results[h + 1] = _build_results_dataframe(h_preds, y_subset, dates_subset, base_subset, horizon=h + 1)
+            results[h + 1] = build_results_dataframe(h_preds, y_subset, dates_subset, base_subset, horizon=h + 1)
 
         return results
 
@@ -276,10 +276,10 @@ def build_results_df(preds, test_indices, y_np, dates, baselines, output_file=No
             baselines=baselines,
         )
 
-    dates_subset = _extract_subset(dates, test_indices)
+    dates_subset = extract_subset(dates, test_indices)
     y_subset = y_np[test_indices]
     base_subset = baselines[test_indices]
-    return _build_results_dataframe(preds, y_subset, dates_subset, base_subset)
+    return build_results_dataframe(preds, y_subset, dates_subset, base_subset)
 
 
 def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows, chunk_size):
