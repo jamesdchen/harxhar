@@ -1,3 +1,5 @@
+"""Pipeline constants, validation helpers, and model hyperparameter defaults."""
+
 from __future__ import annotations
 
 # --- PIPELINE CONFIGURATION ---

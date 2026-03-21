@@ -13,6 +13,14 @@ Usage:
 
 from __future__ import annotations
 
+__all__ = [
+    "HPCBackend",
+    "DryRunBackend",
+    "get_backend",
+    "register",
+    "PROJECT_ROOT",
+]
+
 import abc
 from pathlib import Path
 

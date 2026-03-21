@@ -1,3 +1,5 @@
+"""Rolling-window data structures: RollingBuffer, RollingRobustScaler, RollingMedian."""
+
 from __future__ import annotations
 
 import numpy as np

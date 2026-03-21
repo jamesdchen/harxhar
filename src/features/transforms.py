@@ -1,3 +1,5 @@
+"""Feature transform classes: HAR lags, raw lags, PCA, and autoencoder transforms."""
+
 from __future__ import annotations
 
 import os
