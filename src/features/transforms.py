@@ -205,7 +205,7 @@ class AETransform(BaseFeatureTransform):
     def _flush_loss_log(self) -> None:
         import csv
 
-        if not self._loss_log:
+        if not self._loss_log or self.ae_loss_path is None:
             return
         write_header = not os.path.exists(self.ae_loss_path)
         with open(self.ae_loss_path, "a", newline="") as f:
@@ -218,6 +218,8 @@ class AETransform(BaseFeatureTransform):
     def _save_weights(self) -> None:
         import torch
 
+        if self.ae_weights_dir is None:
+            return
         os.makedirs(self.ae_weights_dir, exist_ok=True)
         path = os.path.join(self.ae_weights_dir, f"ae_weights_{self._refit_count:04d}.pt")
         torch.save(self.ae.state_dict(), path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -81,7 +82,7 @@ def parse_config(exp_dir: str | Path) -> tuple[int, str, str]:
 
     if exp_id == -1:
         try:
-            exp_id = int(exp_dir.split("_")[-1])
+            exp_id = int(str(exp_dir).split("_")[-1])
         except (ValueError, IndexError) as e:
             logger.warning("Could not infer exp_id from path %s: %s", exp_dir, e)
 
@@ -108,7 +109,7 @@ def filter_by_time(df: pd.DataFrame, start_time: str | None = None, end_time: st
 
 
 def process_single_experiment(
-    exp_dir: str | Path, metadata: dict[str, object], segment_configs: list[dict]
+    exp_dir: str | Path, metadata: dict[str, Any], segment_configs: list[dict]
 ) -> list[dict]:
     """Agnostically loads data, applies optional time boundaries, and calculates metrics.
 

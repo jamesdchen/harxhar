@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.core import config as cfg
 from src.models.base import BaseModel, NaiveBaseline
@@ -12,7 +12,7 @@ from src.models.sklearn_models import LightGBMModel, RandomForestModel, RidgeMod
 if TYPE_CHECKING:
     from src.features.transforms import BaseFeatureTransform
 
-MODEL_REGISTRY = {
+MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     "ridge": {
         "class": RidgeModel,
         "defaults": {"use_scaling": True, "alpha": 1.0},
