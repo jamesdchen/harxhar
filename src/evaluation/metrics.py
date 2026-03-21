@@ -20,7 +20,7 @@ def winsorize_series(
 
 def calculate_global_metrics(df: pd.DataFrame) -> dict[str, float]:
     """Calculates MSE, MAE, and QLIKE — both raw and winsorized variants."""
-    metrics = {"n_samples": len(df)}
+    metrics: dict[str, float] = {"n_samples": float(len(df))}
 
     # 1. Adjusted Scale Metrics
     if "true_adj" in df.columns and "pred_adj" in df.columns:

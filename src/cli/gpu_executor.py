@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+from typing import Any
 
 import torch
 
@@ -33,7 +34,7 @@ def _run_patchts(args: argparse.Namespace) -> None:
     """Run PatchTSMixer GPU backtest."""
     from src.backtest.gpu_engine import run_multigpu_backtest
 
-    config = copy.deepcopy(DL_CONFIG)
+    config: dict[str, Any] = copy.deepcopy(DL_CONFIG)
     config["data_path"] = args.input_path
 
     # Apply CLI overrides
@@ -73,7 +74,7 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
     """Run AE+Ridge GPU backtest."""
     from src.backtest.gpu_engine import run_ae_multigpu_backtest
 
-    config = copy.deepcopy(AE_RIDGE_GPU_CONFIG)
+    config: dict[str, Any] = copy.deepcopy(AE_RIDGE_GPU_CONFIG)
     config["data_path"] = args.input_path
 
     # Apply CLI overrides
