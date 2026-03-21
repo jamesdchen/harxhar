@@ -156,6 +156,6 @@ AE_RIDGE_GPU_CONFIG = {
     "train": {
         "num_epochs": 50,
         "learning_rate": 1e-3,
-        "batch_size": 10,  # windows per batch (each ~10MB)
+        "batch_size": 4,  # windows per batch (reduced from 10 to avoid OOM)
     },
 }
