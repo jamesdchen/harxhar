@@ -423,7 +423,7 @@ def run_worker(
 
         return results
 
-    except Exception as e:
+    except Exception:
         import traceback
 
         tb_str = traceback.format_exc()
