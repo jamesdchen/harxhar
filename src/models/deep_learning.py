@@ -1,3 +1,5 @@
+"""Deep learning model implementations: PatchTSMixer and Autoencoder+Ridge."""
+
 from __future__ import annotations
 
 import numpy as np

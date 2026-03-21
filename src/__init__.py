@@ -1,3 +1,13 @@
+"""Top-level package for harxhar volatility forecasting framework."""
+
+__all__ = [
+    "load_and_prep_data_strided",
+    "BaseModel",
+    "create_model",
+    "run_backtest_agnostic",
+]
+
+
 def __getattr__(name):
     if name == "load_and_prep_data_strided":
         from src.data import load_and_prep_data_strided
