@@ -108,9 +108,7 @@ def filter_by_time(df: pd.DataFrame, start_time: str | None = None, end_time: st
         return df
 
 
-def process_single_experiment(
-    exp_dir: str | Path, metadata: dict[str, Any], segment_configs: list[dict]
-) -> list[dict]:
+def process_single_experiment(exp_dir: str | Path, metadata: dict[str, Any], segment_configs: list[dict]) -> list[dict]:
     """Agnostically loads data, applies optional time boundaries, and calculates metrics.
 
     Supports multi-horizon results: if loaded data contains a 'horizon' column,
