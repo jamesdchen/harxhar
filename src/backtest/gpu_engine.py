@@ -15,6 +15,7 @@ from src.backtest.gpu_utils import (
     run_backtest,
     run_kernel_and_detach,
     run_worker,
+    save_loss_log,
 )
 
 # ---------------------------------------------------------------------------
@@ -33,6 +34,9 @@ def _patchts_worker(
     shared_test_X,
     chunk_size,
     total_windows,
+    checkpoint_dir=None,
+    checkpoint_every=0,
+    loss_log_path=None,
 ):
     """Per-GPU worker for standard DL backtest."""
 
@@ -55,7 +59,12 @@ def _patchts_worker(
         predict_kernel = vmap(stateless_fwd, in_dims=(0, None, 0), out_dims=0)
 
         params_store = allocate_params(base_model_train, chunk_size, device)
-        ctx = dict(buffers=buffers, train_kernel=train_kernel, predict_kernel=predict_kernel)
+        ctx = dict(
+            buffers=buffers,
+            train_kernel=train_kernel,
+            predict_kernel=predict_kernel,
+            loss_log_path=loss_log_path,
+        )
         return params_store, ctx
 
     def chunk_fn(ctx, current_params, X_chunk, y_chunk, X_test_chunk, curr_bs, idx):
@@ -64,9 +73,13 @@ def _patchts_worker(
 
         # Train
         exp_avgs, exp_avg_sqs, step_tensors = init_adam_state(current_params, X_chunk.device)
-        trained = run_kernel_and_detach(
+        trained, epoch_losses = run_kernel_and_detach(
             ctx["train_kernel"], current_params, ctx["buffers"], exp_avgs, exp_avg_sqs, step_tensors, X_chunk, y_chunk
         )
+
+        # Save per-epoch losses for this chunk
+        if ctx["loss_log_path"]:
+            save_loss_log(ctx["loss_log_path"], idx, epoch_losses.cpu().numpy())
 
         # Predict: convert from log-space to sqrt-space
         # h_pred shape: (batch, channels, prediction_length)
@@ -75,7 +88,17 @@ def _patchts_worker(
             return torch.exp(h_pred / 2.0)
 
     return run_worker(
-        gpu_id, chunk_indices, shared_X, shared_y, shared_test_X, chunk_size, total_windows, setup_fn, chunk_fn
+        gpu_id,
+        chunk_indices,
+        shared_X,
+        shared_y,
+        shared_test_X,
+        chunk_size,
+        total_windows,
+        setup_fn,
+        chunk_fn,
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_every=checkpoint_every,
     )
 
 
@@ -139,6 +162,9 @@ def _ae_ridge_worker(
     chunk_size,
     total_windows,
     weights_dir,
+    checkpoint_dir=None,
+    checkpoint_every=0,
+    loss_log_path=None,
 ):
     """Per-GPU worker for AE+Ridge backtest."""
 
@@ -174,6 +200,7 @@ def _ae_ridge_worker(
             n_components=n_components,
             param_keys=param_keys,
             weights_dir=weights_dir,
+            loss_log_path=loss_log_path,
         )
         return params_store, ctx
 
@@ -183,9 +210,13 @@ def _ae_ridge_worker(
 
         # Train AE
         exp_avgs, exp_avg_sqs, step_tensors = init_adam_state(current_params, X_chunk.device)
-        trained_params = run_kernel_and_detach(
+        trained_params, epoch_losses = run_kernel_and_detach(
             ctx["train_kernel"], current_params, ctx["buffers"], exp_avgs, exp_avg_sqs, step_tensors, X_chunk, y_chunk
         )
+
+        # Save per-epoch losses for this chunk
+        if ctx["loss_log_path"]:
+            save_loss_log(ctx["loss_log_path"], idx, epoch_losses.cpu().numpy())
 
         # Encode + Ridge solve + Predict
         with torch.no_grad():
@@ -215,7 +246,17 @@ def _ae_ridge_worker(
         return pred
 
     return run_worker(
-        gpu_id, chunk_indices, shared_X, shared_y, shared_test_X, chunk_size, total_windows, setup_fn, chunk_fn
+        gpu_id,
+        chunk_indices,
+        shared_X,
+        shared_y,
+        shared_test_X,
+        chunk_size,
+        total_windows,
+        setup_fn,
+        chunk_fn,
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_every=checkpoint_every,
     )
 
 
@@ -268,8 +309,15 @@ def _ae_ridge_make_windows(X_tensor, y_tensor, config):
 
 def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="src.models.deep_learning"):
     """GPU-parallel PatchTSMixer backtest."""
+    checkpoint_dir = config.get("checkpoint_dir", None)
+    checkpoint_every = config.get("checkpoint_every", 0)
+    loss_log_path = config.get("loss_log_path", None)
 
     def make_worker_args(gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows):
+        per_gpu_loss_path = None
+        if loss_log_path:
+            base, ext = os.path.splitext(loss_log_path)
+            per_gpu_loss_path = f"{base}_gpu{gpu_id}{ext}"
         return (
             gpu_id,
             chunks,
@@ -281,6 +329,9 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="sr
             all_test_X,
             chunk_size,
             num_windows,
+            checkpoint_dir,
+            checkpoint_every,
+            per_gpu_loss_path,
         )
 
     return run_backtest(
@@ -303,9 +354,16 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
     model_config = {**config["model"], "n_features": n_features}
     # Patch config so worker gets enriched model_config
     config = {**config, "model": model_config}
+    checkpoint_dir = config.get("checkpoint_dir", None)
+    checkpoint_every = config.get("checkpoint_every", 0)
+    loss_log_path = config.get("loss_log_path", None)
 
     def make_worker_args(gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows):
         weights_dir = config.get("weights_dir", None)
+        per_gpu_loss_path = None
+        if loss_log_path:
+            base, ext = os.path.splitext(loss_log_path)
+            per_gpu_loss_path = f"{base}_gpu{gpu_id}{ext}"
         return (
             gpu_id,
             chunks,
@@ -317,6 +375,9 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
             chunk_size,
             num_windows,
             weights_dir,
+            checkpoint_dir,
+            checkpoint_every,
+            per_gpu_loss_path,
         )
 
     return run_backtest(
