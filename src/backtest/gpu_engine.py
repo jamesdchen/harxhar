@@ -213,6 +213,8 @@ def _ae_ridge_worker(
         trained_params, epoch_losses = run_kernel_and_detach(
             ctx["train_kernel"], current_params, ctx["buffers"], exp_avgs, exp_avg_sqs, step_tensors, X_chunk, y_chunk
         )
+        # Free Adam state immediately after training to reduce peak memory
+        del exp_avgs, exp_avg_sqs, step_tensors
 
         # Save per-epoch losses for this chunk
         if ctx["loss_log_path"]:
