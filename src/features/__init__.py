@@ -1,4 +1,4 @@
-"""Feature engineering transforms."""
+"""Feature engineering transforms and lag feature generation pipeline."""
 
 __all__ = [
     "BaseFeatureTransform",
@@ -7,8 +7,20 @@ __all__ = [
     "PCATransform",
     "RawLagFeatures",
     "AETransform",
+    "generate_lag_features",
+    "generate_lag_features_segmented",
+    "resolve_lags",
 ]
 
+from src.features.pipeline import (
+    generate_lag_features as generate_lag_features,
+)
+from src.features.pipeline import (
+    generate_lag_features_segmented as generate_lag_features_segmented,
+)
+from src.features.pipeline import (
+    resolve_lags as resolve_lags,
+)
 from src.features.transforms import (
     BaseFeatureTransform as BaseFeatureTransform,
 )
