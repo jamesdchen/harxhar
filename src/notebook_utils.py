@@ -19,8 +19,6 @@ def verify_gpu():
 
     assert torch.cuda.is_available(), "No GPU detected! Change runtime to GPU."
     name = torch.cuda.get_device_name(0)
-    vram = torch.cuda.get_device_properties(0).total_mem / 1e9
-    print(f"GPU: {name} ({vram:.1f} GB VRAM)")
 
 
 def save_results(df, results_dir, filename):
