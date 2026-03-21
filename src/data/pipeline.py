@@ -12,7 +12,6 @@ from src.features.pipeline import (
     generate_lag_features_segmented,
 )
 
-
 # ---------------------------------------------------------------------------
 # Horizon shift utility
 # ---------------------------------------------------------------------------
