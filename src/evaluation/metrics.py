@@ -1,3 +1,5 @@
+"""Forecast evaluation metrics: MSE, MAE, QLIKE, and out-of-sample R²."""
+
 import numpy as np
 import pandas as pd
 

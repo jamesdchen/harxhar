@@ -1,3 +1,5 @@
+"""Visualization utilities for forecast diagnostics and model comparison."""
+
 from src.visualization.plots import (
     plot_diagnostic_scatter,
     plot_residual_histogram,

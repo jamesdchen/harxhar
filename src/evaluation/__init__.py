@@ -1,5 +1,14 @@
 """Evaluation metrics and result aggregation."""
 
+__all__ = [
+    "filter_by_time",
+    "load_all_chunks",
+    "parse_config",
+    "process_single_experiment",
+    "calculate_baseline_deltas",
+    "calculate_global_metrics",
+]
+
 from src.evaluation.aggregation import (
     filter_by_time as filter_by_time,
 )

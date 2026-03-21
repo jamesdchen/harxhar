@@ -1,5 +1,17 @@
 """CLI argument parsing, execution, and SLURM submission."""
 
+__all__ = [
+    "add_feature_args",
+    "get_common_hparams",
+    "get_common_parser",
+    "main",
+    "ExperimentSpec",
+    "add_common_submit_args",
+    "build_extra_args",
+    "submit_experiment",
+    "submit_experiment_batch",
+]
+
 from src.cli.executor import (
     add_feature_args as add_feature_args,
 )

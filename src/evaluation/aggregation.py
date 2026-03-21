@@ -1,3 +1,5 @@
+"""Result aggregation: chunk stitching, config parsing, and experiment processing."""
+
 from __future__ import annotations
 
 from pathlib import Path
