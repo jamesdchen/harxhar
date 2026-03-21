@@ -3,7 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from src.data import apply_data_transform, resolve_lags
+from src.data import apply_data_transform
+from src.features import resolve_lags
 
 # ---------------------------------------------------------------------------
 # Rolling Infrastructure
