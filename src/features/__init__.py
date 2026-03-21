@@ -20,7 +20,9 @@ from src.features.transforms import (
 # Lazy import for torch-dependent AETransform
 def __getattr__(name: str):
     if name == "AETransform":
-        from src.features.transforms import AETransform
-
+        try:
+            from src.features.transforms import AETransform
+        except ImportError as e:
+            raise ImportError("AETransform requires PyTorch. Install it with: pip install torch") from e
         return AETransform
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

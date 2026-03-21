@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from src.data import _resolve_lags, apply_data_transform
+from src.data import apply_data_transform, resolve_lags
 
 # ---------------------------------------------------------------------------
 # Rolling Infrastructure
@@ -186,13 +186,13 @@ class TestApplyDataTransformEdgeCases:
 
 class TestResolveLags:
     def test_har_geometric_sequence(self):
-        lags = _resolve_lags("har", 125)
+        lags = resolve_lags("har", 125)
         assert lags == [1, 5, 25, 125]
 
     def test_har_partial(self):
-        lags = _resolve_lags("har", 10)
+        lags = resolve_lags("har", 10)
         assert lags == [1, 5]
 
     def test_raw_consecutive(self):
-        lags = _resolve_lags("raw", 5)
+        lags = resolve_lags("raw", 5)
         assert lags == [1, 2, 3, 4, 5]

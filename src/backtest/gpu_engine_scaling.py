@@ -14,13 +14,13 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.backtest.engine import apply_duan_smearing
-from src.backtest.gpu_kernels import functional_qlike_loss
 from src.backtest.gpu_utils import normalize_chunks
 from src.core import config as cfg
 from src.core.log import get_logger
 from src.data.synth_data import MovingBlockBootstrap
 from src.evaluation.metrics import calculate_global_metrics
 from src.models.deep_learning import get_model
+from src.models.losses import functional_qlike_loss
 
 logger = get_logger(__name__)
 
