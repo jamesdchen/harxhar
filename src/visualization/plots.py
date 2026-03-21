@@ -1,8 +1,8 @@
 """Shared visualization functions for volatility forecast results."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 
 def plot_timeseries_forecast(results, model_name, color="#1f77b4", n_tail=500):

@@ -354,9 +354,9 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
     model_config = {**config["model"], "n_features": n_features}
     # Patch config so worker gets enriched model_config
     config = {**config, "model": model_config}
-    checkpoint_dir = config.get("checkpoint_dir", None)
+    checkpoint_dir = config.get("checkpoint_dir")
     checkpoint_every = config.get("checkpoint_every", 0)
-    loss_log_path = config.get("loss_log_path", None)
+    loss_log_path = config.get("loss_log_path")
 
     def make_worker_args(gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows):
         weights_dir = config.get("weights_dir", None)
