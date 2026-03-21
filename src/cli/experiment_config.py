@@ -59,7 +59,7 @@ def _load_yaml_or_json(path: Path) -> dict[str, Any]:
 
     if suffix in (".yaml", ".yml"):
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
         except ImportError:
             # Fall back to a simple key: value parser for basic YAML
             return _parse_simple_yaml(text)
