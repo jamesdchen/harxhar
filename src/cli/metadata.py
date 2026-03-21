@@ -16,14 +16,15 @@ from pathlib import Path
 from typing import Any
 
 
-def _get_git_info() -> dict[str, str]:
+def _get_git_info() -> dict[str, str | bool]:
     """Capture current git state."""
-    info: dict[str, str] = {}
+    info: dict[str, str | bool] = {}
     try:
-        info["git_hash"] = subprocess.check_output(
+        git_hash = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
         ).strip()
-        info["git_short_hash"] = info["git_hash"][:8]
+        info["git_hash"] = git_hash
+        info["git_short_hash"] = git_hash[:8]
         info["git_branch"] = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL, text=True
         ).strip()
