@@ -18,7 +18,7 @@ def verify_gpu():
     import torch
 
     assert torch.cuda.is_available(), "No GPU detected! Change runtime to GPU."
-    name = torch.cuda.get_device_name(0)
+    torch.cuda.get_device_name(0)
 
 
 def save_results(df, results_dir, filename):
