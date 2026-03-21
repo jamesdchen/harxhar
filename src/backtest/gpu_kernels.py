@@ -40,9 +40,16 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
     param_keys : list[str]
     num_epochs : int
     base_lr : float
+
+    Returns
+    -------
+    train_loop : callable
+        Returns (params, epoch_losses) where epoch_losses is a 1-D tensor
+        of length num_epochs containing the mean loss at each epoch.
     """
 
     def train_loop(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y):
+        epoch_losses = torch.zeros(num_epochs, device=X.device)
 
         for _i in range(1, num_epochs + 1):
 
@@ -50,6 +57,9 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
                 with autocast("cuda"):
                     losses = batch_loss_fn(p, buffers, X, y)
                     return losses.mean()
+
+            loss_val = mean_loss(params)
+            epoch_losses[_i - 1] = loss_val.detach()
 
             grads_dict = grad(mean_loss)(params)
 
@@ -88,7 +98,7 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
                 )
                 params = {k: mutable_params[idx] for idx, k in enumerate(param_keys)}
 
-        return params
+        return params, epoch_losses
 
     return train_loop
 

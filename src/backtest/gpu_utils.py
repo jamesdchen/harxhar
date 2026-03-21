@@ -1,8 +1,10 @@
 """Shared utilities for GPU backtest pipelines."""
 
+import csv
 import importlib
 import logging
 import math
+import os
 
 import numpy as np
 import torch
@@ -139,10 +141,63 @@ def init_adam_state(current_params, device):
     return exp_avgs, exp_avg_sqs, step_tensors
 
 
+def save_checkpoint(checkpoint_dir, gpu_id, chunk_idx, params_store, results_so_far):
+    """Save training checkpoint: params + completed chunk results."""
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    path = os.path.join(checkpoint_dir, f"ckpt_gpu{gpu_id}.pt")
+    state = {
+        "chunk_idx": chunk_idx,
+        "params_store": {k: v.cpu() for k, v in params_store.items()},
+        "results": results_so_far,
+    }
+    torch.save(state, path)
+    log_to_file(f"Worker {gpu_id}: Saved checkpoint at chunk {chunk_idx}")
+
+
+def load_checkpoint(checkpoint_dir, gpu_id, device):
+    """Load checkpoint if it exists. Returns (start_chunk_idx, params_state, results) or None."""
+    path = os.path.join(checkpoint_dir, f"ckpt_gpu{gpu_id}.pt")
+    if not os.path.exists(path):
+        return None
+    state = torch.load(path, map_location=device, weights_only=False)
+    log_to_file(f"Worker {gpu_id}: Resuming from chunk {state['chunk_idx']}")
+    return state
+
+
+def save_loss_log(loss_log_path, chunk_idx, epoch_losses_cpu):
+    """Append per-epoch losses for a chunk to a CSV file.
+
+    Parameters
+    ----------
+    loss_log_path : str
+        Path to the output CSV.
+    chunk_idx : int
+        Window/chunk index for this training run.
+    epoch_losses_cpu : np.ndarray
+        1-D array of per-epoch mean losses.
+    """
+    write_header = not os.path.exists(loss_log_path)
+    with open(loss_log_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow(["chunk", "epoch", "loss"])
+        for epoch, loss_val in enumerate(epoch_losses_cpu, start=1):
+            writer.writerow([chunk_idx, epoch, f"{loss_val:.6g}"])
+
+
 def run_kernel_and_detach(kernel, params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y):
-    """Run compiled training kernel and detach the resulting parameters."""
-    final_params = kernel(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y)
-    return {k: v.detach().requires_grad_(True) for k, v in final_params.items()}
+    """Run compiled training kernel and detach the resulting parameters.
+
+    Returns
+    -------
+    params : dict[str, Tensor]
+        Detached trained parameters.
+    epoch_losses : Tensor
+        1-D tensor of per-epoch mean losses.
+    """
+    final_params, epoch_losses = kernel(params, buffers, exp_avgs, exp_avg_sqs, step_tensors, X, y)
+    detached = {k: v.detach().requires_grad_(True) for k, v in final_params.items()}
+    return detached, epoch_losses.detach()
 
 
 def aggregate_predictions(results_nested: list[list[dict]], num_windows: int) -> np.ndarray:
@@ -257,25 +312,81 @@ def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows, chunk_
     return results_nested
 
 
-def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X, chunk_size, total_windows, setup_fn, chunk_fn):
+def save_losses_csv(all_losses, loss_log_path):
+    """Write collected chunk losses to a single CSV.
+
+    Parameters
+    ----------
+    all_losses : list[dict]
+        Each dict has keys 'chunk_index' and 'epoch_losses' (np.ndarray).
+    loss_log_path : str
     """
-    Generic per-GPU worker loop.
+    all_losses.sort(key=lambda x: x["chunk_index"])
+    with open(loss_log_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["chunk", "epoch", "loss"])
+        for entry in all_losses:
+            for epoch, loss_val in enumerate(entry["epoch_losses"], start=1):
+                writer.writerow([entry["chunk_index"], epoch, f"{loss_val:.6g}"])
+    logger.info("Saved training losses to %s", loss_log_path)
+
+
+def run_worker(
+    gpu_id,
+    chunk_indices,
+    shared_X,
+    shared_y,
+    shared_test_X,
+    chunk_size,
+    total_windows,
+    setup_fn,
+    chunk_fn,
+    checkpoint_dir=None,
+    checkpoint_every=0,
+):
+    """
+    Generic per-GPU worker loop with optional checkpointing.
 
     Parameters
     ----------
     setup_fn : callable(device) -> (params_store, ctx_dict)
         Initialise model, compile kernels, return pre-allocated params_store
         and an arbitrary context dict passed through to chunk_fn.
-    chunk_fn : callable(ctx, X_chunk, y_chunk, X_test_chunk, curr_bs) -> Tensor
+    chunk_fn : callable(ctx, current_params, X_chunk, y_chunk, X_test_chunk, curr_bs, idx)
         Model-specific logic: normalise, train, predict.
         Must return a 1-D predictions tensor on the same device.
+    checkpoint_dir : str | None
+        If set, save checkpoints to this directory.
+    checkpoint_every : int
+        Save a checkpoint every N chunks (0 = disabled).
     """
     try:
         device = setup_device(gpu_id)
         params_store, ctx = setup_fn(device)
 
         results = []
-        for i, idx in enumerate(chunk_indices):
+        start_from = 0
+
+        # Resume from checkpoint if available
+        if checkpoint_dir:
+            ckpt = load_checkpoint(checkpoint_dir, gpu_id, device)
+            if ckpt is not None:
+                # Restore params
+                for k, v in ckpt["params_store"].items():
+                    params_store[k].data.copy_(v.to(device))
+                results = ckpt["results"]
+                # Skip already-completed chunks
+                completed = {r["chunk_index"] for r in results}
+                start_from = 0
+                for j, idx in enumerate(chunk_indices):
+                    if idx not in completed:
+                        start_from = j
+                        break
+                else:
+                    start_from = len(chunk_indices)
+                log_to_file(f"Worker {gpu_id}: Skipping {start_from} already-completed chunks")
+
+        for i, idx in enumerate(chunk_indices[start_from:], start=start_from):
             start = idx * chunk_size
             end = min(start + chunk_size, total_windows)
 
@@ -306,10 +417,22 @@ def run_worker(gpu_id, chunk_indices, shared_X, shared_y, shared_test_X, chunk_s
             if i % 10 == 0:
                 log_to_file(f"Worker {gpu_id}: Chunk {idx} done")
 
+            # Periodic checkpoint
+            if checkpoint_dir and checkpoint_every > 0 and (i + 1) % checkpoint_every == 0:
+                save_checkpoint(checkpoint_dir, gpu_id, idx, params_store, results)
+
         return results
 
     except Exception as e:
         import traceback
+
+        # Save emergency checkpoint on crash
+        if checkpoint_dir and results:
+            try:
+                save_checkpoint(checkpoint_dir, gpu_id, chunk_indices[start_from], params_store, results)
+                log_to_file(f"Worker {gpu_id}: Emergency checkpoint saved before crash")
+            except Exception:
+                pass
 
         log_to_file(f"Worker {gpu_id} CRASHED:\n{traceback.format_exc()}")
         raise e
