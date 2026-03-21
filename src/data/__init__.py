@@ -2,13 +2,13 @@
 
 from src.data.loading import load_and_clean_base_data as load_and_clean_base_data
 from src.data.pipeline import (
-    _resolve_lags as _resolve_lags,
-)
-from src.data.pipeline import (
     apply_horizon_shift as apply_horizon_shift,
 )
 from src.data.pipeline import (
     load_and_prep_data_strided as load_and_prep_data_strided,
+)
+from src.data.pipeline import (
+    resolve_lags as resolve_lags,
 )
 from src.data.rolling import (
     RollingBuffer as RollingBuffer,
