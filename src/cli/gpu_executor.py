@@ -147,7 +147,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
     parser.add_argument("--train-window", type=int, default=None, help="Training window size (periods).")
     parser.add_argument("--weights-dir", type=str, default=None, help="Directory to save AE weights (ae_ridge only).")
-    parser.add_argument("--checkpoint-dir", type=str, default=None, help="Directory for training checkpoints (enables crash recovery).")
+    parser.add_argument(
+        "--checkpoint-dir", type=str, default=None, help="Directory for training checkpoints (enables crash recovery)."
+    )
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save checkpoint every N chunks (0=disabled).")
     parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
     return parser
