@@ -8,7 +8,6 @@ import pandas as pd
 from src.core import config
 from src.features.transforms import HARFeatures, RawLagFeatures
 
-
 # ---------------------------------------------------------------------------
 # Lag resolution
 # ---------------------------------------------------------------------------
