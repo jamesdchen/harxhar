@@ -360,12 +360,11 @@ def run_worker(
     checkpoint_every : int
         Save a checkpoint every N chunks (0 = disabled).
     """
+    results = []
+    start_from = 0
     try:
         device = setup_device(gpu_id)
         params_store, ctx = setup_fn(device)
-
-        results = []
-        start_from = 0
 
         # Resume from checkpoint if available
         if checkpoint_dir:
@@ -439,8 +438,12 @@ def run_worker(
         log_to_file(f"Worker {gpu_id} CRASHED:\n{tb_str}")
         # Re-raise as a plain RuntimeError so the traceback (which may
         # reference unpicklable closure cells) is not sent across the
-        # multiprocessing boundary.
-        raise RuntimeError(f"Worker {gpu_id} failed:\n{tb_str}") from None
+        # multiprocessing boundary.  We must also clear __traceback__
+        # because the raise-site frame still holds closure locals
+        # (setup_fn, chunk_fn) that contain unpicklable cell objects.
+        err = RuntimeError(f"Worker {gpu_id} failed:\n{tb_str}")
+        err.__traceback__ = None
+        raise err from None
 
 
 def run_backtest(
