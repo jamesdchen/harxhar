@@ -282,6 +282,33 @@ def build_results_df(preds, test_indices, y_np, dates, baselines, output_file=No
     return build_results_dataframe(preds, y_subset, dates_subset, base_subset)
 
 
+class _WorkerError:
+    """Lightweight picklable sentinel returned when a worker fails.
+
+    Using this instead of raising across the ``spawn`` boundary avoids
+    the ``MaybeEncodingError: cannot pickle 'cell' object`` that occurs
+    when multiprocessing tries to pickle exception tracebacks whose
+    frames reference closures (e.g. ``setup_fn`` / ``chunk_fn``).
+    """
+
+    def __init__(self, message: str):
+        self.message = message
+
+
+def _safe_worker(worker_fn, *args):
+    """Call *worker_fn* and return a ``_WorkerError`` on failure.
+
+    This is a **module-level** function (no closure cells) so that the
+    ``_WorkerError`` it returns is always picklable.
+    """
+    try:
+        return worker_fn(*args)
+    except Exception:
+        import traceback
+
+        return _WorkerError(traceback.format_exc())
+
+
 def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows, chunk_size):
     """
     Distribute chunks across GPUs and run workers via multiprocessing.
@@ -307,7 +334,13 @@ def distribute_and_run(worker_fn, worker_args_fn, gpu_count, num_windows, chunk_
     ctx = mp.get_context("spawn")
     with ctx.Pool(processes=gpu_count) as pool:
         args = [worker_args_fn(gpu_id, chunks_per_gpu[gpu_id]) for gpu_id in range(gpu_count)]
-        results_nested = pool.starmap(worker_fn, args)
+        safe_args = [(worker_fn,) + a for a in args]
+        results_nested = pool.starmap(_safe_worker, safe_args)
+
+    # Re-raise worker errors in the main process (no closures here).
+    for r in results_nested:
+        if isinstance(r, _WorkerError):
+            raise RuntimeError(r.message)
 
     return results_nested
 
@@ -436,14 +469,9 @@ def run_worker(
                 pass
 
         log_to_file(f"Worker {gpu_id} CRASHED:\n{tb_str}")
-        # Re-raise as a plain RuntimeError so the traceback (which may
-        # reference unpicklable closure cells) is not sent across the
-        # multiprocessing boundary.  We must also clear __traceback__
-        # because the raise-site frame still holds closure locals
-        # (setup_fn, chunk_fn) that contain unpicklable cell objects.
-        err = RuntimeError(f"Worker {gpu_id} failed:\n{tb_str}")
-        err.__traceback__ = None
-        raise err from None
+        # Re-raise so _safe_worker (a closure-free top-level function)
+        # can catch this and return a picklable _WorkerError value.
+        raise
 
 
 def run_backtest(
