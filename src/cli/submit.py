@@ -14,6 +14,7 @@ from pathlib import Path
 
 from src.cli.backends import HPCBackend, get_backend
 from src.cli.executor import add_feature_args
+from src.cli.metadata import build_metadata, save_metadata
 from src.core.config import DEFAULT_RESULTS_DIR
 from src.core.log import get_logger
 
@@ -33,6 +34,9 @@ class ExperimentSpec:
     feature_type: str = "har"
     variables: list = dataclasses.field(default_factory=list)
     extra_args: str = ""
+
+    def to_dict(self) -> dict:
+        return dataclasses.asdict(self)
 
 
 def write_config(exp_dir: str, spec: ExperimentSpec) -> None:
@@ -83,6 +87,7 @@ def submit_experiment(
     Path(exp_dir).mkdir(parents=True, exist_ok=True)
 
     write_config(exp_dir, spec)
+    save_metadata(exp_dir, build_metadata(spec.to_dict()))
 
     job_name = f"{short_model_name(spec.model_type)}_{spec.feature_type[:3]}_{spec.exp_id}"
     if spec.model_type == "naive":

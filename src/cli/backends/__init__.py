@@ -47,6 +47,28 @@ def register(name: str):
     return decorator
 
 
+@register("dry-run")
+class DryRunBackend(HPCBackend):
+    """Print what would be submitted without actually running anything."""
+
+    def submit_array(self, job_name, total_chunks, tasks_per_array, job_env):
+        result_dir = job_env.get("RESULT_DIR", "?")
+        model_type = job_env.get("MODEL_TYPE", "?")
+        extra_args = job_env.get("EXTRA_ARGS", "")
+        exog_cols = job_env.get("EXOG_COLS", "None")
+
+        print(f"  [DRY RUN] Job: {job_name}")
+        print(f"            Model: {model_type}")
+        print(f"            Chunks: 1-{total_chunks} (batches of {tasks_per_array})")
+        print(f"            Output: {result_dir}")
+        if exog_cols != "None":
+            n_vars = len(exog_cols.split("|"))
+            print(f"            Exog vars: {n_vars}")
+        if extra_args:
+            print(f"            Extra args: {extra_args}")
+        print()
+
+
 def get_backend(name: str = "slurm", **kwargs) -> HPCBackend:
     """Instantiate a backend by name.  *kwargs* are forwarded to the constructor."""
     # Lazy imports to populate registry
