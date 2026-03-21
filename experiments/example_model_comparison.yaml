@@ -1,0 +1,10 @@
+# Example: Compare models on baseline features
+name: ridge_vs_trees
+mode: model_comparison
+models: [ridge, xgboost, lightgbm]
+features: [har]
+train_window: 500
+horizon: 1
+total_chunks: 100
+backend: slurm
+notes: "Baseline model comparison using HAR features"
