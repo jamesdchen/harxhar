@@ -26,9 +26,7 @@ class MovingBlockBootstrap:
         if block_size < 1:
             raise ValueError(f"block_size must be >= 1, got {block_size}")
         if block_size >= len(data):
-            raise ValueError(
-                f"block_size ({block_size}) must be < data length ({len(data)})"
-            )
+            raise ValueError(f"block_size ({block_size}) must be < data length ({len(data)})")
         self.data = data
         self.block_size = block_size
         self._max_start = len(data) - block_size

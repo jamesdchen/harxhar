@@ -17,8 +17,8 @@ import torch
 
 from src.backtest.gpu_engine_scaling import run_scaling_experiment
 from src.core.config import DL_CONFIG
-from src.data import load_and_prep_data_strided
 from src.core.log import get_logger
+from src.data import load_and_prep_data_strided
 
 logger = get_logger(__name__)
 
@@ -119,7 +119,7 @@ def main() -> None:
 
     if os.path.exists(csv_path):
         prev_df = pd.read_csv(csv_path)
-        done_keys = set(zip(prev_df["multiplier"], prev_df["repeat"]))
+        done_keys = set(zip(prev_df["multiplier"], prev_df["repeat"], strict=False))
         all_results = prev_df.to_dict("records")
         logger.info("Resuming: %d runs already completed", len(done_keys))
 
@@ -151,12 +151,8 @@ def main() -> None:
             all_results.append(result)
 
             # Save incrementally
-            pd.DataFrame(all_results).drop(columns=["epoch_losses"], errors="ignore").to_csv(
-                csv_path, index=False
-            )
-            logger.info(
-                "  -> QLIKE=%.6f, n_windows=%d", result["qlike"], result["n_train_windows"]
-            )
+            pd.DataFrame(all_results).drop(columns=["epoch_losses"], errors="ignore").to_csv(csv_path, index=False)
+            logger.info("  -> QLIKE=%.6f, n_windows=%d", result["qlike"], result["n_train_windows"])
 
     logger.info("All results saved to %s", csv_path)
 

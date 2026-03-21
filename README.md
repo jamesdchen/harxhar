@@ -6,17 +6,20 @@ Realized volatility forecasting system using HAR-family models with exogenous fe
 
 ```
 src/
-├── config.py              # Central configuration (lags, windows, segments)
-├── log.py                 # Logging setup
+├── core/
+│   ├── config.py          # Central configuration (lags, windows, segments)
+│   └── log.py             # Logging setup
 ├── data/
 │   ├── transforms.py      # Diurnal adjustment, winsorization, data transforms
 │   ├── loading.py         # Parquet loading, gridding, data cleaning
 │   ├── pipeline.py        # Lag feature generation, horizon shifts, segmentation
-│   └── rolling.py         # RollingBuffer, RollingRobustScaler, RollingMedian
+│   ├── rolling.py         # RollingBuffer, RollingRobustScaler, RollingMedian
+│   └── synth_data.py      # Synthetic data generation (MovingBlockBootstrap)
 ├── features/
-│   └── transforms.py      # HAR/Raw lag features, PCA, Autoencoder transforms
+│   ├── transforms.py      # HAR/Raw lag features, PCA, Autoencoder transforms
+│   └── feature_groups.py  # Feature group definitions
 ├── models/
-│   ├── base.py            # BaseModel, RollingRegressionModel, NaiveBaseline
+│   ├── base.py            # BaseModel (ABC), RollingRegressionModel, NaiveBaseline
 │   ├── sklearn_models.py  # Ridge, XGBoost, LightGBM, RandomForest wrappers
 │   ├── sarimax.py         # SARIMAX with rolling window
 │   ├── registry.py        # MODEL_REGISTRY and create_model() factory
@@ -29,9 +32,13 @@ src/
 ├── evaluation/
 │   ├── metrics.py         # MSE, MAE, QLIKE, OOS R²
 │   └── aggregation.py     # Chunk stitching, config parsing, experiment processing
+├── visualization/
+│   └── plots.py           # Forecast, scatter, and residual plots
 └── cli/
     ├── executor.py        # CLI arg parsing, backtest orchestration
-    └── submit.py          # SLURM job submission utilities
+    ├── gpu_executor.py    # GPU-specific CLI execution
+    ├── submit.py          # SLURM/SGE job submission
+    └── backends/          # Scheduler-specific backends (slurm, sge)
 ```
 
 ## Setup

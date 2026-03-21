@@ -2,23 +2,35 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+
 import numpy as np
 
 from src.core import config as cfg
 from src.data.rolling import RollingBuffer, RollingRobustScaler
 
 
-class BaseModel:
+class BaseModel(ABC):
+    """Abstract base for all forecasting models.
+
+    Subclasses must implement ``initialize``, ``predict``, and ``update``
+    to participate in the walk-forward backtest loop.
+    """
+
+    @abstractmethod
     def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None:
-        pass
+        """Receive initial burn-in history and fit the model."""
 
+    @abstractmethod
     def predict(self, x_t: np.ndarray) -> float:
-        pass
+        """Return a scalar forecast given feature vector *x_t*."""
 
+    @abstractmethod
     def update(self, x_t: np.ndarray, y_t: float) -> None:
-        pass
+        """Ingest newly observed data point and optionally refit."""
 
     def get_coefs(self) -> np.ndarray | None:
+        """Return model coefficients, or ``None`` if not applicable."""
         return None
 
 

@@ -8,8 +8,8 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 
-from src.core import config as cfg
 from src.backtest.engine import _build_results_dataframe, _extract_subset, save_chunk_results
+from src.core import config as cfg
 from src.core.log import get_logger
 
 logger = get_logger(__name__)
