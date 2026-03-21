@@ -13,13 +13,13 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.core import config as cfg
 from src.backtest.engine import apply_duan_smearing
 from src.backtest.gpu_kernels import functional_qlike_loss
 from src.backtest.gpu_utils import normalize_chunks
+from src.core import config as cfg
+from src.core.log import get_logger
 from src.data.synth_data import MovingBlockBootstrap
 from src.evaluation.metrics import calculate_global_metrics
-from src.core.log import get_logger
 from src.models.deep_learning import get_model
 
 logger = get_logger(__name__)
@@ -226,9 +226,7 @@ def run_scaling_experiment(
     context_len = model_config["context_len"]
 
     # --- Augment ---
-    X_aug, y_aug = _build_augmented_data(
-        X_train, y_train, multiplier, context_len, block_size, seed
-    )
+    X_aug, y_aug = _build_augmented_data(X_train, y_train, multiplier, context_len, block_size, seed)
     n_windows = len(X_aug)
 
     # --- Normalize & tensorize ---
@@ -243,7 +241,10 @@ def run_scaling_experiment(
     model = get_model(model_config).to(device)
     logger.info(
         "Training: mult=%d, seed=%d, n_windows=%d, device=%s",
-        multiplier, seed, n_windows, device,
+        multiplier,
+        seed,
+        n_windows,
+        device,
     )
     epoch_losses = train_model(model, X_aug_t, y_aug_t, train_config, device)
 
@@ -251,7 +252,8 @@ def run_scaling_experiment(
     metrics = evaluate_model(model, X_test_t, y_test, baselines_test, device)
     logger.info(
         "Result: mult=%d, seed=%d, QLIKE=%.6f, MSE=%.4e, MAE=%.4e",
-        multiplier, seed,
+        multiplier,
+        seed,
         metrics.get("qlike", float("nan")),
         metrics.get("mse", float("nan")),
         metrics.get("mae", float("nan")),

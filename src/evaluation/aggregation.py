@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.evaluation.metrics import calculate_global_metrics
 from src.core.log import get_logger
+from src.evaluation.metrics import calculate_global_metrics
 
 logger = get_logger(__name__)
 

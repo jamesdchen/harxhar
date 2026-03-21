@@ -75,9 +75,7 @@ def calculate_baseline_deltas(summary_df: pd.DataFrame) -> pd.DataFrame:
     metric_keys = ["mse", "mae", "qlike", "w_mse", "w_mae", "w_qlike"]
     available_keys = [k for k in metric_keys if k in baseline_df.columns]
     baseline_lookup = (
-        baseline_df.groupby(group_cols)[available_keys]
-        .first()
-        .rename(columns={k: f"b_{k}" for k in available_keys})
+        baseline_df.groupby(group_cols)[available_keys].first().rename(columns={k: f"b_{k}" for k in available_keys})
     )
     summary_df = summary_df.merge(baseline_lookup, on=group_cols, how="left")
 
