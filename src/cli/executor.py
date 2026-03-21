@@ -294,6 +294,8 @@ def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
         logger.info("No datasets returned. Check data path and dates.")
         return
 
+    assert isinstance(datasets, dict)
+
     if args.model == "naive":
         first_ds = next(iter(datasets.values()))
         fnames = first_ds.get("features", [])
