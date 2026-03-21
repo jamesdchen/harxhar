@@ -7,9 +7,6 @@ from src.data.pipeline import (
 from src.data.pipeline import (
     load_and_prep_data_strided as load_and_prep_data_strided,
 )
-from src.data.pipeline import (
-    resolve_lags as resolve_lags,
-)
 from src.data.rolling import (
     RollingBuffer as RollingBuffer,
 )
