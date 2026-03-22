@@ -67,6 +67,8 @@ def _run_patchts(args: argparse.Namespace) -> None:
         config["checkpoint_every"] = args.checkpoint_every
     if args.loss_log_path:
         config["loss_log_path"] = args.loss_log_path
+    if args.progress_path:
+        config["progress_path"] = args.progress_path
 
     hparams = {
         "exog_cols": "none",
@@ -114,6 +116,8 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         config["checkpoint_every"] = args.checkpoint_every
     if args.loss_log_path:
         config["loss_log_path"] = args.loss_log_path
+    if args.progress_path:
+        config["progress_path"] = args.progress_path
 
     hparams = {
         "exog_cols": "none",
@@ -163,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save checkpoint every N chunks (0=disabled).")
     parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
+    parser.add_argument("--progress-path", type=str, default=None, help="JSON path to write live training progress.")
     parser.add_argument("--horizon", type=int, default=1, help="Forecast horizon.")
     parser.add_argument("--timeout-hours", type=float, default=0, help="Max runtime in hours (0=no limit).")
     parser.add_argument("--write-status", action="store_true", help="Write Drive status JSON for MCP monitoring.")

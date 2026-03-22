@@ -146,16 +146,35 @@ When asked to run a DL experiment:
 Cell 4 launches training as a background process and returns immediately.
 The kernel stays free for polling.
 
-### Polling cadence
+### Adaptive polling (naps)
 
-- Runs expected **< 1 hour**: poll Cell 7 every **3–5 minutes**.
-- Runs expected **≥ 1 hour**: poll Cell 7 every **10 minutes**.
+Cell 7 now displays a **Training Progress** section with chunk-level ETA
+and a **Recommended Nap** duration. Follow the recommended nap time
+instead of using fixed intervals:
+
+| Situation | Nap duration | Why |
+|-----------|-------------|-----|
+| Early training (< 10% done) | **3 min** | Pace is still settling; catch early failures fast. |
+| Finishing soon (ETA < 10 min) | **3 min** | Don't miss completion. |
+| Moderate ETA (10–30 min), stable pace | **10 min** | Pace deviation < 20% — safe to sleep longer. |
+| Moderate ETA (10–30 min), variable pace | **5 min** | Something may be off. |
+| Long ETA (> 30 min), stable pace | **15 min** | Training is cruising — take a long nap. |
+| Long ETA (> 30 min), variable pace | **10 min** | Pace fluctuations warrant closer watch. |
+
+**Stability** is determined by comparing the recent chunk pace (last 10
+chunks) against the overall average. A deviation < 20% is "STABLE";
+otherwise "VARIABLE".
+
+If no progress data is shown yet (training is still loading data or
+compiling kernels), poll again in **3 minutes**.
 
 ### Cell 7 output
 
 Cell 7 shows:
 - **Process liveness**: whether the PID is still running or finished
 - **Status JSON**: current status + metadata from the training process
+- **Training Progress**: chunks done/total, elapsed time, ETA, pace
+  stability indicator, and recommended nap duration
 - **GPU utilization**: memory, compute %, temperature
 - **Log tail**: last 30 lines of training output
 
@@ -352,4 +371,5 @@ After completing experiments, report to the user with:
 | Repo (on Colab)       | `/content/harxhar/`                                       |
 | Repo (local)          | This project folder                                       |
 | Full training log     | `/content/harxhar_train.log` (hardcoded in Cells 4 & 7)  |
+| Training progress     | `/content/harxhar_progress.json` (live ETA + pace stats)  |
 | Checkpoints (if set)  | Value of `CHECKPOINT_DIR` (typically on Drive)             |

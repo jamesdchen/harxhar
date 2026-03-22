@@ -37,6 +37,7 @@ def _patchts_worker(
     checkpoint_dir=None,
     checkpoint_every=0,
     loss_log_path=None,
+    progress_path=None,
 ):
     """Per-GPU worker for standard DL backtest."""
 
@@ -101,6 +102,7 @@ def _patchts_worker(
         chunk_fn,
         checkpoint_dir=checkpoint_dir,
         checkpoint_every=checkpoint_every,
+        progress_path=progress_path,
     )
 
 
@@ -167,6 +169,7 @@ def _ae_ridge_worker(
     checkpoint_dir=None,
     checkpoint_every=0,
     loss_log_path=None,
+    progress_path=None,
 ):
     """Per-GPU worker for AE+Ridge backtest."""
 
@@ -261,6 +264,7 @@ def _ae_ridge_worker(
         chunk_fn,
         checkpoint_dir=checkpoint_dir,
         checkpoint_every=checkpoint_every,
+        progress_path=progress_path,
     )
 
 
@@ -316,6 +320,7 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="sr
     checkpoint_dir = config.get("checkpoint_dir", None)
     checkpoint_every = config.get("checkpoint_every", 0)
     loss_log_path = config.get("loss_log_path", None)
+    progress_path = config.get("progress_path", None)
 
     def make_worker_args(gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows):
         per_gpu_loss_path = None
@@ -336,6 +341,7 @@ def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="sr
             checkpoint_dir,
             checkpoint_every,
             per_gpu_loss_path,
+            progress_path,
         )
 
     return run_backtest(
@@ -361,6 +367,7 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
     checkpoint_dir = config.get("checkpoint_dir")
     checkpoint_every = config.get("checkpoint_every", 0)
     loss_log_path = config.get("loss_log_path")
+    progress_path = config.get("progress_path")
 
     def make_worker_args(gpu_id, chunks, config, all_train_X, all_train_y, all_test_X, chunk_size, num_windows):
         weights_dir = config.get("weights_dir", None)
@@ -382,6 +389,7 @@ def run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config):
             checkpoint_dir,
             checkpoint_every,
             per_gpu_loss_path,
+            progress_path,
         )
 
     return run_backtest(
