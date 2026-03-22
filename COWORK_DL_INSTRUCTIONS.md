@@ -93,20 +93,25 @@ When asked to run a DL experiment:
 1. **Sync local repo to GitHub** — commit any pending changes and run
    `git push` so that Colab picks up the latest code via Cell 1's
    `git pull --ff-only`.
-2. Open `dl_runner.ipynb` in Colab
-3. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
-4. Execute Cell 1 (setup) — verify "Setup complete" in output
-5. **Edit Cell 2** to set experiment parameters:
+2. **Handle MCP authorization** — after the `colab-mcp` server connects,
+   take a screenshot to check for a permission/authorization dialog in
+   the browser. If one appears, click "Allow" / "Authorize" to grant
+   access. Repeat the screenshot→click cycle until the dialog is
+   dismissed and the Colab notebook is visible.
+3. Open `dl_runner.ipynb` in Colab
+4. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
+5. Execute Cell 1 (setup) — verify "Setup complete" in output
+6. **Edit Cell 2** to set experiment parameters:
    - `EXPERIMENT`: `'patchts'` or `'ae_ridge'`
    - `HORIZON`: 1-48
    - `TRAIN_WINDOW`: default `None` (uses config default)
    - `GPU_COUNT`: 1 (Colab free) or match available GPUs
    - `TIMEOUT_HOURS`: 2.0 default
-6. Execute Cell 3 (validate) — must print "Config OK"
-7. Execute Cell 4 (run) — **returns immediately** (training runs in background)
-8. Poll Cell 7 (status_check) to monitor progress
-9. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
-10. Execute Cell 6 (eval) for metrics summary
+7. Execute Cell 3 (validate) — must print "Config OK"
+8. Execute Cell 4 (run) — **returns immediately** (training runs in background)
+9. Poll Cell 7 (status_check) to monitor progress
+10. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
+11. Execute Cell 6 (eval) for metrics summary
 
 ## Babysitting Protocol
 
