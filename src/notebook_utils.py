@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -75,10 +76,8 @@ def read_status() -> dict | None:
 
 def clear_status() -> None:
     """Delete the status JSON so each notebook session starts fresh."""
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove(STATUS_PATH)
-    except FileNotFoundError:
-        pass
 
 
 def get_gpu_utilization() -> dict:
