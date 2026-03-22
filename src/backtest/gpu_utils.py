@@ -2,9 +2,12 @@
 
 import csv
 import importlib
+import json
 import logging
 import math
 import os
+import tempfile
+import time
 
 import numpy as np
 import torch
@@ -364,6 +367,20 @@ def save_losses_csv(all_losses, loss_log_path):
     logger.info("Saved training losses to %s", loss_log_path)
 
 
+def _write_progress(progress_path, data):
+    """Atomically write progress JSON so readers never see partial writes."""
+    dir_name = os.path.dirname(progress_path) or "."
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp", prefix="prog_")
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        os.replace(tmp_path, progress_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
 def run_worker(
     gpu_id,
     chunk_indices,
@@ -376,6 +393,7 @@ def run_worker(
     chunk_fn,
     checkpoint_dir=None,
     checkpoint_every=0,
+    progress_path=None,
 ):
     """
     Generic per-GPU worker loop with optional checkpointing.
@@ -395,6 +413,7 @@ def run_worker(
     """
     results = []
     start_from = 0
+    chunk_times: list[float] = []
     try:
         device = setup_device(gpu_id)
         params_store, ctx = setup_fn(device)
@@ -418,7 +437,12 @@ def run_worker(
                     start_from = len(chunk_indices)
                 log_to_file(f"Worker {gpu_id}: Skipping {start_from} already-completed chunks")
 
+        total_chunks = len(chunk_indices)
+        worker_t0 = time.monotonic()
+
         for i, idx in enumerate(chunk_indices[start_from:], start=start_from):
+            chunk_t0 = time.monotonic()
+
             start = idx * chunk_size
             end = min(start + chunk_size, total_windows)
 
@@ -443,14 +467,45 @@ def run_worker(
             # Free GPU memory from this chunk before the next iteration
             del X_chunk, y_chunk, X_test_chunk, preds, current_params
 
+            chunk_elapsed = time.monotonic() - chunk_t0
+            chunk_times.append(chunk_elapsed)
+
             results.append(
                 {
                     "chunk_index": idx,
                     "predictions": preds_cpu,
                 }
             )
+
+            chunks_done = i + 1
+            chunks_remaining = total_chunks - chunks_done
+            avg_chunk_sec = sum(chunk_times) / len(chunk_times)
+            eta_sec = chunks_remaining * avg_chunk_sec
+            wall_elapsed = time.monotonic() - worker_t0
+
             if i % 10 == 0:
-                log_to_file(f"Worker {gpu_id}: Chunk {idx} done")
+                log_to_file(
+                    f"Worker {gpu_id}: Chunk {idx} done "
+                    f"({chunks_done}/{total_chunks}, "
+                    f"avg {avg_chunk_sec:.1f}s/chunk, "
+                    f"ETA {eta_sec / 60:.1f}min)"
+                )
+
+            # Write progress file (only from gpu 0 to avoid contention)
+            if progress_path and gpu_id == 0:
+                # Use last 10 chunk times for recent pace
+                recent = chunk_times[-10:]
+                recent_avg = sum(recent) / len(recent)
+                _write_progress(progress_path, {
+                    "chunks_done": chunks_done,
+                    "chunks_total": total_chunks,
+                    "avg_chunk_sec": round(avg_chunk_sec, 2),
+                    "recent_avg_chunk_sec": round(recent_avg, 2),
+                    "eta_sec": round(eta_sec, 1),
+                    "wall_elapsed_sec": round(wall_elapsed, 1),
+                    "last_chunk_sec": round(chunk_elapsed, 2),
+                    "pct_complete": round(100 * chunks_done / total_chunks, 1),
+                })
 
             # Periodic checkpoint
             if checkpoint_dir and checkpoint_every > 0 and (i + 1) % checkpoint_every == 0:
