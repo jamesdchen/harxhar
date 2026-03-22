@@ -442,7 +442,6 @@ def run_worker(
 
             # Free GPU memory from this chunk before the next iteration
             del X_chunk, y_chunk, X_test_chunk, preds, current_params
-            torch.cuda.empty_cache()
 
             results.append(
                 {
