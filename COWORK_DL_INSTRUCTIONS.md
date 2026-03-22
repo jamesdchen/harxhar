@@ -7,6 +7,17 @@ You manage PatchTSMixer and AE+Ridge experiments on Google Colab via the
 interface to Colab. You execute cells individually and monitor results via
 a Drive-persisted status JSON.
 
+## Setup
+
+No manual Google Drive data upload is needed. The training data lives in the
+repo at `all30min/` (6 parquet files). Cell 1 clones the repo to
+`/content/harxhar` and `chdir`s into it, so the default `DATA_PATH = "all30min"`
+resolves to `/content/harxhar/all30min/` automatically.
+
+Drive is still mounted for two things:
+- **Status JSON** — written to `Drive/MyDrive/harxhar_status/dl_runner.json`
+- **Results persistence** — Cell 5 copies CSVs to `Drive/MyDrive/harxhar_results/`
+
 ## Notebook Cell Map
 
 The notebook has 8 cells (0-7):
@@ -17,20 +28,21 @@ The notebook has 8 cells (0-7):
 | 1    | setup          | Install deps, mount Drive, clone repo      | Once per runtime    |
 | 2    | parameters     | Experiment config — **you edit this**       | Before each run     |
 | 3    | validate       | Check config + GPU availability            | After editing params|
-| 4    | run            | Execute the DL experiment                  | Once per run        |
-| 5    | collect        | Copy results from Colab to Drive           | After run succeeds  |
+| 4    | run            | Launch experiment (background process)     | Once per run        |
+| 5    | collect        | Copy results from Colab to Drive           | After run finishes  |
 | 6    | eval           | Quick QLIKE/MSE/MAE on collected results   | After collect       |
-| 7    | status_check   | Read status file + GPU utilization          | Anytime (polling)   |
+| 7    | status_check   | Process liveness + status + GPU + log tail | Anytime (polling)   |
 
 ## Status JSON
 
 The coordination mechanism is a JSON file at
-`Drive/MyDrive/harxhar_status/dl_runner.json`. Each cell writes status
-transitions. You read it via Cell 7.
+`Drive/MyDrive/harxhar_status/dl_runner.json`. The background training process
+(`gpu_executor.py --write-status`) writes status transitions. You read it
+via Cell 7.
 
 Status values:
 - `validated` — config checked, ready to run
-- `running` — experiment in progress
+- `running` — experiment in progress (includes `pid`)
 - `finished_run` — run complete, proceed to collect
 - `failed` — error occurred, read `error` and `traceback` fields
 - `collected` — results saved to Drive
@@ -40,8 +52,7 @@ Status values:
 
 When asked to run a DL experiment:
 
-1. Open `dl_runner.ipynb` in Colab (should already be in Drive at
-   `Drive/MyDrive/harxhar_notebooks/`)
+1. Open `dl_runner.ipynb` in Colab
 2. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
 3. Execute Cell 1 (setup) — verify "Setup complete" in output
 4. **Edit Cell 2** to set experiment parameters:
@@ -51,22 +62,29 @@ When asked to run a DL experiment:
    - `GPU_COUNT`: 1 (Colab free) or match available GPUs
    - `TIMEOUT_HOURS`: 2.0 default
 5. Execute Cell 3 (validate) — must print "Config OK"
-6. Execute Cell 4 (run) — this is the long-running cell
-7. Execute Cell 5 (collect) after run completes
-8. Execute Cell 6 (eval) for metrics summary
+6. Execute Cell 4 (run) — **returns immediately** (training runs in background)
+7. Poll Cell 7 (status_check) to monitor progress
+8. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
+9. Execute Cell 6 (eval) for metrics summary
 
 ## Babysitting Protocol
 
-While Cell 4 (run) is executing:
+Cell 4 launches training as a background process and returns immediately.
+The kernel stays free for polling.
 
-- Execute Cell 7 (status_check) periodically to read the status JSON
-- Status values and what to do:
-  - `validated` — run hasn't started yet, execute Cell 4
-  - `running` — experiment in progress, check back later
-  - `finished_run` — run complete, proceed to Cell 5 (collect)
-  - `failed` — read the error message, diagnose, fix, re-run
-  - `collected` — results on Drive, proceed to Cell 6 (eval)
-  - `evaluated` — everything complete, report metrics to user
+- Execute Cell 7 (status_check) periodically — it shows:
+  - **Process liveness**: whether the PID is still running or finished
+  - **Status JSON**: current status + metadata from the training process
+  - **GPU utilization**: memory, compute %, temperature
+  - **Log tail**: last 30 lines of training output
+
+- What to do based on Cell 7 output:
+  - Process RUNNING + status `running` → training in progress, check back later
+  - Process FINISHED + status `finished_run` → proceed to Cell 5 (collect)
+  - Process FINISHED + status `failed` → read error, diagnose, fix, re-run
+  - Process FINISHED + no status update → check log tail for crash details
+  - `collected` → results on Drive, proceed to Cell 6 (eval)
+  - `evaluated` → everything complete, report metrics to user
 
 ## Failure Diagnosis
 
@@ -126,10 +144,11 @@ When asked to run a sweep (e.g., "run PatchTSMixer across horizons 1, 6, 12, 48"
 
 ## File Locations
 
-- Notebook: `Drive/MyDrive/harxhar_notebooks/dl_runner.ipynb`
+- Notebook source: `notebooks/dl_runner.ipynb` (in repo)
+- Notebook template: `scripts/dl_runner_template.py` (canonical source)
 - Status: `Drive/MyDrive/harxhar_status/dl_runner.json`
 - Results: `Drive/MyDrive/harxhar_results/<experiment>/*.csv`
-- Data: `Drive/MyDrive/harxhar_data/all30min/*.parquet`
+- Data: `all30min/*.parquet` (in repo, cloned to Colab automatically)
 - Repo (on Colab): `/content/harxhar/`
 - Repo (local): this project folder
 
@@ -139,3 +158,4 @@ When asked to run a sweep (e.g., "run PatchTSMixer across horizons 1, 6, 12, 48"
 - Don't skip validation (Cell 3) — catches config errors before a long run
 - Don't re-run Cell 1 (setup) unless Drive unmounts or you need fresh deps
 - Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report
+- Don't run Cell 5 (collect) before Cell 7 confirms `finished_run`
