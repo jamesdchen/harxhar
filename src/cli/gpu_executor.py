@@ -177,6 +177,7 @@ def main() -> None:
     if args.write_status:
         from src.notebook_utils import write_status
     else:
+
         def write_status(status: str, **kw: Any) -> dict:
             return {}  # no-op when status tracking is disabled
 
@@ -192,8 +193,7 @@ def main() -> None:
 
     t0 = time.time()
     try:
-        write_status("running", experiment=args.experiment, horizon=args.horizon,
-                      pid=os.getpid())
+        write_status("running", experiment=args.experiment, horizon=args.horizon, pid=os.getpid())
 
         if args.experiment == "patchts":
             _run_patchts(args)
@@ -209,8 +209,7 @@ def main() -> None:
         logger.error("FAILED: timeout exceeded (%.1fh)", args.timeout_hours)
         raise SystemExit(1) from None
     except Exception as exc:
-        write_status("failed", error=str(exc),
-                      traceback=traceback.format_exc()[-1000:])
+        write_status("failed", error=str(exc), traceback=traceback.format_exc()[-1000:])
         logger.error("FAILED: %s", exc)
         raise
     finally:
