@@ -213,33 +213,35 @@ After completing experiments, report to the user with:
 
 ## Autonomy Guidelines
 
-**Do without asking:**
+**Do without asking (babysitting scope):**
 - Execute cells in the standard sequence
 - Poll status during long runs
-- Retry on OOM by reducing `BATCH_SIZE` (halve it) or `TRAIN_WINDOW`
+- Retry on OOM by reducing `BATCH_SIZE` (halve it), `TRAIN_WINDOW`, or other
+  Cell 2 parameters to fit within GPU memory
 - Collect and evaluate results
 - Run sequential experiment sweeps as requested
-- Fix clear, isolated bugs in local source code (e.g., typos, off-by-one errors,
-  missing imports, incorrect variable names), commit, and push
+- Fix runtime errors that block experiment completion — including crashes, OOM,
+  shape mismatches, missing imports, data loading failures, and other errors
+  that prevent the current experiment design from running as intended
+- Adjust Cell 2 parameters to work around resource constraints (memory, timeout)
+- Commit and push source-code bug fixes so Colab picks them up via Cell 1
 
-**Source code editing is restricted to debugging only:**
-- You may only edit source files to fix bugs that cause crashes, errors, or
-  incorrect behavior — i.e., the code does not work as already designed.
-- Do NOT make design changes, refactors, architecture changes, add new features,
-  change model hyperparameters in source code, restructure modules, rename APIs,
-  or alter algorithmic approaches.
-- If a fix requires more than a few lines of targeted changes to restore
-  intended behavior, stop and report the issue to the user instead of editing.
-- When in doubt about whether a change is a "bug fix" or a "design change",
-  ask the user.
+**Scope restriction — only touch what's needed to keep experiments running:**
+- Every edit must be the minimum change required to fix an error or resource
+  issue. Do not refactor, reorganize, or "improve" surrounding code.
+- Do NOT change model architectures, loss functions, training algorithms,
+  feature engineering logic, evaluation methodology, or any design decisions.
+- Do NOT add new features, new parameters, new abstractions, or new files.
+- Do NOT rename functions/classes, restructure modules, or change APIs.
+- If you're unsure whether a fix crosses into design-change territory,
+  ask the user before editing.
 
 **Ask the user before:**
 - Changing experiment type or model architecture
-- ANY source code change beyond a clear, minimal bug fix
-- Making non-trivial source code changes (refactors, architecture changes,
-  new features, hyperparameter tuning in code)
-- Deciding whether to continue after 2+ consecutive failures
-- Changing configs beyond simple OOM mitigation
+- Any edit that goes beyond fixing an error (refactors, design changes,
+  new features, algorithmic changes)
+- Deciding whether to continue after 2+ consecutive failures on the same error
+- Changing Cell 2 configs for reasons other than resource constraints
 
 ## Rules
 
