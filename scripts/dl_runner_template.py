@@ -267,7 +267,7 @@ def _make_cell(cell_type: str, source: str) -> dict:
     """Build a single nbformat-v4 cell dict."""
     cell = {
         "cell_type": cell_type,
-        "source": source.split("\n"),
+        "source": source.splitlines(True),
         "metadata": {},
     }
     if cell_type == "code":
