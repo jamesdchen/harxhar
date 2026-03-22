@@ -90,20 +90,23 @@ Status values:
 
 When asked to run a DL experiment:
 
-1. Open `dl_runner.ipynb` in Colab
-2. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
-3. Execute Cell 1 (setup) — verify "Setup complete" in output
-4. **Edit Cell 2** to set experiment parameters:
+1. **Sync local repo to GitHub** — commit any pending changes and run
+   `git push` so that Colab picks up the latest code via Cell 1's
+   `git pull --ff-only`.
+2. Open `dl_runner.ipynb` in Colab
+3. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
+4. Execute Cell 1 (setup) — verify "Setup complete" in output
+5. **Edit Cell 2** to set experiment parameters:
    - `EXPERIMENT`: `'patchts'` or `'ae_ridge'`
    - `HORIZON`: 1-48
    - `TRAIN_WINDOW`: default `None` (uses config default)
    - `GPU_COUNT`: 1 (Colab free) or match available GPUs
    - `TIMEOUT_HOURS`: 2.0 default
-5. Execute Cell 3 (validate) — must print "Config OK"
-6. Execute Cell 4 (run) — **returns immediately** (training runs in background)
-7. Poll Cell 7 (status_check) to monitor progress
-8. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
-9. Execute Cell 6 (eval) for metrics summary
+6. Execute Cell 3 (validate) — must print "Config OK"
+7. Execute Cell 4 (run) — **returns immediately** (training runs in background)
+8. Poll Cell 7 (status_check) to monitor progress
+9. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
+10. Execute Cell 6 (eval) for metrics summary
 
 ## Babysitting Protocol
 
