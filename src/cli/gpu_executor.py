@@ -11,6 +11,9 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+import signal
+import time
+import traceback
 from typing import Any
 
 import torch
@@ -20,6 +23,14 @@ from src.core.log import get_logger
 from src.data import load_and_prep_data_strided
 
 logger = get_logger(__name__)
+
+
+class _Timeout(Exception):
+    pass
+
+
+def _alarm_handler(signum, frame):
+    raise _Timeout("Run exceeded timeout")
 
 
 def _setup_cuda_env() -> None:
@@ -152,6 +163,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save checkpoint every N chunks (0=disabled).")
     parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
+    parser.add_argument("--horizon", type=int, default=1, help="Forecast horizon.")
+    parser.add_argument("--timeout-hours", type=float, default=0, help="Max runtime in hours (0=no limit).")
+    parser.add_argument("--write-status", action="store_true", help="Write Drive status JSON for MCP monitoring.")
     return parser
 
 
@@ -159,15 +173,48 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # Conditional import — write_status is only needed when --write-status is set
+    if args.write_status:
+        from src.notebook_utils import write_status
+    else:
+        def write_status(status, **kw):
+            pass  # no-op when status tracking is disabled
+
     _setup_cuda_env()
 
     n_gpus = torch.cuda.device_count()
     logger.info("CUDA available: %s (%d GPUs)", torch.cuda.is_available(), n_gpus)
 
-    if args.experiment == "patchts":
-        _run_patchts(args)
-    elif args.experiment == "ae_ridge":
-        _run_ae_ridge(args)
+    # Timeout guard
+    if args.timeout_hours > 0:
+        signal.signal(signal.SIGALRM, _alarm_handler)
+        signal.alarm(int(args.timeout_hours * 3600))
+
+    t0 = time.time()
+    try:
+        write_status("running", experiment=args.experiment, horizon=args.horizon,
+                      pid=os.getpid())
+
+        if args.experiment == "patchts":
+            _run_patchts(args)
+        elif args.experiment == "ae_ridge":
+            _run_ae_ridge(args)
+
+        elapsed_min = (time.time() - t0) / 60
+        write_status("finished_run", elapsed_minutes=round(elapsed_min, 1))
+        logger.info("Done in %.1f min", elapsed_min)
+
+    except _Timeout:
+        write_status("failed", error="timeout", timeout_hours=args.timeout_hours)
+        logger.error("FAILED: timeout exceeded (%.1fh)", args.timeout_hours)
+        raise SystemExit(1)
+    except Exception as exc:
+        write_status("failed", error=str(exc),
+                      traceback=traceback.format_exc()[-1000:])
+        logger.error("FAILED: %s", exc)
+        raise
+    finally:
+        signal.alarm(0)
 
 
 if __name__ == "__main__":
