@@ -2,7 +2,7 @@
 
 import torch
 from torch.amp import autocast
-from torch.func import functional_call, grad, vmap
+from torch.func import functional_call, grad_and_value, vmap
 from torch.optim.adamw import adamw
 
 from src.core import config as cfg
@@ -37,10 +37,8 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
                     losses = batch_loss_fn(p, buffers, X, y)
                     return losses.mean()
 
-            loss_val = mean_loss(params)
+            grads_dict, loss_val = grad_and_value(mean_loss)(params)
             epoch_losses[_i - 1] = loss_val.detach()
-
-            grads_dict = grad(mean_loss)(params)
 
             grad_list = []
             found_inf = torch.tensor(False, device=X.device)
