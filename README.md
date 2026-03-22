@@ -7,38 +7,46 @@ Realized volatility forecasting system using HAR-family models with exogenous fe
 ```
 src/
 ├── core/
-│   ├── config.py          # Central configuration (lags, windows, segments)
-│   └── log.py             # Logging setup
+│   ├── config.py              # Central configuration (lags, windows, segments)
+│   └── log.py                 # Logging setup
 ├── data/
-│   ├── transforms.py      # Diurnal adjustment, winsorization, data transforms
-│   ├── loading.py         # Parquet loading, gridding, data cleaning
-│   ├── pipeline.py        # Lag feature generation, horizon shifts, segmentation
-│   ├── rolling.py         # RollingBuffer, RollingRobustScaler, RollingMedian
-│   └── synth_data.py      # Synthetic data generation (MovingBlockBootstrap)
+│   ├── transforms.py          # Diurnal adjustment, winsorization, data transforms
+│   ├── loading.py             # Parquet loading, gridding, data cleaning
+│   ├── pipeline.py            # Lag feature generation, horizon shifts, segmentation
+│   ├── rolling.py             # RollingBuffer, RollingRobustScaler, RollingMedian
+│   └── synth_data.py          # Synthetic data generation (MovingBlockBootstrap)
 ├── features/
-│   ├── transforms.py      # HAR/Raw lag features, PCA, Autoencoder transforms
-│   └── feature_groups.py  # Feature group definitions
+│   ├── transforms.py          # HAR/Raw lag features, PCA, Autoencoder transforms
+│   ├── feature_groups.py      # Feature group definitions
+│   └── pipeline.py            # Lag feature resolution and construction
 ├── models/
-│   ├── base.py            # BaseModel (ABC), RollingRegressionModel, NaiveBaseline
-│   ├── sklearn_models.py  # Ridge, XGBoost, LightGBM, RandomForest wrappers
-│   ├── sarimax.py         # SARIMAX with rolling window
-│   ├── registry.py        # MODEL_REGISTRY and create_model() factory
-│   └── deep_learning.py   # PatchTSMixer, LagAutoEncoder
+│   ├── base.py                # BaseModel (ABC), RollingRegressionModel, NaiveBaseline
+│   ├── sklearn_models.py      # Ridge, XGBoost, LightGBM, RandomForest wrappers
+│   ├── sarimax.py             # SARIMAX with rolling window
+│   ├── registry.py            # MODEL_REGISTRY and create_model() factory
+│   ├── deep_learning.py       # PatchTSMixer, LagAutoEncoder
+│   └── losses.py              # Custom loss functions for volatility forecasting
 ├── backtest/
-│   ├── engine.py          # CPU backtest loop, Duan smearing, result saving
-│   ├── gpu_utils.py       # GPU parallelization, batched training utilities
-│   ├── gpu_engine.py      # PatchTSMixer and AE+Ridge GPU backtests
-│   └── gpu_kernels.py     # Compiled vmap training kernels
+│   ├── engine.py              # CPU backtest loop, Duan smearing, result saving
+│   ├── gpu_utils.py           # GPU parallelization, batched training utilities
+│   ├── gpu_engine.py          # PatchTSMixer and AE+Ridge GPU backtests
+│   ├── gpu_kernels.py         # Compiled vmap training kernels
+│   └── gpu_engine_scaling.py  # GPU scaling-law experiments with synthetic augmentation
 ├── evaluation/
-│   ├── metrics.py         # MSE, MAE, QLIKE, OOS R²
-│   └── aggregation.py     # Chunk stitching, config parsing, experiment processing
+│   ├── metrics.py             # MSE, MAE, QLIKE, OOS R²
+│   └── aggregation.py         # Chunk stitching, config parsing, experiment processing
 ├── visualization/
-│   └── plots.py           # Forecast, scatter, and residual plots
+│   └── plots.py               # Forecast, scatter, and residual plots
+├── notebook_utils.py          # Shared utilities for Colab/Jupyter notebooks
 └── cli/
-    ├── executor.py        # CLI arg parsing, backtest orchestration
-    ├── gpu_executor.py    # GPU-specific CLI execution
-    ├── submit.py          # SLURM/SGE job submission
-    └── backends/          # Scheduler-specific backends (slurm, sge)
+    ├── executor.py            # CLI arg parsing, backtest orchestration
+    ├── gpu_executor.py        # GPU-specific CLI execution
+    ├── submit.py              # SLURM/SGE job submission
+    ├── experiment_config.py   # YAML-based experiment configuration
+    ├── metadata.py            # Experiment metadata tracking (git hash, timestamps)
+    └── backends/
+        ├── slurm.py           # SLURM scheduler backend
+        └── sge.py             # SGE scheduler backend
 ```
 
 ## Setup
@@ -82,7 +90,24 @@ Submit experiment batches via the scripts in `scripts/`:
 python scripts/submit.py model_comparison --result-dir results_comparison
 python scripts/submit.py subgroup_analysis --models all --features all
 python scripts/aggregate.py              # aggregate after jobs complete
+python scripts/compare.py               # compare experiment results
+python scripts/run_scaling_experiment.py # run scaling-law experiments
 ```
+
+Experiment configurations are defined as YAML files in `experiments/` for reproducibility. See `experiments/example_model_comparison.yaml` for the schema.
+
+Infrastructure templates for SLURM and SGE clusters live in `infra/`.
+
+## Notebooks
+
+Jupyter/Colab notebooks for deep learning model training and visualization are in `notebooks/`:
+
+- `patchts_colab.ipynb` / `patchts_viz.ipynb` — PatchTSMixer training and results visualization
+- `ae_ridge_colab.ipynb` / `ae_ridge_viz.ipynb` — Autoencoder+Ridge training and results visualization
+- `scaling_law_colab.ipynb` / `scaling_law_viz.ipynb` — Scaling-law experiments and visualization
+- `dl_runner.ipynb` — General deep learning runner
+
+See `COWORK_DL_INSTRUCTIONS.md` for detailed deep learning workflow guidance.
 
 ## Development
 
