@@ -1,15 +1,5 @@
 # HARXHAR Deep Learning — Cowork Instructions
 
-## Polling Quick Reference
-
-Use with `/loop 5m` to babysit a running experiment:
-
-> Execute Cell 7 (status_check) via Colab MCP. Based on output:
-> - `running` → report GPU util + log tail, wait
-> - `finished_run` → run Cell 5 (collect), then Cell 6 (eval), report metrics
-> - `failed` → read error/traceback, diagnose per Failure Diagnosis section below
-> - `evaluated` → report final metrics, stop polling
-
 ## Project Overview
 
 HARXHAR is a realized volatility forecasting system. It predicts intraday
