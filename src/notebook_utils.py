@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -50,9 +51,7 @@ def write_status(status: str, **kwargs) -> dict:
     existing.setdefault("started_at", existing["updated_at"])
 
     os.makedirs(DRIVE_STATUS_DIR, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=DRIVE_STATUS_DIR, suffix=".tmp", prefix="status_"
-    )
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=DRIVE_STATUS_DIR, suffix=".tmp", prefix="status_")
     try:
         with os.fdopen(tmp_fd, "w") as f:
             json.dump(existing, f, indent=2, default=str)
@@ -75,10 +74,8 @@ def read_status() -> dict | None:
 
 def clear_status() -> None:
     """Delete the status JSON so each notebook session starts fresh."""
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove(STATUS_PATH)
-    except FileNotFoundError:
-        pass
 
 
 def get_gpu_utilization() -> dict:

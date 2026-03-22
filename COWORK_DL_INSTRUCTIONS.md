@@ -1,11 +1,10 @@
 # HARXHAR Deep Learning — Cowork Instructions
 
-## Overview
+## Project Overview
 
-You manage PatchTSMixer and AE+Ridge experiments on Google Colab via the
-`googlecolab/colab-mcp` connector. The notebook `dl_runner.ipynb` is your
-interface to Colab. You execute cells individually and monitor results via
-a Drive-persisted status JSON.
+HARXHAR is a realized volatility forecasting system. It predicts intraday
+30-minute volatility using HAR-family models with exogenous features on
+rolling-window backtests.
 
 ## Setup
 
@@ -20,7 +19,23 @@ Drive is still mounted for two things:
 
 ## Notebook Cell Map
 
-The notebook has 8 cells (0-7):
+You interact with the Colab notebook `dl_runner.ipynb` through the
+`googlecolab/colab-mcp` MCP tools. Key operations:
+
+- **Execute a cell:** Use the MCP tool to run a specific cell by index.
+  Always read the cell output after execution to check for errors.
+- **Edit a cell:** Use the MCP tool to modify cell contents (e.g., changing
+  parameters in Cell 2 before each experiment run).
+- **Read cell output:** Use the MCP tool to read the output of a previously
+  executed cell to check results or errors.
+
+**Rules:**
+- Always read cell output after executing — never assume success.
+- Execute cells one at a time, in order. Never use "Run All."
+- The notebook should already be open in Colab at
+  `Drive/MyDrive/harxhar_notebooks/dl_runner.ipynb`.
+
+## Notebook Cell Map
 
 | Cell | Tag            | Purpose                                    | When to run         |
 |------|----------------|--------------------------------------------|---------------------|
@@ -90,57 +105,110 @@ The kernel stays free for polling.
 
 When status is `failed`:
 
-1. Read the `error` and `traceback` fields from Cell 7 output
+1. Read the `error` and `traceback` fields from Cell 7 output.
 2. Cross-reference against local source files:
-   - PatchTSMixer issues → check `src/models/deep_learning.py`, `src/backtest/gpu_engine.py`
-   - AE+Ridge issues → check `src/models/deep_learning.py`, `src/backtest/gpu_engine.py`
-   - Data issues → check `src/data/pipeline.py`, `src/data/transforms.py`
-   - GPU/CUDA errors → check `src/backtest/gpu_kernels.py`
+   - PatchTSMixer/AE+Ridge issues → `src/models/deep_learning.py`, `src/backtest/gpu_engine.py`
+   - Data issues → `src/data/pipeline.py`, `src/data/transforms.py`
+   - GPU/CUDA errors → `src/backtest/gpu_kernels.py`
 
 3. Known failure modes:
    - `RuntimeError: CUDA out of memory` → Reduce `BATCH_SIZE` in Cell 2, or reduce `TRAIN_WINDOW`
-   - `ValueError: shape mismatch` → `context_length` or `patch_length` don't divide evenly, check PatchTSMixer config in `src/core/config.py`
-   - `_WorkerError` → GPU worker crashed, usually OOM — check `gpu_engine.py`
-   - `KeyError: column not found` → feature group mismatch, check `src/features/feature_groups.py`
+   - `ValueError: shape mismatch` → `context_length` or `patch_length` don't divide evenly; check `src/core/config.py`
+   - `_WorkerError` → GPU worker crashed (usually OOM); check `gpu_engine.py`
+   - `KeyError: column not found` → feature group mismatch; check `src/features/feature_groups.py`
    - `ConnectionError` or `Drive unmounted` → re-execute Cell 1 (setup)
-   - `timeout` → exceeded `TIMEOUT_HOURS`, increase it or reduce `TRAIN_WINDOW`
+   - `timeout` → exceeded `TIMEOUT_HOURS`; increase it or reduce `TRAIN_WINDOW`
 
 4. Apply the fix:
-   - Parameter issue → edit Cell 2 and re-run from Cell 3
-   - Code issue → report to user what to fix in the repo
+   - Parameter issue → edit Cell 2, re-run from Cell 3
+   - Code issue → report to user what needs fixing in the repo
    - Colab resource issue → note it and suggest alternatives
 
-5. If the same error persists after one retry, stop and report with:
+5. If the same error persists after one retry, stop and report:
    - Full error message
    - Which source file is involved
    - Your diagnosis
    - Suggested fix
 
-## Scheduling Multiple Experiments
+## Crash Recovery (Checkpoint Resume)
 
-When asked to run a sweep (e.g., "run PatchTSMixer across horizons 1, 6, 12, 48"):
+If a Colab runtime disconnects mid-run and `CHECKPOINT_DIR` was set:
 
-- Run them sequentially in the same notebook, editing Cell 2 between runs
-- After each run, collect results (Cell 5) before starting the next
-- Keep a running log of which configs succeeded/failed
-- At the end, run Cell 6 for evaluation
-- Report a summary table: experiment x horizon → QLIKE, MSE, MAE
+1. Reconnect to Colab, re-run Cell 1 (setup).
+2. Edit Cell 2 with the same parameters + `CHECKPOINT_DIR` pointing to the
+   same Drive path (e.g., `"/content/drive/MyDrive/harxhar_checkpoints"`).
+3. Re-run from Cell 3. The engine resumes from the last saved checkpoint.
+
+If `CHECKPOINT_DIR` was not set, the run must restart from scratch.
+
+**Recommendation:** For runs expected to take >1 hour, set
+`CHECKPOINT_DIR = "/content/drive/MyDrive/harxhar_checkpoints"` in Cell 2.
 
 ## Model-Specific Notes
 
 ### PatchTSMixer
 - `EXPERIMENT = "patchts"`
 - HuggingFace transformer: context=241, patch=47, stride=31
+- Defaults: epochs=150, lr=1e-4, batch_size=50, train_window=50000
 - Memory-hungry — T4 (16GB) may struggle with large windows
 - If OOM: try `BATCH_SIZE = 25` or `TRAIN_WINDOW = 25000`
-- Config defaults in `src/core/config.py` → `DL_CONFIG`
 
 ### AE+Ridge
 - `EXPERIMENT = "ae_ridge"`
-- Hybrid: autoencoder with mixed loss (0.5x reconstruction + 0.5x prediction)
+- Hybrid: autoencoder with mixed loss (0.5× reconstruction + 0.5× prediction) + Ridge
+- Defaults: epochs=50, lr=1e-3, batch_size=4, train_window=24000, n_components=5
 - More memory-efficient than PatchTSMixer
-- Sets `np.random.seed(42)` for reproducibility
-- Config defaults in `src/core/config.py` → `AE_RIDGE_GPU_CONFIG`
+- Uses `np.random.seed(42)` for reproducibility
+
+## Scheduling Multiple Experiments
+
+When running a sweep (e.g., "PatchTSMixer across horizons 1, 6, 12, 48"):
+
+- Run sequentially in the same notebook, editing Cell 2 between runs.
+- After each run, collect results (Cell 5) before starting the next.
+- Keep a running log of which configs succeeded/failed.
+- At the end, run Cell 6 for evaluation.
+- Report a summary table to the user.
+
+## Reporting Results
+
+After completing experiments, report to the user with:
+
+- A summary table: experiment × horizon → QLIKE, MSE, MAE
+- GPU type used (T4, A100, etc.) and total runtime
+- Any anomalies (OOM retries, timeouts, unexpected metric values)
+- Comparison against prior results if available
+
+## Autonomy Guidelines
+
+**Do without asking:**
+- Execute cells in the standard sequence
+- Poll status during long runs
+- Retry on OOM by reducing `BATCH_SIZE` (halve it) or `TRAIN_WINDOW`
+- Collect and evaluate results
+- Run sequential experiment sweeps as requested
+
+**Ask the user before:**
+- Changing experiment type or model architecture
+- Modifying source code in the repo
+- Deciding whether to continue after 2+ consecutive failures
+- Changing configs beyond simple OOM mitigation
+
+## Rules
+
+- Never use "Run All" — execute cells individually.
+- Never skip Cell 3 (validate) — it catches config errors before long runs.
+- Never modify source code on Colab — changes are ephemeral. Fix locally and `git push`.
+- Never run overlapping experiments on the same Colab runtime.
+- Always collect results (Cell 5) before starting a new experiment.
+- Always read cell output after execution — never assume success.
+- Don't re-run Cell 1 (setup) unless Drive unmounts or you need fresh deps.
+- Don't modify cells other than Cell 2 — other cells are generated from
+  `scripts/dl_runner_template.py`.
+- Don't start a new experiment while one is still `running`.
+- Don't assume the Colab runtime persists between sessions — always re-run
+  Cell 1 on a fresh connection.
+- Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report.
 
 ## File Locations
 
