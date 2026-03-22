@@ -28,7 +28,7 @@ connector — do **not** use *Runtime > Run All*.
 | 1 | setup | Mount Drive, clone repo, install deps | Once per runtime |
 | 2 | parameters | Experiment config — **edit before each run** | Before each run |
 | 3 | validate | Check config + GPU, write status `"validated"` | After editing params |
-| 4 | run | Execute the DL experiment | Once per run |
+| 4 | run | Launch DL experiment (background) | Once per run |
 | 5 | collect | Copy results to Drive | After run succeeds |
 | 6 | eval | QLIKE / MSE / MAE on results | After collect |
 | 7 | status_check | Read status file + GPU utilization | Anytime (polling) |
@@ -120,99 +120,78 @@ print(f"Config OK — {EXPERIMENT}, horizon={HORIZON}, GPU: {gpu_info.get('gpu_n
 """
 
 CELL_4_RUN = """\
-# --- Cell 4: Run experiment ---
-import signal
-import time
-import traceback
-from src.data import load_and_prep_data_strided
-from src.notebook_utils import write_status
+# --- Cell 4: Launch experiment (background process) ---
+import subprocess, os, signal
 
-class _Timeout(Exception):
-    pass
+PIDFILE = '/content/harxhar_train.pid'
+LOGFILE = '/content/harxhar_train.log'
 
-def _alarm(signum, frame):
-    raise _Timeout(f"Run exceeded {TIMEOUT_HOURS}h timeout")
+# Build CLI command with all parameters from Cell 2/3
+extra_args = []
+if BATCH_SIZE is not None:
+    extra_args += ['--batch-size', str(BATCH_SIZE)]
+if EPOCHS is not None:
+    extra_args += ['--epochs', str(EPOCHS)]
+if LEARNING_RATE is not None:
+    extra_args += ['--learning-rate', str(LEARNING_RATE)]
+if TRAIN_WINDOW is not None:
+    extra_args += ['--train-window', str(TRAIN_WINDOW)]
+if CHECKPOINT_DIR is not None:
+    extra_args += ['--checkpoint-dir', CHECKPOINT_DIR]
+if LOSS_LOG_PATH is not None:
+    extra_args += ['--loss-log-path', LOSS_LOG_PATH]
 
-signal.signal(signal.SIGALRM, _alarm)
-signal.alarm(int(TIMEOUT_HOURS * 3600))
-_t0 = time.time()
+output_csv = f"{RESULTS_DIR}/{EXPERIMENT}_h{HORIZON}_results.csv"
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
-try:
-    write_status("running")
+cmd = [
+    'python', '-m', 'src.cli.gpu_executor',
+    '--experiment', EXPERIMENT,
+    '--input-path', DATA_PATH,
+    '--output', output_csv,
+    '--gpu-count', str(GPU_COUNT),
+    '--horizon', str(HORIZON),
+    '--timeout-hours', str(TIMEOUT_HOURS),
+    '--write-status',
+] + extra_args
 
-    if EXPERIMENT == "patchts":
-        from src.backtest.gpu_engine import run_multigpu_backtest
+# Launch in background — kernel stays free for status polling
+with open(LOGFILE, 'w') as log_fh:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_fh, stderr=subprocess.STDOUT,
+        cwd='/content/harxhar',
+        preexec_fn=os.setsid,
+    )
 
-        hparams = {
-            "exog_cols": "none",
-            "use_transform_exog": False,
-            "use_diurnal": True,
-            "allow_missing": False,
-            "use_winsor": False,
-        }
-        X_np, y_np, dates, baselines, features = load_and_prep_data_strided(
-            hparams, config["data_path"], lag=config["model"]["context_len"]
-        )
-        print(f"Data: {X_np.shape[0]:,} samples, {X_np.shape[1]} features")
-        results = run_multigpu_backtest(
-            X_np, y_np, dates, baselines, config,
-            model_module="src.models.deep_learning",
-        )
+with open(PIDFILE, 'w') as f:
+    f.write(str(proc.pid))
 
-    elif EXPERIMENT == "ae_ridge":
-        import numpy as np
-        np.random.seed(42)
-        from src.backtest.gpu_engine import run_ae_multigpu_backtest
-
-        hparams = {
-            "exog_cols": "none",
-            "use_transform_exog": False,
-            "use_diurnal": True,
-            "allow_missing": False,
-            "use_winsor": True,
-            "feature_type": "raw",
-            "lag_scope": "global",
-        }
-        X_np, y_np, dates, baselines, features = load_and_prep_data_strided(
-            hparams, config["data_path"]
-        )
-        config["model"]["n_features"] = X_np.shape[1]
-        print(f"Data: {X_np.shape[0]:,} samples, {X_np.shape[1]} features")
-        results = run_ae_multigpu_backtest(X_np, y_np, dates, baselines, config)
-
-    elapsed_min = (time.time() - _t0) / 60
-    n = results.shape[0] if hasattr(results, "shape") else len(results)
-    write_status("finished_run", n_results=n, elapsed_minutes=round(elapsed_min, 1))
-    print(f"Run complete — {n:,} results in {elapsed_min:.1f} min")
-
-except _Timeout:
-    write_status("failed", error="timeout", timeout_hours=TIMEOUT_HOURS)
-    print("FAILED: timeout exceeded")
-    raise
-except Exception as exc:
-    write_status("failed", error=str(exc), traceback=traceback.format_exc()[-1000:])
-    print(f"FAILED: {exc}")
-    raise
-finally:
-    signal.alarm(0)
+print(f'Training launched as PID {proc.pid}')
+print(f'Output: {output_csv}')
+print(f'Log:    {LOGFILE}')
+print(f'Kernel is free — use Cell 7 to check progress.')
 """
 
 CELL_5_COLLECT = """\
 # --- Cell 5: Collect results to Drive ---
 import os
 import shutil
-from src.notebook_utils import save_results, write_status
+import pandas as pd
+from src.notebook_utils import write_status
 
-os.makedirs(RESULTS_DIR, exist_ok=True)
-fname = f"{EXPERIMENT}_h{HORIZON}_results.csv"
-csv_path = save_results(results, RESULTS_DIR, fname)
+csv_path = f"{RESULTS_DIR}/{EXPERIMENT}_h{HORIZON}_results.csv"
+assert os.path.exists(csv_path), f"Results CSV not found: {csv_path}. Is training finished?"
+
+results = pd.read_csv(csv_path)
+print(f"Loaded {len(results):,} rows from {csv_path}")
 
 drive_results_dir = f"/content/drive/MyDrive/harxhar_results/{EXPERIMENT}"
 os.makedirs(drive_results_dir, exist_ok=True)
 drive_csv = shutil.copy2(csv_path, drive_results_dir)
 
-write_status("collected", local_csv=csv_path, drive_csv=drive_csv)
-print(f"Results saved to Drive: {drive_csv}")
+write_status("collected", local_csv=csv_path, drive_csv=drive_csv, n_results=len(results))
+print(f"Results copied to Drive: {drive_csv}")
 """
 
 CELL_6_EVAL = """\
@@ -228,20 +207,44 @@ write_status("evaluated", metrics={k: round(v, 6) for k, v in metrics.items()})
 
 CELL_7_STATUS = """\
 # --- Cell 7: Status check (safe to run anytime) ---
-import json
+import json, os, subprocess
 from src.notebook_utils import read_status, get_gpu_utilization
 
+PIDFILE = '/content/harxhar_train.pid'
+LOGFILE = '/content/harxhar_train.log'
+
+# --- Process liveness ---
+if os.path.exists(PIDFILE):
+    pid = int(open(PIDFILE).read().strip())
+    try:
+        os.kill(pid, 0)  # signal 0 = check existence only
+        print(f'Process {pid}: RUNNING')
+    except ProcessLookupError:
+        print(f'Process {pid}: FINISHED')
+    except PermissionError:
+        print(f'Process {pid}: RUNNING (owned by another user)')
+else:
+    print('No PID file — training not launched yet.')
+
+# --- Status JSON ---
 status = read_status()
 if status:
+    print('\\n=== Status ===')
     print(json.dumps(status, indent=2, default=str))
 else:
-    print("No status file found.")
+    print('\\nNo status file found.')
 
+# --- GPU utilization ---
 gpu = get_gpu_utilization()
 print(f"\\nGPU: {gpu.get('gpu_name', 'N/A')}")
 print(f"Utilization: {gpu.get('gpu_util_pct', 'N/A')}%")
 print(f"Memory: {gpu.get('mem_used_mb', 'N/A')}/{gpu.get('mem_total_mb', 'N/A')} MB")
 print(f"Temperature: {gpu.get('temp_c', 'N/A')}°C")
+
+# --- Log tail ---
+if os.path.exists(LOGFILE):
+    print('\\n=== Last 30 lines of log ===')
+    !tail -30 {LOGFILE}
 """
 
 # ---------------------------------------------------------------------------
