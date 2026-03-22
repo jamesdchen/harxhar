@@ -1,6 +1,18 @@
 """Shared utilities for Colab/Jupyter notebooks."""
 
+from __future__ import annotations
+
+import json
 import os
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+# --- Drive status file paths ---
+DRIVE_STATUS_DIR = "/content/drive/MyDrive/harxhar_status"
+STATUS_FILENAME = "dl_runner.json"
+STATUS_PATH = Path(DRIVE_STATUS_DIR) / STATUS_FILENAME
 
 
 def configure_cuda():
@@ -19,6 +31,85 @@ def verify_gpu():
 
     assert torch.cuda.is_available(), "No GPU detected! Change runtime to GPU."
     torch.cuda.get_device_name(0)
+
+
+# --- Status management for MCP-driven cell execution ---
+
+
+def write_status(status: str, **kwargs) -> dict:
+    """Create or update the Drive-persisted status JSON.
+
+    Merges *kwargs* into the existing status dict (if any).  Always sets
+    ``status`` and ``updated_at``.  On the first call also sets ``started_at``.
+    Uses atomic write (temp file + rename) so Cell 7 can safely read mid-run.
+    """
+    existing = read_status() or {}
+    existing.update(kwargs)
+    existing["status"] = status
+    existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+    existing.setdefault("started_at", existing["updated_at"])
+
+    os.makedirs(DRIVE_STATUS_DIR, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=DRIVE_STATUS_DIR, suffix=".tmp", prefix="status_"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            json.dump(existing, f, indent=2, default=str)
+        os.replace(tmp_path, str(STATUS_PATH))
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+    return existing
+
+
+def read_status() -> dict | None:
+    """Read the Drive-persisted status JSON, or *None* if it does not exist."""
+    try:
+        with open(STATUS_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def clear_status() -> None:
+    """Delete the status JSON so each notebook session starts fresh."""
+    try:
+        os.remove(STATUS_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def get_gpu_utilization() -> dict:
+    """Query nvidia-smi and return a dict of GPU stats.
+
+    Keys: ``gpu_name``, ``gpu_util_pct``, ``mem_used_mb``,
+    ``mem_total_mb``, ``temp_c``.  Returns ``{"error": ...}`` on failure.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return {"error": result.stderr.strip()}
+        parts = [p.strip() for p in result.stdout.strip().split(",")]
+        return {
+            "gpu_name": parts[0],
+            "gpu_util_pct": int(parts[1]),
+            "mem_used_mb": int(parts[2]),
+            "mem_total_mb": int(parts[3]),
+            "temp_c": int(parts[4]),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 def save_results(df, results_dir, filename):
