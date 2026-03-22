@@ -144,6 +144,8 @@ if LOSS_LOG_PATH is not None:
 output_csv = f"{RESULTS_DIR}/{EXPERIMENT}_h{HORIZON}_results.csv"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+PROGRESS_FILE = '/content/harxhar_progress.json'
+
 cmd = [
     'python', '-m', 'src.cli.gpu_executor',
     '--experiment', EXPERIMENT,
@@ -153,6 +155,7 @@ cmd = [
     '--horizon', str(HORIZON),
     '--timeout-hours', str(TIMEOUT_HOURS),
     '--write-status',
+    '--progress-path', PROGRESS_FILE,
 ] + extra_args
 
 # Launch in background — kernel stays free for status polling
@@ -208,7 +211,7 @@ write_status("evaluated", metrics={k: round(v, 6) for k, v in metrics.items()})
 CELL_7_STATUS = """\
 # --- Cell 7: Status check (safe to run anytime) ---
 import json, os, subprocess
-from src.notebook_utils import read_status, get_gpu_utilization
+from src.notebook_utils import read_status, get_gpu_utilization, read_progress, format_eta, recommend_nap
 
 PIDFILE = '/content/harxhar_train.pid'
 LOGFILE = '/content/harxhar_train.log'
@@ -233,6 +236,32 @@ if status:
     print(json.dumps(status, indent=2, default=str))
 else:
     print('\\nNo status file found.')
+
+# --- Training progress & ETA ---
+progress = read_progress()
+if progress:
+    pct = progress.get('pct_complete', 0)
+    done = progress.get('chunks_done', 0)
+    total = progress.get('chunks_total', 0)
+    eta = progress.get('eta_sec', 0)
+    avg = progress.get('avg_chunk_sec', 0)
+    recent = progress.get('recent_avg_chunk_sec', avg)
+    wall = progress.get('wall_elapsed_sec', 0)
+
+    pace_dev = abs(recent - avg) / avg * 100 if avg > 0 else 0
+    stability = 'STABLE' if pace_dev < 20 else 'VARIABLE'
+
+    print(f'\\n=== Training Progress ===')
+    print(f'Chunks: {done}/{total} ({pct:.1f}%)')
+    print(f'Elapsed: {format_eta(wall)}')
+    print(f'ETA: {format_eta(eta)}')
+    print(f'Pace: {avg:.1f}s/chunk (recent: {recent:.1f}s/chunk) — {stability} ({pace_dev:.0f}% deviation)')
+
+    nap_sec, nap_reason = recommend_nap(progress)
+    print(f'\\n=== Recommended Nap ===')
+    print(f'Next check in: {nap_sec // 60} minutes ({nap_reason})')
+else:
+    print('\\nNo progress data yet (training may still be loading data).')
 
 # --- GPU utilization ---
 gpu = get_gpu_utilization()
