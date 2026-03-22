@@ -219,11 +219,25 @@ After completing experiments, report to the user with:
 - Retry on OOM by reducing `BATCH_SIZE` (halve it) or `TRAIN_WINDOW`
 - Collect and evaluate results
 - Run sequential experiment sweeps as requested
-- Fix clear bugs in local source code, commit, and push (Cell 1 pulls on Colab)
+- Fix clear, isolated bugs in local source code (e.g., typos, off-by-one errors,
+  missing imports, incorrect variable names), commit, and push
+
+**Source code editing is restricted to debugging only:**
+- You may only edit source files to fix bugs that cause crashes, errors, or
+  incorrect behavior — i.e., the code does not work as already designed.
+- Do NOT make design changes, refactors, architecture changes, add new features,
+  change model hyperparameters in source code, restructure modules, rename APIs,
+  or alter algorithmic approaches.
+- If a fix requires more than a few lines of targeted changes to restore
+  intended behavior, stop and report the issue to the user instead of editing.
+- When in doubt about whether a change is a "bug fix" or a "design change",
+  ask the user.
 
 **Ask the user before:**
 - Changing experiment type or model architecture
-- Making non-trivial source code changes (refactors, architecture changes)
+- ANY source code change beyond a clear, minimal bug fix
+- Making non-trivial source code changes (refactors, architecture changes,
+  new features, hyperparameter tuning in code)
 - Deciding whether to continue after 2+ consecutive failures
 - Changing configs beyond simple OOM mitigation
 
