@@ -48,6 +48,23 @@ You interact with the Colab notebook `dl_runner.ipynb` through the
 | 6    | eval           | Quick QLIKE/MSE/MAE on collected results   | After collect        |
 | 7    | status_check   | Read status file + GPU utilization          | Anytime (polling)    |
 
+## Cell 2 Parameter Reference
+
+| Parameter       | Type       | Default                              | Notes                                |
+|-----------------|------------|--------------------------------------|--------------------------------------|
+| `EXPERIMENT`    | str        | `"patchts"`                          | `"patchts"` or `"ae_ridge"`          |
+| `HORIZON`       | int        | `1`                                  | 1–48 (30-min steps ahead)            |
+| `TRAIN_WINDOW`  | int/None   | None (50000 patchts, 24000 ae_ridge) | Reduce if OOM                        |
+| `GPU_COUNT`     | int        | `1`                                  | Match Colab runtime                  |
+| `BATCH_SIZE`    | int/None   | None (50 patchts, 4 ae_ridge)        | First knob for OOM                   |
+| `EPOCHS`        | int/None   | None (150 patchts, 50 ae_ridge)      |                                      |
+| `LEARNING_RATE` | float/None | None (1e-4 patchts, 1e-3 ae_ridge)   |                                      |
+| `DATA_PATH`     | str        | `"all30min"`                         |                                      |
+| `RESULTS_DIR`   | str        | `"results_dl"`                       |                                      |
+| `TIMEOUT_HOURS` | float      | `2.0`                                | Max runtime before auto-fail         |
+| `CHECKPOINT_DIR`| str/None   | None                                 | Set to enable crash recovery         |
+| `LOSS_LOG_PATH` | str/None   | None                                 | Set to save per-epoch training losses |
+
 ## Status JSON
 
 Coordination file: `Drive/MyDrive/harxhar_status/dl_runner.json`
@@ -62,6 +79,14 @@ Each cell writes status transitions. Read it via Cell 7.
 | `failed`       | Error occurred — read `error` field    |
 | `collected`    | Results saved to Drive                 |
 | `evaluated`    | Metrics computed, experiment done      |
+
+**Additional fields** in the status JSON (beyond `status`):
+- `experiment`, `horizon`, `gpu_name`, `config` — set at validation
+- `n_results`, `elapsed_minutes` — set when run finishes
+- `error`, `traceback` — set on failure
+- `local_csv`, `drive_csv` — set after collection
+- `metrics` — set after evaluation
+- `started_at`, `updated_at` — timestamps (UTC ISO format)
 
 ## Execution Flow
 
@@ -80,8 +105,13 @@ Cell 1 (setup) → output says "Setup complete"?
 
 While Cell 4 (run) is executing:
 
-- Execute Cell 7 every 2-3 minutes to poll the status JSON.
+- Execute Cell 7 every 3-5 minutes for runs under 1 hour; every 10 minutes
+  for longer runs.
 - Check GPU utilization and memory in the Cell 7 output.
+- **Hang detection:** If `updated_at` has not changed in 15+ minutes and GPU
+  utilization is 0%, the run has likely hung. Report to user.
+- GPU utilization >50% means actively training. Memory near capacity is normal.
+  Temperature >85C is a warning.
 - Act on the status value:
   - `running` — experiment in progress, poll again later.
   - `finished_run` — proceed to Cell 5 (collect), then Cell 6 (eval).
@@ -115,6 +145,20 @@ When status is `failed`:
    - Which source file is involved
    - Your diagnosis
    - Suggested fix
+
+## Crash Recovery (Checkpoint Resume)
+
+If a Colab runtime disconnects mid-run and `CHECKPOINT_DIR` was set:
+
+1. Reconnect to Colab, re-run Cell 1 (setup).
+2. Edit Cell 2 with the same parameters + `CHECKPOINT_DIR` pointing to the
+   same Drive path (e.g., `"/content/drive/MyDrive/harxhar_checkpoints"`).
+3. Re-run from Cell 3. The engine resumes from the last saved checkpoint.
+
+If `CHECKPOINT_DIR` was not set, the run must restart from scratch.
+
+**Recommendation:** For runs expected to take >1 hour, set
+`CHECKPOINT_DIR = "/content/drive/MyDrive/harxhar_checkpoints"` in Cell 2.
 
 ## Model-Specific Notes
 
@@ -175,6 +219,11 @@ After completing experiments, report to the user with:
 - Always collect results (Cell 5) before starting a new experiment.
 - Always read cell output after execution — never assume success.
 - Don't re-run Cell 1 (setup) unless Drive unmounts or you need fresh deps.
+- Don't modify cells other than Cell 2 — other cells are generated from
+  `scripts/dl_runner_template.py`.
+- Don't start a new experiment while one is still `running`.
+- Don't assume the Colab runtime persists between sessions — always re-run
+  Cell 1 on a fresh connection.
 - Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report.
 
 ## File Locations
