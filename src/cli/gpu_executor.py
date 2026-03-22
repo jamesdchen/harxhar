@@ -177,8 +177,8 @@ def main() -> None:
     if args.write_status:
         from src.notebook_utils import write_status
     else:
-        def write_status(status, **kw):
-            pass  # no-op when status tracking is disabled
+        def write_status(status: str, **kw: Any) -> dict:
+            return {}  # no-op when status tracking is disabled
 
     _setup_cuda_env()
 
@@ -207,7 +207,7 @@ def main() -> None:
     except _Timeout:
         write_status("failed", error="timeout", timeout_hours=args.timeout_hours)
         logger.error("FAILED: timeout exceeded (%.1fh)", args.timeout_hours)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
     except Exception as exc:
         write_status("failed", error=str(exc),
                       traceback=traceback.format_exc()[-1000:])
