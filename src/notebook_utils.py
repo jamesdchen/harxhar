@@ -128,6 +128,67 @@ def download_results(csv_path):
         print(f"Not running on Colab. Results at: {os.path.abspath(csv_path)}")
 
 
+PROGRESS_PATH = "/content/harxhar_progress.json"
+
+
+def read_progress() -> dict | None:
+    """Read the live training progress JSON, or *None* if it does not exist."""
+    try:
+        with open(PROGRESS_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def format_eta(seconds: float) -> str:
+    """Format seconds into a human-readable duration string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{minutes:.1f}min"
+    hours = minutes / 60
+    return f"{hours:.1f}hr"
+
+
+def recommend_nap(progress: dict) -> tuple[int, str]:
+    """Return (nap_seconds, reason) based on training progress and stability.
+
+    Adaptive logic:
+    - Early in training (< 10% done): short naps (3 min) — pace still settling.
+    - Stable pace (recent avg within 20% of overall avg): longer naps.
+    - Unstable pace (> 20% deviation): shorter naps.
+    - ETA > 30 min and stable: 15 min naps.
+    - ETA 10–30 min and stable: 10 min naps.
+    - ETA < 10 min: 3 min naps (finishing soon).
+    """
+    pct = progress.get("pct_complete", 0)
+    eta = progress.get("eta_sec", 0)
+    avg = progress.get("avg_chunk_sec", 1)
+    recent = progress.get("recent_avg_chunk_sec", avg)
+
+    # Pace stability: how much recent pace deviates from overall
+    if avg > 0:
+        pace_deviation = abs(recent - avg) / avg
+    else:
+        pace_deviation = 0
+
+    stable = pace_deviation < 0.2
+
+    if pct < 10:
+        return 180, "early training — pace still settling"
+    if eta < 600:  # < 10 min left
+        return 180, "finishing soon"
+    if eta < 1800:  # < 30 min left
+        if stable:
+            return 600, "stable pace, moderate time remaining"
+        return 300, "pace fluctuating, moderate time remaining"
+    # > 30 min left
+    if stable:
+        return 900, "stable pace, long run"
+    return 600, "pace fluctuating, long run"
+
+
 def print_metrics(metrics):
     """Print QLIKE, MSE, MAE from a metrics dict."""
     print(f"QLIKE: {metrics.get('qlike', float('nan')):.4f}")
