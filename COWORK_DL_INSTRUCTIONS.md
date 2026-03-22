@@ -1,5 +1,15 @@
 # HARXHAR Deep Learning — Cowork Instructions
 
+## Polling Quick Reference
+
+Use with `/loop 5m` to babysit a running experiment:
+
+> Execute Cell 7 (status_check) via Colab MCP. Based on output:
+> - `running` → report GPU util + log tail, wait
+> - `finished_run` → run Cell 5 (collect), then Cell 6 (eval), report metrics
+> - `failed` → read error/traceback, diagnose per Failure Diagnosis section below
+> - `evaluated` → report final metrics, stop polling
+
 ## Project Overview
 
 HARXHAR is a realized volatility forecasting system. It predicts intraday
@@ -17,7 +27,7 @@ Drive is still mounted for two things:
 - **Status JSON** — written to `Drive/MyDrive/harxhar_status/dl_runner.json`
 - **Results persistence** — Cell 5 copies CSVs to `Drive/MyDrive/harxhar_results/`
 
-## Notebook Cell Map
+## MCP Tool Usage
 
 You interact with the Colab notebook `dl_runner.ipynb` through the
 `googlecolab/colab-mcp` MCP tools. Key operations:
@@ -209,6 +219,7 @@ After completing experiments, report to the user with:
 - Don't assume the Colab runtime persists between sessions — always re-run
   Cell 1 on a fresh connection.
 - Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report.
+- Don't run Cell 5 (collect) before Cell 7 confirms `finished_run`.
 
 ## File Locations
 
@@ -219,11 +230,3 @@ After completing experiments, report to the user with:
 - Data: `all30min/*.parquet` (in repo, cloned to Colab automatically)
 - Repo (on Colab): `/content/harxhar/`
 - Repo (local): this project folder
-
-## What NOT To Do
-
-- Don't "Run All" — execute cells individually so you can monitor each step
-- Don't skip validation (Cell 3) — catches config errors before a long run
-- Don't re-run Cell 1 (setup) unless Drive unmounts or you need fresh deps
-- Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report
-- Don't run Cell 5 (collect) before Cell 7 confirms `finished_run`
