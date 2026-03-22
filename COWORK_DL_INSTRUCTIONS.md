@@ -6,18 +6,18 @@ HARXHAR is a realized volatility forecasting system. It predicts intraday
 30-minute volatility using HAR-family models with exogenous features on
 rolling-window backtests.
 
-**Models:**
-- CPU: Ridge, XGBoost, LightGBM, Random Forest, SARIMAX
-- GPU (Colab): PatchTSMixer (HuggingFace transformer), AE+Ridge (autoencoder + Ridge hybrid)
+## Setup
 
-**Data:** Parquet files in `all30min/`, one per ticker, with 30-min OHLCV bars
-(48 periods per trading day).
+No manual Google Drive data upload is needed. The training data lives in the
+repo at `all30min/` (6 parquet files). Cell 1 clones the repo to
+`/content/harxhar` and `chdir`s into it, so the default `DATA_PATH = "all30min"`
+resolves to `/content/harxhar/all30min/` automatically.
 
-**Your role:** Drive deep learning experiments on Google Colab via the
-`googlecolab/colab-mcp` MCP connector. You execute notebook cells individually,
-monitor progress through a Drive-persisted status JSON, and report results.
+Drive is still mounted for two things:
+- **Status JSON** — written to `Drive/MyDrive/harxhar_status/dl_runner.json`
+- **Results persistence** — Cell 5 copies CSVs to `Drive/MyDrive/harxhar_results/`
 
-## MCP Tool Usage
+## Notebook Cell Map
 
 You interact with the Colab notebook `dl_runner.ipynb` through the
 `googlecolab/colab-mcp` MCP tools. Key operations:
@@ -37,85 +37,69 @@ You interact with the Colab notebook `dl_runner.ipynb` through the
 
 ## Notebook Cell Map
 
-| Cell | Tag            | Purpose                                    | When to run          |
-|------|----------------|--------------------------------------------|----------------------|
-| 0    | (markdown)     | Header — skip                              | Never                |
-| 1    | setup          | Install deps, mount Drive, clone repo      | Once per runtime     |
-| 2    | parameters     | Experiment config — **you edit this**       | Before each run      |
-| 3    | validate       | Check config + GPU availability            | After editing params |
-| 4    | run            | Execute the DL experiment                  | Once per run         |
-| 5    | collect        | Copy results from Colab to Drive           | After run succeeds   |
-| 6    | eval           | Quick QLIKE/MSE/MAE on collected results   | After collect        |
-| 7    | status_check   | Read status file + GPU utilization          | Anytime (polling)    |
-
-## Cell 2 Parameter Reference
-
-| Parameter       | Type       | Default                              | Notes                                |
-|-----------------|------------|--------------------------------------|--------------------------------------|
-| `EXPERIMENT`    | str        | `"patchts"`                          | `"patchts"` or `"ae_ridge"`          |
-| `HORIZON`       | int        | `1`                                  | 1–48 (30-min steps ahead)            |
-| `TRAIN_WINDOW`  | int/None   | None (50000 patchts, 24000 ae_ridge) | Reduce if OOM                        |
-| `GPU_COUNT`     | int        | `1`                                  | Match Colab runtime                  |
-| `BATCH_SIZE`    | int/None   | None (50 patchts, 4 ae_ridge)        | First knob for OOM                   |
-| `EPOCHS`        | int/None   | None (150 patchts, 50 ae_ridge)      |                                      |
-| `LEARNING_RATE` | float/None | None (1e-4 patchts, 1e-3 ae_ridge)   |                                      |
-| `DATA_PATH`     | str        | `"all30min"`                         |                                      |
-| `RESULTS_DIR`   | str        | `"results_dl"`                       |                                      |
-| `TIMEOUT_HOURS` | float      | `2.0`                                | Max runtime before auto-fail         |
-| `CHECKPOINT_DIR`| str/None   | None                                 | Set to enable crash recovery         |
-| `LOSS_LOG_PATH` | str/None   | None                                 | Set to save per-epoch training losses |
+| Cell | Tag            | Purpose                                    | When to run         |
+|------|----------------|--------------------------------------------|---------------------|
+| 0    | (markdown)     | Header — skip                              | Never               |
+| 1    | setup          | Install deps, mount Drive, clone repo      | Once per runtime    |
+| 2    | parameters     | Experiment config — **you edit this**       | Before each run     |
+| 3    | validate       | Check config + GPU availability            | After editing params|
+| 4    | run            | Launch experiment (background process)     | Once per run        |
+| 5    | collect        | Copy results from Colab to Drive           | After run finishes  |
+| 6    | eval           | Quick QLIKE/MSE/MAE on collected results   | After collect       |
+| 7    | status_check   | Process liveness + status + GPU + log tail | Anytime (polling)   |
 
 ## Status JSON
 
-Coordination file: `Drive/MyDrive/harxhar_status/dl_runner.json`
+The coordination mechanism is a JSON file at
+`Drive/MyDrive/harxhar_status/dl_runner.json`. The background training process
+(`gpu_executor.py --write-status`) writes status transitions. You read it
+via Cell 7.
 
-Each cell writes status transitions. Read it via Cell 7.
+Status values:
+- `validated` — config checked, ready to run
+- `running` — experiment in progress (includes `pid`)
+- `finished_run` — run complete, proceed to collect
+- `failed` — error occurred, read `error` and `traceback` fields
+- `collected` — results saved to Drive
+- `evaluated` — metrics computed, experiment done
 
-| Status         | Meaning                                |
-|----------------|----------------------------------------|
-| `validated`    | Config checked, ready to run           |
-| `running`      | Experiment in progress                 |
-| `finished_run` | Run complete, proceed to collect       |
-| `failed`       | Error occurred — read `error` field    |
-| `collected`    | Results saved to Drive                 |
-| `evaluated`    | Metrics computed, experiment done      |
+## Launch Sequence
 
-**Additional fields** in the status JSON (beyond `status`):
-- `experiment`, `horizon`, `gpu_name`, `config` — set at validation
-- `n_results`, `elapsed_minutes` — set when run finishes
-- `error`, `traceback` — set on failure
-- `local_csv`, `drive_csv` — set after collection
-- `metrics` — set after evaluation
-- `started_at`, `updated_at` — timestamps (UTC ISO format)
+When asked to run a DL experiment:
 
-## Execution Flow
-
-```
-Cell 1 (setup) → output says "Setup complete"?
-├─ No  → read error, retry Cell 1
-└─ Yes → edit Cell 2 (set params) → Cell 3 (validate) → "Config OK"?
-         ├─ No  → fix Cell 2, retry Cell 3
-         └─ Yes → Cell 4 (run) → poll Cell 7 every 2-3 min
-                  ├─ status=running     → wait, poll again
-                  ├─ status=finished_run → Cell 5 (collect) → Cell 6 (eval) → report results
-                  └─ status=failed      → diagnose (see Failure Diagnosis below)
-```
+1. Open `dl_runner.ipynb` in Colab
+2. Ensure the runtime is GPU-enabled (T4 for free tier, A100 if Pro+)
+3. Execute Cell 1 (setup) — verify "Setup complete" in output
+4. **Edit Cell 2** to set experiment parameters:
+   - `EXPERIMENT`: `'patchts'` or `'ae_ridge'`
+   - `HORIZON`: 1-48
+   - `TRAIN_WINDOW`: default `None` (uses config default)
+   - `GPU_COUNT`: 1 (Colab free) or match available GPUs
+   - `TIMEOUT_HOURS`: 2.0 default
+5. Execute Cell 3 (validate) — must print "Config OK"
+6. Execute Cell 4 (run) — **returns immediately** (training runs in background)
+7. Poll Cell 7 (status_check) to monitor progress
+8. When Cell 7 shows `finished_run`, execute Cell 5 (collect)
+9. Execute Cell 6 (eval) for metrics summary
 
 ## Babysitting Protocol
 
-While Cell 4 (run) is executing:
+Cell 4 launches training as a background process and returns immediately.
+The kernel stays free for polling.
 
-- Execute Cell 7 every 3-5 minutes for runs under 1 hour; every 10 minutes
-  for longer runs.
-- Check GPU utilization and memory in the Cell 7 output.
-- **Hang detection:** If `updated_at` has not changed in 15+ minutes and GPU
-  utilization is 0%, the run has likely hung. Report to user.
-- GPU utilization >50% means actively training. Memory near capacity is normal.
-  Temperature >85C is a warning.
-- Act on the status value:
-  - `running` — experiment in progress, poll again later.
-  - `finished_run` — proceed to Cell 5 (collect), then Cell 6 (eval).
-  - `failed` — read the error message, diagnose, and handle.
+- Execute Cell 7 (status_check) periodically — it shows:
+  - **Process liveness**: whether the PID is still running or finished
+  - **Status JSON**: current status + metadata from the training process
+  - **GPU utilization**: memory, compute %, temperature
+  - **Log tail**: last 30 lines of training output
+
+- What to do based on Cell 7 output:
+  - Process RUNNING + status `running` → training in progress, check back later
+  - Process FINISHED + status `finished_run` → proceed to Cell 5 (collect)
+  - Process FINISHED + status `failed` → read error, diagnose, fix, re-run
+  - Process FINISHED + no status update → check log tail for crash details
+  - `collected` → results on Drive, proceed to Cell 6 (eval)
+  - `evaluated` → everything complete, report metrics to user
 
 ## Failure Diagnosis
 
@@ -228,9 +212,18 @@ After completing experiments, report to the user with:
 
 ## File Locations
 
-- Notebook: `Drive/MyDrive/harxhar_notebooks/dl_runner.ipynb`
+- Notebook source: `notebooks/dl_runner.ipynb` (in repo)
+- Notebook template: `scripts/dl_runner_template.py` (canonical source)
 - Status: `Drive/MyDrive/harxhar_status/dl_runner.json`
 - Results: `Drive/MyDrive/harxhar_results/<experiment>/*.csv`
-- Data: `Drive/MyDrive/harxhar_data/all30min/*.parquet`
+- Data: `all30min/*.parquet` (in repo, cloned to Colab automatically)
 - Repo (on Colab): `/content/harxhar/`
 - Repo (local): this project folder
+
+## What NOT To Do
+
+- Don't "Run All" — execute cells individually so you can monitor each step
+- Don't skip validation (Cell 3) — catches config errors before a long run
+- Don't re-run Cell 1 (setup) unless Drive unmounts or you need fresh deps
+- Don't ignore GPU quota warnings — if "GPU quota exceeded", stop and report
+- Don't run Cell 5 (collect) before Cell 7 confirms `finished_run`
