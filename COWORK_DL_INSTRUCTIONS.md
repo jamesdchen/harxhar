@@ -8,41 +8,6 @@ rolling-window backtests.
 
 ## Cowork Desktop Setup
 
-### MCP Server Configuration
-
-Add the `googlecolab/colab-mcp` MCP server to your Claude Desktop config
-(`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "colab-mcp": {
-      "command": "uvx",
-      "args": ["git+https://github.com/googlecolab/colab-mcp"],
-      "timeout": 30000
-    }
-  }
-}
-```
-
-### Auto-Approve MCP Permissions
-
-The Colab MCP server triggers a permission popup every time Cowork calls an
-MCP tool. To avoid clicking through this repeatedly, add the following to
-your Claude Desktop settings (or `.claude/settings.json`):
-
-```json
-{
-  "permissions": {
-    "allow": ["mcp__colab-mcp__*"]
-  }
-}
-```
-
-This grants blanket approval for all `colab-mcp` tool calls. Alternatively,
-if using Claude Code CLI, pass `--allowedTools "mcp__colab-mcp__*"` at
-launch.
-
 ### Local Repo Access
 
 Cowork on Desktop has **full access to this local repo**. This means:
