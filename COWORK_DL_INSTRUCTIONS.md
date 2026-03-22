@@ -6,7 +6,30 @@ HARXHAR is a realized volatility forecasting system. It predicts intraday
 30-minute volatility using HAR-family models with exogenous features on
 rolling-window backtests.
 
-## Setup
+## Cowork Desktop Setup
+
+### Local Repo Access
+
+Cowork on Desktop has **full access to this local repo**. This means:
+- It can read and edit source files (e.g., fix bugs in `src/`)
+- It can run `git commit` and `git push` to sync changes to GitHub
+- Cell 1 on Colab runs `git pull --ff-only`, so pushed fixes are
+  automatically picked up on the next Colab setup
+
+**Important:** Never modify source code directly on Colab — those changes are
+ephemeral and lost on runtime disconnect. Always fix code locally, push to
+GitHub, then re-run Cell 1 on Colab to pull the fix.
+
+### Notebook Persistence
+
+Cell 2 parameter edits happen **on the Colab side via MCP** and are
+ephemeral — they do not need to be saved or pushed back to the repo. The
+canonical notebook is generated from `scripts/dl_runner_template.py`. If
+the notebook structure needs to change, edit the template locally and run
+`python scripts/dl_runner_template.py` to regenerate
+`notebooks/dl_runner.ipynb`, then commit and push.
+
+## Data Setup
 
 No manual Google Drive data upload is needed. The training data lives in the
 repo at `all30min/` (6 parquet files). Cell 1 clones the repo to
@@ -35,7 +58,7 @@ You interact with the Colab notebook `dl_runner.ipynb` through the
 - The notebook should already be open in Colab at
   `Drive/MyDrive/harxhar_notebooks/dl_runner.ipynb`.
 
-## Notebook Cell Map
+## Cell Reference
 
 | Cell | Tag            | Purpose                                    | When to run         |
 |------|----------------|--------------------------------------------|---------------------|
@@ -120,8 +143,9 @@ When status is `failed`:
    - `timeout` → exceeded `TIMEOUT_HOURS`; increase it or reduce `TRAIN_WINDOW`
 
 4. Apply the fix:
-   - Parameter issue → edit Cell 2, re-run from Cell 3
-   - Code issue → report to user what needs fixing in the repo
+   - Parameter issue → edit Cell 2 via MCP, re-run from Cell 3
+   - Code issue → fix the source file locally, `git commit` and `git push`,
+     then re-run Cell 1 on Colab (which does `git pull`) to pick up the fix
    - Colab resource issue → note it and suggest alternatives
 
 5. If the same error persists after one retry, stop and report:
@@ -187,10 +211,11 @@ After completing experiments, report to the user with:
 - Retry on OOM by reducing `BATCH_SIZE` (halve it) or `TRAIN_WINDOW`
 - Collect and evaluate results
 - Run sequential experiment sweeps as requested
+- Fix clear bugs in local source code, commit, and push (Cell 1 pulls on Colab)
 
 **Ask the user before:**
 - Changing experiment type or model architecture
-- Modifying source code in the repo
+- Making non-trivial source code changes (refactors, architecture changes)
 - Deciding whether to continue after 2+ consecutive failures
 - Changing configs beyond simple OOM mitigation
 
