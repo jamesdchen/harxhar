@@ -51,9 +51,7 @@ def write_status(status: str, **kwargs) -> dict:
     existing.setdefault("started_at", existing["updated_at"])
 
     os.makedirs(DRIVE_STATUS_DIR, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=DRIVE_STATUS_DIR, suffix=".tmp", prefix="status_"
-    )
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=DRIVE_STATUS_DIR, suffix=".tmp", prefix="status_")
     try:
         with os.fdopen(tmp_fd, "w") as f:
             json.dump(existing, f, indent=2, default=str)
