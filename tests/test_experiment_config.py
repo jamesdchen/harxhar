@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from src.cli.experiment_config import ExperimentConfig, load_experiment_config
-from src.cli.metadata import build_metadata, load_metadata, save_metadata
+from harxhar_ml.cli.experiment_config import ExperimentConfig, load_experiment_config
+from harxhar_ml.cli.metadata import build_metadata, load_metadata, save_metadata
 
 
 class TestExperimentConfig:
@@ -103,13 +103,13 @@ class TestMetadata:
 
 class TestDryRunBackend:
     def test_dry_run_backend_registered(self):
-        from src.cli.backends import get_backend
+        from harxhar_ml.cli.backends import get_backend
 
         backend = get_backend("dry-run")
         assert backend is not None
 
     def test_dry_run_prints(self, capsys):
-        from src.cli.backends import get_backend
+        from harxhar_ml.cli.backends import get_backend
 
         backend = get_backend("dry-run")
         backend.submit_array(
