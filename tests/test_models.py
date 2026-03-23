@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 
-from src.features import PCATransform
-from src.models import (
+from harxhar_core.features import PCATransform
+from harxhar_core.models import NaiveBaseline
+from harxhar_ml.models import (
     LightGBMModel,
-    NaiveBaseline,
     RandomForestModel,
     RidgeModel,
     SARIMAXModel,
