@@ -22,8 +22,10 @@ def __getattr__(name):
 
     if name in _DL_ATTRS:
         from harxhar_dl.models import deep_learning
+
         return getattr(deep_learning, name)
     if name in _LOSS_ATTRS:
         from harxhar_dl.models import losses
+
         return getattr(losses, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

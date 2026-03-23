@@ -495,16 +495,19 @@ def run_worker(
                 # Use last 10 chunk times for recent pace
                 recent = chunk_times[-10:]
                 recent_avg = sum(recent) / len(recent)
-                _write_progress(progress_path, {
-                    "chunks_done": chunks_done,
-                    "chunks_total": total_chunks,
-                    "avg_chunk_sec": round(avg_chunk_sec, 2),
-                    "recent_avg_chunk_sec": round(recent_avg, 2),
-                    "eta_sec": round(eta_sec, 1),
-                    "wall_elapsed_sec": round(wall_elapsed, 1),
-                    "last_chunk_sec": round(chunk_elapsed, 2),
-                    "pct_complete": round(100 * chunks_done / total_chunks, 1),
-                })
+                _write_progress(
+                    progress_path,
+                    {
+                        "chunks_done": chunks_done,
+                        "chunks_total": total_chunks,
+                        "avg_chunk_sec": round(avg_chunk_sec, 2),
+                        "recent_avg_chunk_sec": round(recent_avg, 2),
+                        "eta_sec": round(eta_sec, 1),
+                        "wall_elapsed_sec": round(wall_elapsed, 1),
+                        "last_chunk_sec": round(chunk_elapsed, 2),
+                        "pct_complete": round(100 * chunks_done / total_chunks, 1),
+                    },
+                )
 
             # Periodic checkpoint
             if checkpoint_dir and checkpoint_every > 0 and (i + 1) % checkpoint_every == 0:

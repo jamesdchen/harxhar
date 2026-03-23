@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from harxhar_core.features import PCATransform
 from harxhar_core.models import NaiveBaseline
+
 from harxhar_ml.models import (
     LightGBMModel,
     RandomForestModel,
