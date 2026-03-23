@@ -16,6 +16,7 @@ import pandas as pd
 import torch
 from harxhar_core.core.log import get_logger
 from harxhar_core.data import load_and_prep_data_strided
+
 from harxhar_dl.backtest.gpu_engine_scaling import run_scaling_experiment
 from harxhar_dl.config import DL_CONFIG
 

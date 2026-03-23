@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+
 from harxhar_core.evaluation.aggregation import filter_by_time, load_all_chunks, parse_config
 
 # ---------------------------------------------------------------------------
