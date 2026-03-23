@@ -28,7 +28,7 @@ ignore = ["SIM108"]
 [tool.ruff.format]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["packages/core/tests", "packages/ml/tests"]
 addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

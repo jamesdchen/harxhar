@@ -1,4 +1,4 @@
-"""Shared fixtures for the HARXHAR test suite."""
+"""Shared fixtures for harxhar-ml tests."""
 
 import numpy as np
 import pandas as pd

@@ -6,50 +6,42 @@ The system takes raw parquet data, engineers lag-based features at multiple time
 
 ## Architecture
 
+The codebase is organized as a monorepo with three independent packages:
+
 ```
-src/
-├── core/
-│   ├── config.py              # Central configuration (lags, windows, segments)
-│   └── log.py                 # Logging setup
-├── data/
-│   ├── transforms.py          # Diurnal adjustment, winsorization, data transforms
-│   ├── loading.py             # Parquet loading, gridding, data cleaning
-│   ├── pipeline.py            # Lag feature generation, horizon shifts, segmentation
-│   ├── rolling.py             # RollingBuffer, RollingRobustScaler, RollingMedian
-│   └── synth_data.py          # Synthetic data generation (MovingBlockBootstrap)
-├── features/
-│   ├── transforms.py          # HAR/Raw lag features, PCA, Autoencoder transforms
-│   ├── feature_groups.py      # Feature group definitions
-│   └── pipeline.py            # Lag feature resolution and construction
-├── models/
-│   ├── base.py                # BaseModel (ABC), RollingRegressionModel, NaiveBaseline
-│   ├── sklearn_models.py      # Ridge, XGBoost, LightGBM, RandomForest wrappers
-│   ├── sarimax.py             # SARIMAX with rolling window
-│   ├── registry.py            # MODEL_REGISTRY and create_model() factory
-│   ├── deep_learning.py       # PatchTSMixer, LagAutoEncoder
-│   └── losses.py              # Custom loss functions for volatility forecasting
-├── backtest/
-│   ├── engine.py              # CPU backtest loop, Duan smearing, result saving
-│   ├── gpu_utils.py           # GPU parallelization, batched training utilities
-│   ├── gpu_engine.py          # PatchTSMixer and AE+Ridge GPU backtests
-│   ├── gpu_kernels.py         # Compiled vmap training kernels
-│   └── gpu_engine_scaling.py  # GPU scaling-law experiments with synthetic augmentation
-├── evaluation/
-│   ├── metrics.py             # MSE, MAE, QLIKE, OOS R²
-│   └── aggregation.py         # Chunk stitching, config parsing, experiment processing
-├── visualization/
-│   └── plots.py               # Forecast, scatter, and residual plots
-├── notebook_utils.py          # Shared utilities for Colab/Jupyter notebooks
-└── cli/
-    ├── executor.py            # CLI arg parsing, backtest orchestration
-    ├── gpu_executor.py        # GPU-specific CLI execution
-    ├── submit.py              # SLURM/SGE job submission
-    ├── experiment_config.py   # YAML-based experiment configuration
-    ├── metadata.py            # Experiment metadata tracking (git hash, timestamps)
-    └── backends/
-        ├── slurm.py           # SLURM scheduler backend
-        └── sge.py             # SGE scheduler backend
+packages/
+├── core/                          # harxhar-core: shared foundation (no ML/DL deps)
+│   ├── src/harxhar_core/
+│   │   ├── core/                  # Config (lags, windows, segments), logging
+│   │   ├── data/                  # Loading, transforms, rolling buffers, synthetic data
+│   │   ├── features/              # HAR/Raw lag features, PCA, feature groups
+│   │   ├── models/                # BaseModel ABC, NaiveBaseline
+│   │   ├── backtest/              # CPU backtest engine, Duan smearing, chunk splitting
+│   │   ├── evaluation/            # Metrics (MSE, MAE, QLIKE, R²), aggregation
+│   │   └── visualization/         # Forecast, scatter, residual plots
+│   └── tests/                     # Core unit tests
+│
+├── ml/                            # harxhar-ml: traditional ML (depends on core)
+│   ├── src/harxhar_ml/
+│   │   ├── models/                # Ridge, XGBoost, LightGBM, RF, SARIMAX, registry
+│   │   └── cli/                   # Executor, job submission, experiment config, backends
+│   ├── scripts/                   # submit.py, aggregate.py, compare.py
+│   ├── experiments/               # YAML experiment configs
+│   ├── infra/                     # SLURM/SGE job templates
+│   └── tests/                     # ML model and integration tests
+│
+└── dl/                            # harxhar-dl: deep learning (depends on core)
+    ├── src/harxhar_dl/
+    │   ├── models/                # PatchTSMixer, LagAutoEncoder, QLIKE loss
+    │   ├── backtest/              # Multi-GPU engine, vmap kernels, scaling experiments
+    │   ├── features/              # DL-specific transforms
+    │   └── cli/                   # GPU executor
+    ├── notebooks/                 # Colab training and visualization notebooks
+    ├── scripts/                   # DL runner template, scaling experiments
+    └── infra/                     # GPU SLURM templates
 ```
+
+**ml and dl are independent of each other.** Both depend on core only.
 
 ## End-to-End Data Flow
 
@@ -246,13 +238,15 @@ Shared infrastructure: chunk normalization, batched parameter allocation with fa
 ## Setup
 
 ```bash
-pip install -e .
+pip install -e packages/core
+pip install -e packages/ml
+pip install -e packages/dl
 ```
 
-Or install dependencies directly:
+Or install all packages at once:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 Requires Python 3.10+. Key dependencies: numpy, pandas, scikit-learn, xgboost, lightgbm, statsmodels, torch (>=2.0), transformers (>=4.30), numba, pyarrow.
@@ -295,8 +289,15 @@ python -m src.cli.gpu_executor \
 ## Running Tests
 
 ```bash
-pytest
-pytest -m "not slow and not gpu"  # skip slow/GPU tests
+# All tests
+pytest packages/core/tests/ packages/ml/tests/
+
+# Skip slow/GPU tests
+pytest packages/core/tests/ packages/ml/tests/ -m "not slow and not gpu"
+
+# Per-package (run from package directory)
+cd packages/core && pytest
+cd packages/ml && pytest
 ```
 
 ## HPC Workflow
