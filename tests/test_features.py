@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from sklearn.exceptions import NotFittedError
 
-from src.features import PCATransform
+from harxhar_core.features import PCATransform
 
 # ---------------------------------------------------------------------------
 # Feature Generation
@@ -14,7 +14,7 @@ from src.features import PCATransform
 
 class TestHARFeatures:
     def test_rolling_mean_matches_pandas(self):
-        from src.features import HARFeatures
+        from harxhar_core.features import HARFeatures
 
         gen = HARFeatures(lags=[1, 5], target_col="adj_RV")
         series = pd.Series(np.arange(20, dtype=float))
@@ -33,7 +33,7 @@ class TestHARFeatures:
         pd.testing.assert_series_equal(pd.Series(feat_dict["har_ma_5"]), expected_ma5, check_names=False)
 
     def test_numpy_transform_matches_pandas(self):
-        from src.features import HARFeatures
+        from harxhar_core.features import HARFeatures
 
         gen = HARFeatures(lags=[1, 5], target_col="adj_RV")
         series = pd.Series(np.arange(20, dtype=float))
@@ -50,7 +50,7 @@ class TestHARFeatures:
 
 class TestRawLagFeatures:
     def test_shift_matches_pandas(self):
-        from src.features import RawLagFeatures
+        from harxhar_core.features import RawLagFeatures
 
         gen = RawLagFeatures(lags=[1, 3], target_col="adj_RV")
         series = pd.Series(np.arange(10, dtype=float))
@@ -64,7 +64,7 @@ class TestRawLagFeatures:
         pd.testing.assert_series_equal(pd.Series(feat_dict["adj_RV_lag_3"]), series.shift(3), check_names=False)
 
     def test_numpy_transform_matches_pandas(self):
-        from src.features import RawLagFeatures
+        from harxhar_core.features import RawLagFeatures
 
         gen = RawLagFeatures(lags=[1, 2], target_col="x")
         arr = np.arange(10, dtype=float)
