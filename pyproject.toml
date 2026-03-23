@@ -29,7 +29,7 @@ ignore = ["SIM108"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages/core/tests", "packages/ml/tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "gpu: marks tests requiring CUDA (deselect with '-m \"not gpu\"')",
