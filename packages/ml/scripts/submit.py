@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
 
+from harxhar_core.core.config import DEFAULT_RESULTS_DIR
+from harxhar_core.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
 from harxhar_ml.cli.backends import get_backend
 from harxhar_ml.cli.experiment_config import load_experiment_config
 from harxhar_ml.cli.submit import (
@@ -25,8 +27,6 @@ from harxhar_ml.cli.submit import (
     build_extra_args,
     submit_experiment_batch,
 )
-from harxhar_core.core.config import DEFAULT_RESULTS_DIR
-from harxhar_core.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
 
 # ---------------------------------------------------------------------------
 # Mode: model_comparison

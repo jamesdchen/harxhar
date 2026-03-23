@@ -1,7 +1,6 @@
 """Loss functions for volatility forecasting models."""
 
 import torch
-
 from harxhar_core.core import config as cfg
 
 
