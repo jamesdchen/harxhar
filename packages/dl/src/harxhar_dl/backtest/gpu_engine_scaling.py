@@ -11,14 +11,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-
 from harxhar_core.backtest.engine import apply_duan_smearing
-from harxhar_dl.backtest.gpu_utils import normalize_chunks
 from harxhar_core.core import config as cfg
 from harxhar_core.core.log import get_logger
 from harxhar_core.data.synth_data import MovingBlockBootstrap
 from harxhar_core.evaluation.metrics import calculate_global_metrics
+from torch.utils.data import DataLoader, TensorDataset
+
+from harxhar_dl.backtest.gpu_utils import normalize_chunks
 from harxhar_dl.models.deep_learning import get_model
 from harxhar_dl.models.losses import functional_qlike_loss
 

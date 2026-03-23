@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from harxhar_core.core import config as cfg
 from harxhar_core.models.base import BaseModel, NaiveBaseline
+
 from harxhar_ml.models.sarimax import SARIMAXModel
 from harxhar_ml.models.sklearn_models import LightGBMModel, RandomForestModel, RidgeModel, XGBoostModel
 

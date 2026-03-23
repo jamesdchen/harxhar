@@ -1,11 +1,11 @@
 """Compiled training kernels for GPU backtesting."""
 
 import torch
+from harxhar_core.core import config as cfg
 from torch.amp import autocast
 from torch.func import functional_call, grad_and_value, vmap
 from torch.optim.adamw import adamw
 
-from harxhar_core.core import config as cfg
 from harxhar_dl.models.losses import functional_qlike_loss
 
 

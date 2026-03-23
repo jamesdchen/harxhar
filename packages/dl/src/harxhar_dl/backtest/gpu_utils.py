@@ -12,7 +12,6 @@ import time
 import numpy as np
 import torch
 import torch.multiprocessing as mp
-
 from harxhar_core.backtest.engine import build_results_dataframe, extract_subset, save_chunk_results
 from harxhar_core.core import config as cfg
 from harxhar_core.core.log import get_logger
