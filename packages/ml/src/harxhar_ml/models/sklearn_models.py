@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+from harxhar_core.models.base import RollingRegressionModel
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from xgboost import XGBRegressor
-
-from harxhar_core.models.base import RollingRegressionModel
 
 
 class RidgeModel(RollingRegressionModel):

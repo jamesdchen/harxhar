@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-
 from harxhar_core.data import apply_data_transform
 from harxhar_core.features import resolve_lags
 

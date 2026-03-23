@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
-
 from harxhar_core.core import config as cfg
 from harxhar_core.core.log import get_logger
 from harxhar_core.models.base import RollingRegressionModel
+from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 
 logger = get_logger(__name__)
 

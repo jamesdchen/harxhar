@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from harxhar_core.evaluation.metrics import calculate_baseline_deltas, calculate_global_metrics, winsorize_series
 
 

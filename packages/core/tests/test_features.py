@@ -3,9 +3,8 @@
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
-
 from harxhar_core.features import PCATransform
+from sklearn.exceptions import NotFittedError
 
 # ---------------------------------------------------------------------------
 # Feature Generation

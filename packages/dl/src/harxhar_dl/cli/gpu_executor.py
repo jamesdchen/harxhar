@@ -17,10 +17,10 @@ import traceback
 from typing import Any
 
 import torch
-
-from harxhar_dl.config import AE_RIDGE_GPU_CONFIG, DL_CONFIG
 from harxhar_core.core.log import get_logger
 from harxhar_core.data import load_and_prep_data_strided
+
+from harxhar_dl.config import AE_RIDGE_GPU_CONFIG, DL_CONFIG
 
 logger = get_logger(__name__)
 
