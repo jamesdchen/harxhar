@@ -53,6 +53,7 @@ class TestEndToEnd:
         """Full pipeline: load data -> create model -> run backtest."""
         from harxhar_core.backtest import run_backtest_agnostic
         from harxhar_core.data import load_and_prep_data_strided
+
         from harxhar_ml.models import create_model
 
         hparams = {
@@ -82,6 +83,7 @@ class TestEndToEnd:
     def test_backtest_naive(self, synthetic_data):
         from harxhar_core.backtest import run_backtest_agnostic
         from harxhar_core.data import load_and_prep_data_strided
+
         from harxhar_ml.models import create_model
 
         hparams = {
@@ -218,6 +220,7 @@ class TestHorizonShift:
         """End-to-end: load data -> horizon shift -> backtest for h=1..4."""
         from harxhar_core.backtest import run_backtest_agnostic
         from harxhar_core.data import apply_horizon_shift, load_and_prep_data_strided
+
         from harxhar_ml.models import create_model
 
         hparams = {

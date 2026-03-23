@@ -25,11 +25,14 @@ def __getattr__(name):
 
     if name in _MODEL_ATTRS:
         from harxhar_dl.models import deep_learning
+
         return getattr(deep_learning, name)
     if name in _LOSS_ATTRS:
         from harxhar_dl.models import losses
+
         return getattr(losses, name)
     if name in _BACKTEST_ATTRS:
         from harxhar_dl.backtest import gpu_engine
+
         return getattr(gpu_engine, name)
     raise AttributeError(f"module 'harxhar_dl' has no attribute {name!r}")
