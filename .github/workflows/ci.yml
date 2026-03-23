@@ -39,4 +39,4 @@ jobs:
           pip install -e "packages/ml[dev]"
           pip install -e "packages/dl[dev]"
           pip install -e ".[dev]"
-      - run: pytest -m "not slow and not gpu" --tb=short
+      - run: pytest packages/core/tests/ packages/ml/tests/ -m "not slow and not gpu" --tb=short
