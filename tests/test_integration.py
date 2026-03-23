@@ -13,7 +13,7 @@ import pytest
 
 class TestEndToEnd:
     def test_load_and_prep_returns_correct_shapes(self, synthetic_data):
-        from src.data import load_and_prep_data_strided
+        from harxhar_core.data import load_and_prep_data_strided
 
         hparams = {
             "exog_cols": None,
@@ -33,7 +33,7 @@ class TestEndToEnd:
         assert X.shape[0] > 0
 
     def test_load_and_prep_tree_model(self, synthetic_data):
-        from src.data import load_and_prep_data_strided
+        from harxhar_core.data import load_and_prep_data_strided
 
         hparams = {
             "exog_cols": None,
@@ -51,9 +51,9 @@ class TestEndToEnd:
 
     def test_backtest_smoke(self, synthetic_data):
         """Full pipeline: load data -> create model -> run backtest."""
-        from src.backtest import run_backtest_agnostic
-        from src.data import load_and_prep_data_strided
-        from src.models import create_model
+        from harxhar_core.backtest import run_backtest_agnostic
+        from harxhar_core.data import load_and_prep_data_strided
+        from harxhar_ml.models import create_model
 
         hparams = {
             "exog_cols": None,
@@ -80,9 +80,9 @@ class TestEndToEnd:
         assert coefs.shape == (len(test_indices), X.shape[1])
 
     def test_backtest_naive(self, synthetic_data):
-        from src.backtest import run_backtest_agnostic
-        from src.data import load_and_prep_data_strided
-        from src.models import create_model
+        from harxhar_core.backtest import run_backtest_agnostic
+        from harxhar_core.data import load_and_prep_data_strided
+        from harxhar_ml.models import create_model
 
         hparams = {
             "exog_cols": None,
@@ -104,7 +104,7 @@ class TestEndToEnd:
 
     def test_save_and_load_results(self, synthetic_data, tmp_path):
         """Test that save_chunk_results produces valid CSV."""
-        from src.backtest import save_chunk_results
+        from harxhar_core.backtest import save_chunk_results
 
         n = 100
         rng = np.random.RandomState(42)
@@ -122,7 +122,7 @@ class TestEndToEnd:
         assert set(df.columns) == {"date", "horizon", "true_adj", "pred_adj", "true_raw", "pred_raw"}
 
     def test_get_chunk_indices(self):
-        from src.backtest import get_chunk_indices_strided
+        from harxhar_core.backtest import get_chunk_indices_strided
 
         X = np.zeros((1000, 5))
         indices = get_chunk_indices_strided(X, train_window_size=200, chunk_id=0, total_chunks=4)
@@ -137,7 +137,7 @@ class TestEndToEnd:
 
     def test_hparams_wiring(self):
         """Verify get_common_hparams sets all keys consumed by load_and_clean_base_data."""
-        from src.cli.executor import get_common_hparams
+        from harxhar_ml.cli.executor import get_common_hparams
 
         required_keys = [
             "is_tree",
@@ -164,7 +164,7 @@ class TestEndToEnd:
 class TestHorizonShift:
     def test_horizon_1_is_identity(self):
         """horizon=1 should return data unchanged."""
-        from src.data import apply_horizon_shift
+        from harxhar_core.data import apply_horizon_shift
 
         X = np.arange(20).reshape(10, 2).astype(float)
         y = np.arange(10, dtype=float)
@@ -178,7 +178,7 @@ class TestHorizonShift:
 
     def test_horizon_shift_alignment(self):
         """With horizon=h, y[t] should equal original y[t + h - 1]."""
-        from src.data import apply_horizon_shift
+        from harxhar_core.data import apply_horizon_shift
 
         N = 20
         X = np.arange(N * 3).reshape(N, 3).astype(float)
@@ -202,7 +202,7 @@ class TestHorizonShift:
 
     def test_horizon_boundary_validation(self):
         """horizon < 1 or > 48 should raise ValueError."""
-        from src.data import apply_horizon_shift
+        from harxhar_core.data import apply_horizon_shift
 
         X = np.zeros((10, 2))
         y = np.zeros(10)
@@ -216,9 +216,9 @@ class TestHorizonShift:
 
     def test_backtest_multihorizon_smoke(self, synthetic_data):
         """End-to-end: load data -> horizon shift -> backtest for h=1..4."""
-        from src.backtest import run_backtest_agnostic
-        from src.data import apply_horizon_shift, load_and_prep_data_strided
-        from src.models import create_model
+        from harxhar_core.backtest import run_backtest_agnostic
+        from harxhar_core.data import apply_horizon_shift, load_and_prep_data_strided
+        from harxhar_ml.models import create_model
 
         hparams = {
             "exog_cols": None,
@@ -253,7 +253,7 @@ class TestHorizonShift:
 
     def test_sarimax_horizon_parameter(self):
         """Verify SARIMAX model accepts horizon parameter in factory."""
-        from src.models import SARIMAXModel, create_model
+        from harxhar_ml.models import SARIMAXModel, create_model
 
         m = create_model("sarimax", train_win_periods=100, n_features=5, horizon=4)
         assert isinstance(m, SARIMAXModel)
@@ -261,7 +261,7 @@ class TestHorizonShift:
 
     def test_results_include_horizon_column(self, tmp_path):
         """Verify save_chunk_results includes horizon in output CSV."""
-        from src.backtest import save_chunk_results
+        from harxhar_core.backtest import save_chunk_results
 
         n = 50
         rng = np.random.RandomState(42)

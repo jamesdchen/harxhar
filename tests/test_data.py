@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from src.data import apply_data_transform
-from src.features import resolve_lags
+from harxhar_core.data import apply_data_transform
+from harxhar_core.features import resolve_lags
 
 # ---------------------------------------------------------------------------
 # Rolling Infrastructure
@@ -13,7 +13,7 @@ from src.features import resolve_lags
 
 class TestRollingBuffer:
     def test_add_wraps_correctly(self):
-        from src.data.rolling import RollingBuffer
+        from harxhar_core.data.rolling import RollingBuffer
 
         buf = RollingBuffer(window_size=3, n_features=2, n_targets=1)
         # Fill buffer past capacity
@@ -27,7 +27,7 @@ class TestRollingBuffer:
         assert buf.ptr == 2
 
     def test_get_ordered_view_chronological(self):
-        from src.data.rolling import RollingBuffer
+        from harxhar_core.data.rolling import RollingBuffer
 
         buf = RollingBuffer(window_size=3, n_features=1, n_targets=1)
         for i in range(5):
@@ -39,7 +39,7 @@ class TestRollingBuffer:
 
     def test_get_ordered_view_no_wrap(self):
         """When ptr=0 (just filled or never wrapped), ordered = raw."""
-        from src.data.rolling import RollingBuffer
+        from harxhar_core.data.rolling import RollingBuffer
 
         buf = RollingBuffer(window_size=3, n_features=1, n_targets=1)
         for i in range(3):
@@ -52,7 +52,7 @@ class TestRollingBuffer:
 
 class TestRollingRobustScaler:
     def test_median_iqr_known_values(self):
-        from src.data.rolling import RollingRobustScaler
+        from harxhar_core.data.rolling import RollingRobustScaler
 
         scaler = RollingRobustScaler(window_size=5, n_features=1)
         data = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
@@ -62,7 +62,7 @@ class TestRollingRobustScaler:
         assert iqr[0] > 0
 
     def test_update_maintains_sorted_invariant(self):
-        from src.data.rolling import RollingRobustScaler
+        from harxhar_core.data.rolling import RollingRobustScaler
 
         scaler = RollingRobustScaler(window_size=4, n_features=1)
         data = np.array([[1.0], [3.0], [5.0], [7.0]])
@@ -75,7 +75,7 @@ class TestRollingRobustScaler:
 
     def test_scaler_matches_numpy(self):
         """Scaler stats should match numpy after several updates."""
-        from src.data.rolling import RollingRobustScaler
+        from harxhar_core.data.rolling import RollingRobustScaler
 
         rng = np.random.RandomState(42)
         window = 20
@@ -124,7 +124,7 @@ class TestDataTransforms:
         np.testing.assert_allclose(result.values, [2.0, -2.0, 0.0])
 
     def test_rolling_winsorize_clips(self):
-        from src.data import rolling_winsorize
+        from harxhar_core.data import rolling_winsorize
 
         s = pd.Series([1.0] * 20 + [100.0])
         result = rolling_winsorize(s, window=20, allow_missing=False, is_target=False)
@@ -132,7 +132,7 @@ class TestDataTransforms:
         assert result.iloc[-1] < 100.0
 
     def test_diurnal_adjust_baseline_nonzero(self):
-        from src.data import diurnal_adjust
+        from harxhar_core.data import diurnal_adjust
 
         n = 100
         series = pd.Series(np.random.RandomState(42).rand(n) + 1.0)
@@ -143,7 +143,7 @@ class TestDataTransforms:
         assert not baseline.isna().all()
 
     def test_robust_transform_skip_vars(self):
-        from src.data import robust_transform
+        from harxhar_core.data import robust_transform
 
         df = pd.DataFrame(
             {
