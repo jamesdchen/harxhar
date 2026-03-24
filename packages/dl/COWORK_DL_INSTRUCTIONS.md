@@ -217,18 +217,18 @@ When status is `failed`:
    log at `/content/harxhar_train.log` (e.g., `!tail -200 /content/harxhar_train.log`
    or `!cat /content/harxhar_train.log` for the complete output).
 3. Cross-reference against local source files:
-   - PatchTSMixer/AE+Ridge issues → `src/models/deep_learning.py`, `src/backtest/gpu_engine.py`
-   - Data issues → `src/data/pipeline.py`, `src/data/transforms.py`
-   - GPU/CUDA errors → `src/backtest/gpu_kernels.py`
+   - PatchTSMixer/AE+Ridge issues → `packages/dl/src/harxhar_dl/models/deep_learning.py`, `packages/dl/src/harxhar_dl/backtest/gpu_engine.py`
+   - Data issues → `packages/core/src/harxhar_core/data/pipeline.py`, `packages/core/src/harxhar_core/data/transforms.py`
+   - GPU/CUDA errors → `packages/dl/src/harxhar_dl/backtest/gpu_kernels.py`
 
 4. Known failure modes:
 
    | Error                                | Cause                        | Fix                                                        |
    |--------------------------------------|------------------------------|------------------------------------------------------------|
    | `RuntimeError: CUDA out of memory`   | GPU memory exceeded          | See §OOM Handling.                                         |
-   | `ValueError: shape mismatch`         | `context_length` / `patch_length` don't divide evenly | Check `src/core/config.py`. |
+   | `ValueError: shape mismatch`         | `context_length` / `patch_length` don't divide evenly | Check `packages/dl/src/harxhar_dl/config.py`. |
    | `_WorkerError`                       | GPU worker crashed (usually OOM) | See §OOM Handling; also check `gpu_engine.py`.         |
-   | `KeyError: column not found`         | Feature group mismatch       | Check `src/features/feature_groups.py`.                    |
+   | `KeyError: column not found`         | Feature group mismatch       | Check `packages/core/src/harxhar_core/features/feature_groups.py`.                    |
    | `ConnectionError` / Drive unmounted  | Colab lost Drive mount       | Re-execute Cell 1 (setup).                                 |
    | `timeout`                            | Exceeded `TIMEOUT_HOURS`     | Increase it or reduce `TRAIN_WINDOW`.                      |
    | `git pull --ff-only` fails in Cell 1 | Branch diverged or dirty tree on Colab | See §Git Pull Failure Recovery.                |
