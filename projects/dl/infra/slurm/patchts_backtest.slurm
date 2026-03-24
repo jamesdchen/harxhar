@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================
-# PatchTSMixer GPU backtest SLURM script.
+# PatchTST GPU backtest SLURM script.
 #
-# Submit with:
-#   sbatch slurm/patchts_backtest.slurm
-#   sbatch --export=GPU_COUNT=4 --gres=gpu:4 slurm/patchts_backtest.slurm
+# Submit from harxhar/ with:
+#   sbatch projects/dl/infra/slurm/patchts_backtest.slurm
+#   sbatch --export=GPU_COUNT=4 --gres=gpu:4 projects/dl/infra/slurm/patchts_backtest.slurm
 # ==============================================================
 
 #SBATCH --job-name=patchts
@@ -16,18 +16,20 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:2
-#SBATCH --constraint="V100|A100|A40|H100"
+#SBATCH --constraint="a100|a40|v100|l40s"
 #SBATCH --partition=gpu
 #SBATCH --time=6:00:00
+#SBATCH --chdir=/home1/jc_905/harxhar
 
 # --- CONFIGURATION (override via --export or edit here) ---
 INPUT_PATH="${INPUT_PATH:-all30min}"
 OUTPUT="${OUTPUT:-}"
-GPU_COUNT="${GPU_COUNT:-2}"
 BATCH_SIZE="${BATCH_SIZE:-}"
 EPOCHS="${EPOCHS:-}"
 LEARNING_RATE="${LEARNING_RATE:-}"
 TRAIN_WINDOW="${TRAIN_WINDOW:-}"
+
+GPU_COUNT="${GPU_COUNT:-2}"
 
 # --- ENVIRONMENT SETUP ---
 echo "============================================"
@@ -38,8 +40,10 @@ echo "GPUs:       $GPU_COUNT"
 echo "============================================"
 
 module purge
-module load python
-module load cuda
+
+# Activate conda environment with all dependencies
+source /apps/conda/miniforge3/25.3.0/etc/profile.d/conda.sh
+conda activate project-cucuringu
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK

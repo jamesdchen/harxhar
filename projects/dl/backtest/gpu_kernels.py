@@ -81,7 +81,7 @@ def _make_train_kernel(batch_loss_fn, param_keys, num_epochs, base_lr):
 
 
 def make_train_kernel(base_model, param_keys, num_epochs, base_lr):
-    """Build a compiled training loop for PatchTS using QLIKE loss."""
+    """Build a compiled training loop for PatchTST using QLIKE loss."""
 
     def compute_loss_stateless(params, buffers, x, y):
         x_in = x.unsqueeze(-1)

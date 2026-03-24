@@ -1,7 +1,7 @@
 """Deep learning model implementations."""
 
 __all__ = [
-    "PatchTSMixerForecaster",
+    "PatchTSTForecaster",
     "LagAutoEncoder",
     "get_model",
     "get_ae_model",
@@ -12,7 +12,7 @@ __all__ = [
 
 def __getattr__(name):
     _DL_ATTRS = {
-        "PatchTSMixerForecaster",
+        "PatchTSTForecaster",
         "LagAutoEncoder",
         "get_model",
         "get_ae_model",

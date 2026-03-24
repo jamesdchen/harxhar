@@ -1,4 +1,4 @@
-"""CLI entry point for GPU-based backtests (PatchTSMixer and AE+Ridge).
+"""CLI entry point for GPU-based backtests (PatchTST and AE+Ridge).
 
 Usage:
     python -m projects.dl.cli.gpu_executor --experiment patchts
@@ -42,7 +42,7 @@ def _setup_cuda_env() -> None:
 
 
 def _run_patchts(args: argparse.Namespace) -> None:
-    """Run PatchTSMixer GPU backtest."""
+    """Run PatchTST GPU backtest."""
     from projects.dl.backtest.gpu_engine import run_multigpu_backtest
 
     config: dict[str, Any] = copy.deepcopy(DL_CONFIG)
@@ -88,7 +88,7 @@ def _run_patchts(args: argparse.Namespace) -> None:
         X_np, y_np, dates, baselines, config, model_module="projects.dl.models.deep_learning"
     )
     shape = results.shape if hasattr(results, "shape") else len(results)
-    logger.info("PatchTSMixer backtest complete. Results shape: %s", shape)
+    logger.info("PatchTST backtest complete. Results shape: %s", shape)
 
 
 def _run_ae_ridge(args: argparse.Namespace) -> None:
