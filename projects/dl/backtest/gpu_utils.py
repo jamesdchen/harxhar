@@ -568,6 +568,30 @@ def run_backtest(
 
     all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(X_tensor, y_tensor, config)
 
+    # SLURM array chunking: slice windows to only process this chunk's subset
+    slurm_chunk_id = config.get("chunk_id")
+    slurm_total_chunks = config.get("total_chunks")
+    if slurm_chunk_id is not None and slurm_total_chunks is not None:
+        window_splits = np.array_split(np.arange(num_windows), slurm_total_chunks)
+        if slurm_chunk_id >= len(window_splits) or len(window_splits[slurm_chunk_id]) == 0:
+            logger.warning("Chunk %d has no windows to process. Exiting.", slurm_chunk_id)
+            return None
+        chunk_window_indices = window_splits[slurm_chunk_id]
+        w_start = chunk_window_indices[0]
+        w_end = chunk_window_indices[-1] + 1
+        all_train_X = all_train_X[w_start:w_end]
+        all_train_y = all_train_y[w_start:w_end]
+        all_test_X = all_test_X[w_start:w_end]
+        num_windows = w_end - w_start
+        logger.info(
+            "SLURM chunk %d/%d: processing windows %d-%d (%d windows)",
+            slurm_chunk_id,
+            slurm_total_chunks,
+            w_start,
+            w_end - 1,
+            num_windows,
+        )
+
     logger.info("Windows: %d", num_windows)
     logger.info("Train X Shape: %s", all_train_X.shape)
     logger.info("Test X Shape:  %s", all_test_X.shape)
@@ -583,7 +607,11 @@ def run_backtest(
     preds = aggregate_predictions(results_nested, num_windows)
 
     train_window = config["train_window"]
-    test_indices = np.arange(train_window, train_window + num_windows)
+    if slurm_chunk_id is not None and slurm_total_chunks is not None:
+        # Offset test_indices by the chunk's starting window
+        test_indices = np.arange(train_window + w_start, train_window + w_end)
+    else:
+        test_indices = np.arange(train_window, train_window + num_windows)
     output_file = config.get("output_path", default_output)
     logger.info("Saving %d results to %s", len(test_indices), output_file)
 

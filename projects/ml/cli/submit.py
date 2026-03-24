@@ -12,10 +12,10 @@ import dataclasses
 import os
 from pathlib import Path
 
+from core.backends import HPCBackend, get_backend
 from core.core.config import DEFAULT_RESULTS_DIR
 from core.core.log import get_logger
 from projects.ml.cli._feature_args import add_feature_args
-from projects.ml.cli.backends import HPCBackend, get_backend
 from projects.ml.cli.metadata import build_metadata, save_metadata
 
 logger = get_logger(__name__)
@@ -117,7 +117,8 @@ def submit_experiment(
     )
 
     if backend is None:
-        backend = get_backend("slurm")
+        ml_script = str(PROJECT_ROOT / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm")
+        backend = get_backend("slurm", script=ml_script)
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)

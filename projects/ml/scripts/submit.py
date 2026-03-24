@@ -18,8 +18,8 @@ sys.path.insert(0, str(_repo_root))
 
 import argparse  # noqa: E402
 
+from core.backends import get_backend  # noqa: E402
 from core.core.config import DEFAULT_RESULTS_DIR  # noqa: E402
-from projects.ml.cli.backends import get_backend  # noqa: E402
 from projects.ml.cli.experiment_config import load_experiment_config  # noqa: E402
 from projects.ml.cli.submit import (  # noqa: E402
     ExperimentSpec,
@@ -331,7 +331,17 @@ def main():
     # For naive mode, force include_naive=True
     include_naive = not getattr(args, "no_naive", False) if args.mode != "naive" else True
 
-    backend = get_backend(getattr(args, "backend", "slurm"))
+    backend_name = getattr(args, "backend", "slurm")
+    ml_scripts = {
+        "slurm": str(_repo_root / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm"),
+        "sge": str(_repo_root / "projects" / "ml" / "infra" / "sge" / "submit_hoffman2.sh"),
+    }
+    backend_kwargs = {}
+    if backend_name in ml_scripts:
+        backend_kwargs["script"] = ml_scripts[backend_name]
+    if backend_name == "sge":
+        backend_kwargs["pass_env_keys"] = ("TOTAL_CHUNKS", "EXOG_COLS", "RESULT_DIR", "MODEL_TYPE", "EXTRA_ARGS")
+    backend = get_backend(backend_name, **backend_kwargs)
     submit_experiment_batch(
         specs=specs,
         base_dir=args.result_dir,
