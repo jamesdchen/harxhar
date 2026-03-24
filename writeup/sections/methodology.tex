@@ -1,0 +1,209 @@
+\section{Methodology}
+\label{sec:methodology}
+
+\subsection{Realized Volatility}
+\label{sec:rv_definition}
+
+We measure intraday volatility using realized variance computed from high-frequency returns sampled at the 30-minute frequency. For trading day $d$, the realized volatility over the $j$-th intrabar interval is defined as
+\begin{equation}
+    RV_{d,j} = \sum_{i=1}^{M} r_{d,j,i}^2,
+    \label{eq:rv}
+\end{equation}
+where $r_{d,j,i}$ denotes the $i$-th intraday return within the 30-minute bar and $M$ is the number of observed returns. For notational convenience, we index observations sequentially as $RV_t$ where $t$ enumerates consecutive 30-minute bars across all trading days. The forecasting target is the one-step-ahead realized volatility $RV_{t+1}$.
+
+\subsection{Data Preprocessing}
+\label{sec:preprocessing}
+
+Raw realized volatility and exogenous variables undergo a three-stage transformation pipeline designed to remove predictable intraday patterns, stabilize distributional properties, and limit the influence of extreme observations. All transformations are applied in a strictly causal manner to prevent look-ahead bias.
+
+\subsubsection{Diurnal Adjustment}
+\label{sec:diurnal}
+
+Intraday volatility exhibits a well-documented U-shaped pattern, with elevated levels near the market open and close. To remove this deterministic seasonality, we divide each variable by a rolling time-of-day baseline. Let $s(t)$ denote the time-of-day slot for observation $t$. For non-negative variables such as $RV_t$, the diurnal baseline is
+\begin{equation}
+    \bar{RV}_{t \mid s} = \frac{1}{W} \sum_{\substack{j < t \\ s(j) = s(t)}} RV_j,
+    \label{eq:diurnal_mean}
+\end{equation}
+computed as a rolling mean over the $W = 20$ most recent observations sharing the same time slot, shifted by one period to ensure strict causality. The adjusted series is then
+\begin{equation}
+    \widetilde{RV}_t = \frac{RV_t}{\bar{RV}_{t \mid s}}.
+    \label{eq:diurnal_adj}
+\end{equation}
+For signed variables (e.g., autocovariance), the baseline is instead the rolling standard deviation within each slot, and the adjustment is performed by division by this rolling standard deviation.
+
+\subsubsection{Semantic Transforms}
+\label{sec:semantic_transforms}
+
+Following diurnal adjustment, we apply variance-stabilizing transforms chosen according to the statistical properties of each variable:
+\begin{itemize}
+    \item Squared-return and volatility measures ($RV$, bipower variation, turnover, effective spread): $x \mapsto \sqrt{x}$.
+    \item Autocovariance: $x \mapsto \mathrm{sign}(x)\sqrt{|x|}$.
+    \item Cubic returns: $x \mapsto x^{1/3}$.
+    \item Quartic returns: $x \mapsto x^{1/4}$.
+    \item Implied volatility measures (VIX, VVIX): $x \mapsto \log(x)$.
+\end{itemize}
+These transforms compress the right tail and reduce heteroskedasticity, which is particularly beneficial for linear models.
+
+\subsubsection{Rolling Winsorization}
+\label{sec:winsorization}
+
+After transformation, each series is clipped to rolling 5th and 95th percentile bounds computed over a trailing window. Formally, for a given window length,
+\begin{equation}
+    x_t^{w} = \mathrm{clip}\!\left(x_t;\; q_{0.05}^{(t)},\; q_{0.95}^{(t)}\right),
+    \label{eq:winsor}
+\end{equation}
+where $q_{\alpha}^{(t)}$ denotes the $\alpha$-quantile of the trailing window ending at $t-1$. The one-period shift ensures that quantile bounds are computed from past data only.
+
+\subsection{Feature Engineering}
+\label{sec:features}
+
+\subsubsection{HAR Features}
+\label{sec:har_features}
+
+The Heterogeneous Autoregressive (HAR) model of \citet{Corsi2009} captures the multi-scale persistence of volatility through aggregated lagged components. We adopt a geometric base-5 lag structure adapted to the 30-minute sampling frequency, yielding the lag set
+\begin{equation}
+    \mathcal{L} = \{1, 5, 25, 125, 625, 3125\},
+    \label{eq:har_lags}
+\end{equation}
+which corresponds approximately to horizons of 30 minutes, 2.5 hours, 1 trading day, 2.6 trading days, 13 trading days, and 65 trading days. For each lag $k \in \mathcal{L}$, the HAR feature is the trailing rolling mean of the adjusted target:
+\begin{equation}
+    \overline{RV}_t^{(k)} = \frac{1}{k}\sum_{i=0}^{k-1} \widetilde{RV}_{t-1-i},
+    \label{eq:har_ma}
+\end{equation}
+where the shift by one ensures no contemporaneous information enters the feature. The standard HAR regression model takes the form
+\begin{equation}
+    \widetilde{RV}_{t+1} = \beta_0 + \sum_{k \in \mathcal{L}} \beta_k \, \overline{RV}_t^{(k)} + \varepsilon_{t+1}.
+    \label{eq:har_model}
+\end{equation}
+
+When exogenous variables are included, the same HAR lag structure is applied to each additional column, generating $|\mathcal{L}|$ rolling-mean features per variable.
+
+\subsubsection{PCA Features}
+\label{sec:pca_features}
+
+As an alternative to the hand-crafted HAR lag set, we consider a data-driven dimensionality reduction approach. We first construct approximately 20 log-spaced raw lags spanning the range $[1, 3125]$, providing dense coverage at short horizons and sparser coverage at longer horizons. For each variable, individual shifted lags $x_{t-\ell}$ for $\ell \in \mathcal{L}_{pca}$ are computed (rather than rolling means).
+
+These raw lag features are then projected onto a low-dimensional subspace via Principal Component Analysis (PCA). Specifically, on each rolling training window of length $T_{\mathrm{train}}$, we fit PCA with $n_c = 5$ components using a randomized SVD solver:
+\begin{equation}
+    \mathbf{z}_t = \mathbf{W}^{\top}(\mathbf{x}_t - \bar{\mathbf{x}}),
+    \label{eq:pca}
+\end{equation}
+where $\mathbf{W} \in \mathbb{R}^{p \times n_c}$ is the projection matrix estimated from the training buffer and $\bar{\mathbf{x}}$ is the training-set mean. The PCA transform is re-estimated each time the model is refit, ensuring the projection adapts to evolving autocorrelation structures.
+
+\subsubsection{Exogenous Variable Subgroups}
+\label{sec:subgroups}
+
+To assess the marginal contribution of different information sources, we organize exogenous variables into thematic subgroups. Each subgroup augments the target-only baseline (HAR or PCA features of $\widetilde{RV}$ alone) with additional features derived from the subgroup's variables using the same lag structure. The subgroups are:
+
+\begin{itemize}
+    \item \textbf{Baseline}: HAR (or PCA) features of $\widetilde{RV}$ only --- no exogenous variables.
+    \item \textbf{Moments}: Higher-order return moments and related measures (bipower variation, realized semi-variance, autocovariance, absolute returns, cubic and quartic returns).
+    \item \textbf{Liquidity}: Order flow and market microstructure variables (volume, turnover, buy/sell turnover, effective spread, quoted spread, number of observations).
+    \item \textbf{Market (EW)}: Equal-weighted cross-sectional stock factor aggregates (returns, bipower, semi-variance, absolute returns).
+    \item \textbf{Market (VW)}: Value-weighted analogues of the equal-weighted factors.
+    \item \textbf{Sentiment}: Social media sentiment metrics (StockTwits attention, sentiment score, sentiment count).
+    \item \textbf{Implied Volatility}: Options-implied measures (VIX, VVIX, VIX3M).
+    \item \textbf{Volatility Demand}: Options order flow measures (SPX open/close, all options open/close, open only).
+    \item \textbf{All Features}: The union of all exogenous variables above.
+\end{itemize}
+
+\subsection{Models}
+\label{sec:models}
+
+\subsubsection{Naive Baseline}
+\label{sec:naive}
+
+The naive baseline predicts $\widetilde{RV}_{t+1}$ using the HAR rolling mean at the 125-period horizon (approximately 2.6 trading days):
+\begin{equation}
+    \hat{y}_{t+1}^{\mathrm{naive}} = \overline{RV}_t^{(125)}.
+    \label{eq:naive}
+\end{equation}
+This provides a non-trivial benchmark that reflects the strong persistence of realized volatility.
+
+\subsubsection{Ridge Regression}
+\label{sec:ridge}
+
+Ridge regression augments ordinary least squares with an $\ell_2$ penalty on the coefficient vector:
+\begin{equation}
+    \hat{\boldsymbol{\beta}} = \arg\min_{\boldsymbol{\beta}} \left\{ \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|_2^2 + \alpha \|\boldsymbol{\beta}\|_2^2 \right\},
+    \label{eq:ridge}
+\end{equation}
+with regularization parameter $\alpha = 1.0$. Input features are standardized using a rolling robust scaler that maintains running estimates of location and scale from the training buffer. Ridge is refit at every time step.
+
+\subsubsection{XGBoost}
+\label{sec:xgboost}
+
+We employ XGBoost \citep{Chen2016} as a gradient-boosted tree ensemble with hyperparameters: maximum tree depth of 3, 100 boosting rounds, and a learning rate of 0.1. The histogram-based splitting method is used for computational efficiency. The model is refit every 5 time steps.
+
+\subsubsection{LightGBM}
+\label{sec:lightgbm}
+
+LightGBM \citep{Ke2017} is configured with matching hyperparameters to XGBoost (maximum depth 3, 100 estimators, learning rate 0.1) to enable direct comparison. Tree-based models additionally receive day-of-week and hour-of-day as categorical features. The model is refit every 5 time steps.
+
+\subsubsection{Random Forest}
+\label{sec:rf}
+
+A random forest ensemble is trained with 100 trees and a maximum depth of 3. Like the other tree-based models, it receives the same categorical time features and is refit every 5 time steps.
+
+\subsection{Walk-Forward Backtesting}
+\label{sec:backtest}
+
+All models are evaluated using a strictly out-of-sample walk-forward procedure. At each test period $t$, the model is trained (or updated) on a rolling window of $T_{\mathrm{train}} = 500$ consecutive observations immediately preceding $t$ (approximately 10 trading days). The procedure is:
+
+\begin{enumerate}
+    \item \textbf{Initialize}: Fit the model on observations $\{t - T_{\mathrm{train}}, \ldots, t-1\}$.
+    \item \textbf{Predict}: Generate forecast $\hat{y}_{t}$ using features $\mathbf{x}_t$.
+    \item \textbf{Observe}: Record the realized target $y_t$.
+    \item \textbf{Update}: Add $(\mathbf{x}_t, y_t)$ to the rolling buffer, drop the oldest observation, and refit the model (at the model-specific refit frequency).
+    \item \textbf{Advance}: Increment $t$ and return to step 2.
+\end{enumerate}
+
+For ridge regression, feature scaling parameters (mean and standard deviation) are updated at every step using a rolling robust scaler fit on the current training buffer. For PCA-based configurations, the projection matrix is re-estimated at each refit. This ensures all model components adapt to non-stationarities while maintaining strict temporal separation between training and test data.
+
+The backtest is parallelized across 100 chunks via SLURM array jobs, with each chunk processing a contiguous subset of test indices.
+
+\subsection{Evaluation}
+\label{sec:evaluation}
+
+\subsubsection{Duan's Smearing Estimator}
+\label{sec:duan}
+
+Since models are trained on the transformed (adjusted, square-root) scale, forecasts must be converted back to the original raw volatility scale. We apply Duan's smearing estimator \citep{Duan1983}:
+\begin{equation}
+    \widehat{RV}_t^{\mathrm{raw}} = \left(\hat{y}_t^2 + \hat{\sigma}_{\varepsilon}^2\right) \cdot \bar{RV}_{t \mid s}^{\mathrm{baseline}},
+    \label{eq:duan}
+\end{equation}
+where $\hat{\sigma}_{\varepsilon}^2 = \frac{1}{N}\sum_{i}(y_i - \hat{y}_i)^2$ is the in-sample mean squared residual and $\bar{RV}_{t \mid s}^{\mathrm{baseline}}$ is the diurnal baseline factor at time $t$.
+
+\subsubsection{QLIKE Loss}
+\label{sec:qlike}
+
+Our primary evaluation metric is the quasi-likelihood (QLIKE) loss function, which is the robust loss function for volatility forecast comparison under general loss functions \citep{Patton2011}:
+\begin{equation}
+    L_{\mathrm{QLIKE}} = \frac{1}{N}\sum_{t=1}^{N} \left[ \frac{RV_t^{\mathrm{raw}}}{\widehat{RV}_t^{\mathrm{raw}}} - \log\!\left(\frac{RV_t^{\mathrm{raw}}}{\widehat{RV}_t^{\mathrm{raw}}}\right) - 1 \right].
+    \label{eq:qlike}
+\end{equation}
+QLIKE is strictly consistent for the conditional mean under the assumption that realized volatility is an unbiased estimator of integrated variance \citep{Patton2011}. It penalizes under-prediction more heavily than over-prediction, reflecting the asymmetric costs relevant in risk management applications.
+
+\subsubsection{Additional Metrics}
+\label{sec:additional_metrics}
+
+We also report mean squared error (MSE) and mean absolute error (MAE) computed on the adjusted scale. To limit the influence of extreme outliers, winsorized variants (clipping errors to the 5th--95th percentile range) are computed for all metrics. Out-of-sample $R^2$ is defined relative to the naive baseline:
+\begin{equation}
+    R^2_{\mathrm{OOS}} = 1 - \frac{\mathrm{MSE}_{\mathrm{model}}}{\mathrm{MSE}_{\mathrm{naive}}},
+    \label{eq:oos_r2}
+\end{equation}
+where positive values indicate improvement over the naive forecast.
+
+\subsection{Experimental Design}
+\label{sec:experimental_design}
+
+We report results from three complementary analyses:
+
+\begin{enumerate}
+    \item \textbf{Ridge--HAR Subgroup Analysis.} Ridge regression with HAR features is estimated for each exogenous subgroup (Section~\ref{sec:subgroups}), holding the model fixed to isolate the marginal predictive content of each information source.
+
+    \item \textbf{HAR Model Comparison.} Using only the target HAR features (baseline subgroup, no exogenous variables), we compare all five models --- naive, ridge, XGBoost, LightGBM, and random forest --- to assess whether nonlinear models capture dynamics beyond the linear HAR specification.
+
+    \item \textbf{Ridge--PCA Subgroup Analysis.} Ridge regression with PCA features is estimated for each subgroup, paralleling the HAR analysis to evaluate whether data-driven lag compression offers complementary predictive power.
+\end{enumerate}
