@@ -19,7 +19,6 @@ sys.path.insert(0, str(_repo_root))
 import argparse  # noqa: E402
 
 from core.core.config import DEFAULT_RESULTS_DIR  # noqa: E402
-from projects.ml.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS  # noqa: E402
 from projects.ml.cli.backends import get_backend  # noqa: E402
 from projects.ml.cli.experiment_config import load_experiment_config  # noqa: E402
 from projects.ml.cli.submit import (  # noqa: E402
@@ -28,6 +27,7 @@ from projects.ml.cli.submit import (  # noqa: E402
     build_extra_args,
     submit_experiment_batch,
 )
+from projects.ml.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Mode: model_comparison

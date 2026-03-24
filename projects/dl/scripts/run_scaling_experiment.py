@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+from typing import Any
 
 import pandas as pd
 import torch
@@ -73,7 +74,7 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info("Device: %s", device)
 
-    config = copy.deepcopy(DL_CONFIG)
+    config: dict[str, Any] = copy.deepcopy(DL_CONFIG)
     config["data_path"] = args.input_path
 
     if args.batch_size:

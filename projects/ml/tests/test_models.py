@@ -5,6 +5,7 @@ import pytest
 
 from core.features import PCATransform
 from core.models import NaiveBaseline
+from core.models.base import RollingRegressionModel
 from projects.ml.models import (
     LightGBMModel,
     RandomForestModel,
@@ -56,6 +57,7 @@ class TestModelFactory:
     def test_feature_transform_passed_through(self):
         ft = PCATransform(n_components=2)
         m = create_model("ridge", train_win_periods=100, n_features=5, feature_transform=ft)
+        assert isinstance(m, RollingRegressionModel)
         assert m.feature_transform is ft
 
 

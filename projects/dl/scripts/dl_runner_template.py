@@ -294,7 +294,7 @@ CELLS = [
 
 def _make_cell(cell_type: str, source: str) -> dict:
     """Build a single nbformat-v4 cell dict."""
-    cell = {
+    cell: dict[str, object] = {
         "cell_type": cell_type,
         "source": source.splitlines(True),
         "metadata": {},
