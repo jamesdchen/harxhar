@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 
 from core.core import config
 from core.features.transforms import HARFeatures, RawLagFeatures
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Lag resolution
@@ -103,6 +107,15 @@ def generate_lag_features(
     allow_missing = hparams.get("allow_missing", False)
     feature_type = hparams.get("feature_type", "raw")
     lags_list = resolve_lags(feature_type, lag)
+    n_expected = len(cols_to_transform) * len(lags_list)
+    est_mb = n_expected * len(data) * 8 / (1024**2)
+    logger.info(
+        "Feature generation: %d cols x %d lags = %d features (est. %.0f MB)",
+        len(cols_to_transform),
+        len(lags_list),
+        n_expected,
+        est_mb,
+    )
 
     generator = _make_generator(feature_type, lags_list, target_col)
     data, final_features = _generate_and_concat(generator, data, cols_to_transform)

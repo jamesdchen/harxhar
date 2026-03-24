@@ -71,7 +71,7 @@ def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
     """Dynamically sets hparams based on the model and feature choices."""
     is_tree = args.model in ("xgboost", "lightgbm", "random_forest")
     allow_missing = args.model in ("xgboost", "lightgbm")
-    feature_type = "har" if args.features == "har" else "raw"
+    feature_type = args.features
 
     if args.model in ("xgboost", "lightgbm", "random_forest"):
         refit_frequency = 5
