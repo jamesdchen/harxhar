@@ -124,7 +124,7 @@ class PCATransform(BaseFeatureTransform):
     def __init__(self, n_components: int) -> None:
         from sklearn.decomposition import PCA
 
-        self.pca = PCA(n_components=n_components)
+        self.pca = PCA(n_components=n_components, svd_solver="randomized")
 
     def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> PCATransform:
         self.pca.fit(X)
