@@ -54,7 +54,7 @@ export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 mkdir -p logs
 
 # --- BUILD COMMAND ---
-CMD="python3 -m src.cli.gpu_executor --experiment $EXPERIMENT --input-path $INPUT_PATH --gpu-count $GPU_COUNT"
+CMD="python3 -m harxhar_dl.cli.gpu_executor --experiment $EXPERIMENT --input-path $INPUT_PATH --gpu-count $GPU_COUNT"
 
 [ -n "$OUTPUT" ]        && CMD="$CMD --output $OUTPUT"
 [ -n "$BATCH_SIZE" ]    && CMD="$CMD --batch-size $BATCH_SIZE"

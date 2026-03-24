@@ -38,7 +38,7 @@ class HPCBackend(abc.ABC):
         tasks_per_array: int,
         job_env: dict[str, str],
     ) -> None:
-        """Submit an array job. Each task runs src.cli.executor with a chunk ID."""
+        """Submit an array job. Each task runs harxhar_ml.cli.executor with a chunk ID."""
         ...
 
 
