@@ -6,7 +6,7 @@ import subprocess
 from projects.ml.cli.backends import PROJECT_ROOT, HPCBackend, register
 
 DEFAULT_SGE_LOG_DIR = str(PROJECT_ROOT / "logs")
-DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "infra" / "sge" / "submit_hoffman2.sh")
+DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "projects" / "ml" / "infra" / "sge" / "submit_hoffman2.sh")
 
 
 @register("sge")

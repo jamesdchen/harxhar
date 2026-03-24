@@ -79,11 +79,22 @@ def submit_experiment(
     tasks_per_array=DEFAULT_TASKS_PER_ARRAY,
     backend: HPCBackend | None = None,
 ):
-    """Submit a single experiment: mkdir, write config, sbatch."""
+    """Submit a single experiment: mkdir, write config, sbatch.
+
+    If the experiment directory already has a ``.submitted`` marker,
+    the experiment is skipped so that re-running is safe after a partial
+    failure (e.g. hitting QOS limits).
+    """
     dir_name = f"exp_{spec.exp_id}_{spec.model_type}_{spec.feature_type}_{spec.exp_name}"
     if spec.model_type == "naive":
         dir_name = f"exp_{spec.exp_id}_naive_baseline"
     exp_dir = str(Path(base_dir).resolve() / dir_name)
+
+    submitted_marker = Path(exp_dir) / ".submitted"
+    if submitted_marker.exists():
+        logger.info("Skipping ID %d (already submitted): %s", spec.exp_id, dir_name)
+        return exp_dir
+
     Path(exp_dir).mkdir(parents=True, exist_ok=True)
 
     write_config(exp_dir, spec)
@@ -110,6 +121,7 @@ def submit_experiment(
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
+    submitted_marker.touch()
     return exp_dir
 
 
