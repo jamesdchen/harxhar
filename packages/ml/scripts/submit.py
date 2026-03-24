@@ -17,14 +17,14 @@ _scripts_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(_scripts_dir.parent / "src"))
 sys.path.insert(0, str(_scripts_dir.parent.parent / "core" / "src"))
 
-import argparse
+import argparse  # noqa: E402
 
-from harxhar_core.core.config import DEFAULT_RESULTS_DIR
-from harxhar_core.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS
+from harxhar_core.core.config import DEFAULT_RESULTS_DIR  # noqa: E402
+from harxhar_core.features.feature_groups import ALL_MODELS, FEATURE_TYPES, SUBGROUPS  # noqa: E402
 
-from harxhar_ml.cli.backends import get_backend
-from harxhar_ml.cli.experiment_config import load_experiment_config
-from harxhar_ml.cli.submit import (
+from harxhar_ml.cli.backends import get_backend  # noqa: E402
+from harxhar_ml.cli.experiment_config import load_experiment_config  # noqa: E402
+from harxhar_ml.cli.submit import (  # noqa: E402
     ExperimentSpec,
     add_common_submit_args,
     build_extra_args,

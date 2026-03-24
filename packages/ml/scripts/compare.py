@@ -15,9 +15,9 @@ _scripts_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(_scripts_dir.parent / "src"))
 sys.path.insert(0, str(_scripts_dir.parent.parent / "core" / "src"))
 
-import pandas as pd
+import pandas as pd  # noqa: E402
 
-from harxhar_ml.cli.metadata import load_metadata
+from harxhar_ml.cli.metadata import load_metadata  # noqa: E402
 
 METRIC_COLS = ["mse", "mae", "qlike", "oos_r2", "delta_mse", "delta_mae", "delta_qlike"]
 
