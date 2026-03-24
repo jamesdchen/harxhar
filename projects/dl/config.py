@@ -15,24 +15,24 @@ AE_REFIT_FREQUENCY = 240  # steps between autoencoder refits
 # --- DL (PatchTST) Configuration ---
 DL_CONFIG = {
     "output_path": "results.csv",
-    "train_window": 50000,
+    "train_window": 24000,  # ~500 trading days (~2 years)
     "gpu_count": 2,
     "model": {
-        "context_len": 241,
+        "context_len": 240,  # 5 trading days (5 × 48)
         "num_input_channels": 1,
-        "hidden_dim": 4,
-        "num_heads": 2,
-        "num_layers": 4,
-        "ffn_dim": 16,
-        "dropout": 0.25,
-        "patch_len": 47,
-        "stride": 31,
+        "hidden_dim": 32,
+        "num_heads": 4,  # 8 dims per head
+        "num_layers": 2,
+        "ffn_dim": 128,  # 4x hidden_dim
+        "dropout": 0.3,
+        "patch_len": 48,  # 1 trading day
+        "stride": 48,  # non-overlapping patches
         "prediction_length": 1,
     },
     "train": {
-        "num_epochs": 150,
-        "learning_rate": 1e-4,
-        "batch_size": 50,
+        "num_epochs": 50,
+        "learning_rate": 5e-4,
+        "batch_size": 64,
         "optimizer": "ADAMW",
         "loss_fn": "QLIKE",
     },
