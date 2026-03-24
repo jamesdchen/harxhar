@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install mypy
-      - run: mypy packages/core/src/ packages/ml/src/ packages/dl/src/ --ignore-missing-imports
+      - run: mypy core/ projects/ml/ projects/dl/ --ignore-missing-imports
 
   test:
     runs-on: ubuntu-latest
@@ -34,9 +34,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: |
-          pip install -e "packages/core[dev]"
-          pip install -e "packages/ml[dev]"
-          pip install -e "packages/dl[dev]"
-          pip install -e ".[dev]"
-      - run: pytest packages/core/tests/ packages/ml/tests/ -m "not slow and not gpu" --tb=short
+      - run: pip install -r requirements.txt
+      - run: pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short

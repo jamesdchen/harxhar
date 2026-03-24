@@ -1,32 +1,7 @@
-[build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "harxhar"
-version = "0.1.0"
-requires-python = ">=3.10"
-dependencies = [
-    "harxhar-core",
-    "harxhar-ml",
-    "harxhar-dl",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "ruff>=0.4",
-    "mypy>=1.0",
-    "pre-commit>=3.0",
-]
-
-[tool.setuptools.packages.find]
-where = []
-
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-extend-exclude = ["packages/dl/notebooks/"]
+extend-exclude = ["projects/dl/notebooks/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
@@ -35,8 +10,8 @@ ignore = ["SIM108"]
 [tool.ruff.format]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "packages/ml/tests"]
-addopts = "-v --tb=short --import-mode=importlib"
+testpaths = ["core/tests", "projects/ml/tests"]
+addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "gpu: marks tests requiring CUDA (deselect with '-m \"not gpu\"')",
