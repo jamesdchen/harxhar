@@ -103,13 +103,13 @@ class TestMetadata:
 
 class TestDryRunBackend:
     def test_dry_run_backend_registered(self):
-        from projects.ml.cli.backends import get_backend
+        from core.backends import get_backend
 
         backend = get_backend("dry-run")
         assert backend is not None
 
     def test_dry_run_prints(self, capsys):
-        from projects.ml.cli.backends import get_backend
+        from core.backends import get_backend
 
         backend = get_backend("dry-run")
         backend.submit_array(
