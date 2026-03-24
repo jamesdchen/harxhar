@@ -69,6 +69,9 @@ def _run_patchts(args: argparse.Namespace) -> None:
         config["loss_log_path"] = args.loss_log_path
     if args.progress_path:
         config["progress_path"] = args.progress_path
+    if args.chunk_id is not None and args.total_chunks is not None:
+        config["chunk_id"] = args.chunk_id
+        config["total_chunks"] = args.total_chunks
 
     hparams = {
         "exog_cols": "none",
@@ -120,6 +123,9 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         config["loss_log_path"] = args.loss_log_path
     if args.progress_path:
         config["progress_path"] = args.progress_path
+    if args.chunk_id is not None and args.total_chunks is not None:
+        config["chunk_id"] = args.chunk_id
+        config["total_chunks"] = args.total_chunks
 
     hparams = {
         "exog_cols": "none",
@@ -171,6 +177,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
     parser.add_argument("--progress-path", type=str, default=None, help="JSON path to write live training progress.")
     parser.add_argument("--horizon", type=int, default=1, help="Forecast horizon.")
+    parser.add_argument("--chunk-id", type=int, default=None, help="0-based chunk index for SLURM array chunking.")
+    parser.add_argument("--total-chunks", type=int, default=None, help="Total number of SLURM array chunks.")
     parser.add_argument("--timeout-hours", type=float, default=0, help="Max runtime in hours (0=no limit).")
     parser.add_argument("--write-status", action="store_true", help="Write Drive status JSON for MCP monitoring.")
     return parser
