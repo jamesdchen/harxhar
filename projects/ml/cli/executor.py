@@ -8,7 +8,8 @@ import numpy as np
 from core.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
 from core.core.log import get_logger
 from core.data import apply_horizon_shift, load_and_prep_data_strided
-from core.features import BaseFeatureTransform, PCATransform
+from core.features import BaseFeatureTransform, create_feature_transform
+from core.features.factory import REFIT_DEFAULTS
 from projects.ml.cli._feature_args import add_feature_args  # re-export
 from projects.ml.models import create_model
 
@@ -72,14 +73,10 @@ def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
     allow_missing = args.model in ("xgboost", "lightgbm")
     feature_type = "har" if args.features == "har" else "raw"
 
-    from core.core import config as cfg
-
-    if args.features == "ae":
-        refit_frequency = cfg.AE_REFIT_FREQUENCY
-    elif args.model in ("xgboost", "lightgbm", "random_forest"):
+    if args.model in ("xgboost", "lightgbm", "random_forest"):
         refit_frequency = 5
     else:
-        refit_frequency = 1
+        refit_frequency = REFIT_DEFAULTS.get(args.features, 1)
 
     return {
         "diurnal_adjust": True,
@@ -97,23 +94,16 @@ def get_common_hparams(args: argparse.Namespace) -> dict[str, object]:
 
 def _build_feature_transform(args: argparse.Namespace, n_features: int) -> BaseFeatureTransform | None:
     """Build the feature transform from CLI args, or return None for raw/har."""
-    if args.features == "pca":
-        return PCATransform(n_components=args.n_components)
-    elif args.features == "ae":
-        from projects.dl.features import AETransform
-
-        transform = AETransform(
-            n_features=n_features,
-            n_components=args.n_components,
-            alpha=args.ae_alpha,
-            hidden_dim=args.ae_hidden or None,
-            epochs=args.ae_epochs,
-            ae_loss_path=args.ae_loss_path,
-        )
-        if args.ae_weights_path is not None:
-            transform.load_weights(args.ae_weights_path)
-        return transform
-    return None
+    return create_feature_transform(
+        kind=args.features,
+        n_components=args.n_components,
+        n_features=n_features,
+        alpha=getattr(args, "ae_alpha", 0.5),
+        hidden_dim=getattr(args, "ae_hidden", None) or None,
+        epochs=getattr(args, "ae_epochs", 50),
+        ae_loss_path=getattr(args, "ae_loss_path", None),
+        ae_weights_path=getattr(args, "ae_weights_path", None),
+    )
 
 
 def execute_chunk_backtest(

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from core.evaluation.aggregation import filter_by_time, load_all_chunks, parse_config
+from projects.ml.evaluation.aggregation import filter_by_time, load_all_chunks, parse_config
 
 # ---------------------------------------------------------------------------
 # Helper to write a simple chunk CSV

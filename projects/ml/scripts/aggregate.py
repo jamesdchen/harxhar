@@ -12,7 +12,7 @@ import re  # noqa: E402
 import pandas as pd  # noqa: E402
 
 # Import the updated processor
-from core.evaluation.aggregation import parse_config, process_single_experiment  # noqa: E402
+from projects.ml.evaluation.aggregation import parse_config, process_single_experiment  # noqa: E402
 from core.evaluation.metrics import calculate_baseline_deltas  # noqa: E402
 
 TARGET_SEGMENTS = ["morning", "midday", "closing", "overnight"]

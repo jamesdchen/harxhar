@@ -14,7 +14,7 @@ import torch
 import torch.multiprocessing as mp
 
 from core.backtest.engine import build_results_dataframe, extract_subset, save_chunk_results
-from core.core import config as cfg
+from projects.dl import config as cfg
 from core.core.log import get_logger
 
 logger = get_logger(__name__)

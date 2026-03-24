@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from core.core import config as cfg
 from core.models.base import BaseModel, NaiveBaseline
+from projects.ml import config as cfg
 from projects.ml.models.sarimax import SARIMAXModel
 from projects.ml.models.sklearn_models import LightGBMModel, RandomForestModel, RidgeModel, XGBoostModel
 

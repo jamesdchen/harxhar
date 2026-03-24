@@ -8,7 +8,6 @@ __all__ = [
     "RollingBuffer",
     "RollingMedian",
     "RollingRobustScaler",
-    "MovingBlockBootstrap",
     "apply_data_transform",
     "diurnal_adjust",
     "robust_transform",
@@ -30,9 +29,6 @@ from core.data.rolling import (
 )
 from core.data.rolling import (
     RollingRobustScaler as RollingRobustScaler,
-)
-from core.data.synth_data import (
-    MovingBlockBootstrap as MovingBlockBootstrap,
 )
 from core.data.transforms import (
     apply_data_transform as apply_data_transform,

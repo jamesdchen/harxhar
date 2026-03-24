@@ -22,43 +22,9 @@ PERIODS_PER_DAY = 48  # 30-min bars per trading day
 # Forecast horizon
 DEFAULT_HORIZON = 1  # 1-step ahead; max is PERIODS_PER_DAY (48)
 
-# Normalization
-NORM_EPS = 1e-8
-
-# Gradient clipping (GPU training)
-GRAD_CLIP_BOUND = 5.0
-
-# QLIKE clamping bounds (GPU training, log-space)
-QLIKE_CLAMP_MIN = -30.0
-QLIKE_CLAMP_MAX = 30.0
-
 # Winsorization quantiles
 WINSOR_LOWER_Q = 0.05
 WINSOR_UPPER_Q = 0.95
-
-# SARIMAX defaults
-SARIMAX_ORDER = (2, 0, 1)
-SARIMAX_SEASONAL_ORDER = (1, 0, 0, PERIODS_PER_DAY)
-SARIMAX_FIT_WINDOW = 480  # 10 trading days
-SARIMAX_REFIT_FREQUENCY = 48  # once per simulated day
-
-# AE refit frequency (steps between autoencoder refits)
-AE_REFIT_FREQUENCY = 240
-
-# SARIMAX fitting defaults
-SARIMAX_FIT_METHOD = "lbfgs"
-SARIMAX_FIT_MAXITER = 100
-
-# AdamW optimizer betas (GPU training)
-ADAMW_BETA1 = 0.9
-ADAMW_BETA2 = 0.999
-ADAMW_WEIGHT_DECAY = 0.01
-
-# GPU logging
-GPU_WORKER_LOG = "worker_log.txt"
-
-# Training checkpoints
-CHECKPOINT_EVERY_N_CHUNKS = 10  # save checkpoint every N chunks (0 = disabled)
 
 
 # --- Validation helpers ---

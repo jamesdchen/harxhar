@@ -14,9 +14,9 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from core.backtest.engine import apply_duan_smearing
-from core.core import config as cfg
+from projects.dl import config as cfg
 from core.core.log import get_logger
-from core.data.synth_data import MovingBlockBootstrap
+from projects.dl.data.synth_data import MovingBlockBootstrap
 from core.evaluation.metrics import calculate_global_metrics
 from projects.dl.backtest.gpu_utils import normalize_chunks
 from projects.dl.models.deep_learning import get_model
