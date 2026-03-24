@@ -4,7 +4,7 @@
 # GPU experiment SLURM script.
 #
 # Submit with:
-#   sbatch slurm/submit_gpu.slurm                         # PatchTSMixer (default)
+#   sbatch slurm/submit_gpu.slurm                         # PatchTST (default)
 #   sbatch --export=EXPERIMENT=ae_ridge slurm/submit_gpu.slurm
 #   sbatch --export=EXPERIMENT=patchts,GPU_COUNT=4 --gres=gpu:4 slurm/submit_gpu.slurm
 # ==============================================================
@@ -17,14 +17,16 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:2
-#SBATCH --constraint="V100|A100|A40|H100"
+#SBATCH --constraint="a100|a40|v100|l40s"
 #SBATCH --partition=gpu
 #SBATCH --time=6:00:00
+#SBATCH --chdir=/home1/jc_905/harxhar
 
 # --- CONFIGURATION (override via --export or edit here) ---
 EXPERIMENT="${EXPERIMENT:-patchts}"        # patchts | ae_ridge
 INPUT_PATH="${INPUT_PATH:-all30min}"
 OUTPUT="${OUTPUT:-}"                       # empty = use config default
+
 GPU_COUNT="${GPU_COUNT:-2}"
 BATCH_SIZE="${BATCH_SIZE:-}"
 EPOCHS="${EPOCHS:-}"
@@ -41,8 +43,10 @@ echo "GPUs:       $GPU_COUNT"
 echo "============================================"
 
 module purge
-module load python
-module load cuda
+
+# Activate conda environment with all dependencies
+source /apps/conda/miniforge3/25.3.0/etc/profile.d/conda.sh
+conda activate project-cucuringu
 
 # Bind CPU threads to allocated cores
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

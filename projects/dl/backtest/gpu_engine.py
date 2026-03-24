@@ -1,4 +1,4 @@
-"""Unified GPU-parallel backtest engines for PatchTSMixer and AE+Ridge models."""
+"""Unified GPU-parallel backtest engines for PatchTST and AE+Ridge models."""
 
 import os
 
@@ -19,7 +19,7 @@ from projects.dl.backtest.gpu_utils import (
 )
 
 # ---------------------------------------------------------------------------
-# PatchTSMixer strategy
+# PatchTST strategy
 # ---------------------------------------------------------------------------
 
 
@@ -107,7 +107,7 @@ def _patchts_worker(
 
 
 def _patchts_make_windows(X_tensor, y_tensor, config):
-    """Create 3D strided windows for PatchTSMixer (samples_per_window x context_len)."""
+    """Create 3D strided windows for PatchTST (samples_per_window x context_len)."""
     train_window = config["train_window"]
     context_len = config["model"]["context_len"]
     prediction_length = config["model"].get("prediction_length", 1)
@@ -316,7 +316,7 @@ def _ae_ridge_make_windows(X_tensor, y_tensor, config):
 
 
 def run_multigpu_backtest(X_np, y_np, dates, baselines, config, model_module="projects.dl.models.deep_learning"):
-    """GPU-parallel PatchTSMixer backtest."""
+    """GPU-parallel PatchTST backtest."""
     checkpoint_dir = config.get("checkpoint_dir", None)
     checkpoint_every = config.get("checkpoint_every", 0)
     loss_log_path = config.get("loss_log_path", None)

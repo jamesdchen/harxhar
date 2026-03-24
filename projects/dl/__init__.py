@@ -1,7 +1,7 @@
 """Deep learning models for harxhar volatility forecasting."""
 
 __all__ = [
-    "PatchTSMixerForecaster",
+    "PatchTSTForecaster",
     "LagAutoEncoder",
     "get_model",
     "get_ae_model",
@@ -14,7 +14,7 @@ __all__ = [
 
 def __getattr__(name):
     _MODEL_ATTRS = {
-        "PatchTSMixerForecaster",
+        "PatchTSTForecaster",
         "LagAutoEncoder",
         "get_model",
         "get_ae_model",

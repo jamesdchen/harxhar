@@ -12,7 +12,7 @@ GPU_WORKER_LOG = "worker_log.txt"
 CHECKPOINT_EVERY_N_CHUNKS = 10  # save checkpoint every N chunks (0 = disabled)
 AE_REFIT_FREQUENCY = 240  # steps between autoencoder refits
 
-# --- DL (PatchTSMixer) Configuration ---
+# --- DL (PatchTST) Configuration ---
 DL_CONFIG = {
     "output_path": "results.csv",
     "train_window": 50000,
@@ -21,7 +21,9 @@ DL_CONFIG = {
         "context_len": 241,
         "num_input_channels": 1,
         "hidden_dim": 4,
+        "num_heads": 2,
         "num_layers": 4,
+        "ffn_dim": 16,
         "dropout": 0.25,
         "patch_len": 47,
         "stride": 31,
