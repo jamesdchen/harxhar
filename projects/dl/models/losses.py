@@ -2,7 +2,7 @@
 
 import torch
 
-from core.core import config as cfg
+from projects.dl import config as cfg
 
 
 def functional_qlike_loss(h_pred, target_sqrt):

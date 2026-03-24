@@ -1,6 +1,6 @@
 """Visualization utilities for forecast diagnostics and model comparison."""
 
-from core.visualization.plots import (
+from projects.dl.visualization.plots import (
     plot_diagnostic_scatter,
     plot_residual_histogram,
     plot_timeseries_forecast,

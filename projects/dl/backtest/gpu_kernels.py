@@ -5,7 +5,7 @@ from torch.amp import autocast
 from torch.func import functional_call, grad_and_value, vmap
 from torch.optim.adamw import adamw
 
-from core.core import config as cfg
+from projects.dl import config as cfg
 from projects.dl.models.losses import functional_qlike_loss
 
 

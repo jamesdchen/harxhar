@@ -6,6 +6,7 @@ __all__ = [
     "LagFeatureBase",
     "PCATransform",
     "RawLagFeatures",
+    "create_feature_transform",
     "generate_lag_features",
     "generate_lag_features_segmented",
     "resolve_lags",
@@ -34,4 +35,7 @@ from core.features.transforms import (
 )
 from core.features.transforms import (
     RawLagFeatures as RawLagFeatures,
+)
+from core.features.factory import (
+    create_feature_transform as create_feature_transform,
 )

@@ -1,5 +1,17 @@
 """Deep learning specific configuration."""
 
+# --- GPU Training Constants ---
+NORM_EPS = 1e-8
+GRAD_CLIP_BOUND = 5.0
+QLIKE_CLAMP_MIN = -30.0
+QLIKE_CLAMP_MAX = 30.0
+ADAMW_BETA1 = 0.9
+ADAMW_BETA2 = 0.999
+ADAMW_WEIGHT_DECAY = 0.01
+GPU_WORKER_LOG = "worker_log.txt"
+CHECKPOINT_EVERY_N_CHUNKS = 10  # save checkpoint every N chunks (0 = disabled)
+AE_REFIT_FREQUENCY = 240  # steps between autoencoder refits
+
 # --- DL (PatchTSMixer) Configuration ---
 DL_CONFIG = {
     "output_path": "results.csv",
