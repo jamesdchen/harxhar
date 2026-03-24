@@ -6,8 +6,9 @@ import subprocess
 from projects.ml.cli.backends import PROJECT_ROOT, HPCBackend, register
 
 DEFAULT_SLURM_ACCOUNT = "pollok_1603"
+DEFAULT_SLURM_CLUSTER = "discovery"
 DEFAULT_SLURM_LOG_DIR = "/scratch1/jc_905/logs"
-DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "infra" / "slurm" / "submit_carc.slurm")
+DEFAULT_SUBMISSION_SCRIPT = str(PROJECT_ROOT / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm")
 
 
 @register("slurm")
@@ -16,10 +17,12 @@ class SlurmBackend(HPCBackend):
         self,
         script: str = DEFAULT_SUBMISSION_SCRIPT,
         account: str | None = None,
+        cluster: str | None = None,
         log_dir: str | None = None,
     ):
         self.script = script
         self.account = account or os.environ.get("SLURM_ACCOUNT", DEFAULT_SLURM_ACCOUNT)
+        self.cluster = cluster or os.environ.get("SLURM_CLUSTER", DEFAULT_SLURM_CLUSTER)
         self.log_dir = log_dir or os.environ.get("SLURM_LOG_DIR", DEFAULT_SLURM_LOG_DIR)
 
     def submit_array(self, job_name, total_chunks, tasks_per_array, job_env):
@@ -31,6 +34,7 @@ class SlurmBackend(HPCBackend):
             task_range = f"{start_task}-{end_task}"
             cmd = [
                 "sbatch",
+                f"--clusters={self.cluster}",
                 "--array",
                 task_range,
                 "--job-name",

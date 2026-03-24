@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1               # Run a single process (correct for most Python scripts)
 #SBATCH --cpus-per-task=1        # CPU cores per task. (See note below*)
 #SBATCH --mem=16G                # Memory per node
-#SBATCH --partition=main         # 'main' or 'debug' partition
+#SBATCH --partition=main         # 'main' partition on discovery
 #SBATCH --time=1:00:00
 
 # *Note on CPUs: If your script uses heavy Numpy/Pandas matrix math, 
