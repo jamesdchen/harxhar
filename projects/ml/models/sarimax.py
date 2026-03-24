@@ -6,8 +6,8 @@ import numpy as np
 from statsmodels.tsa.statespace.sarimax import SARIMAX as _SARIMAX
 
 from core.core.log import get_logger
-from projects.ml import config as cfg
 from core.models.base import RollingRegressionModel
+from projects.ml import config as cfg
 
 logger = get_logger(__name__)
 

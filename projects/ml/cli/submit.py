@@ -14,8 +14,8 @@ from pathlib import Path
 
 from core.core.config import DEFAULT_RESULTS_DIR
 from core.core.log import get_logger
-from projects.ml.cli.backends import HPCBackend, get_backend
 from projects.ml.cli._feature_args import add_feature_args
+from projects.ml.cli.backends import HPCBackend, get_backend
 from projects.ml.cli.metadata import build_metadata, save_metadata
 
 logger = get_logger(__name__)
