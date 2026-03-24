@@ -14,7 +14,7 @@ from core.features.transforms import BaseFeatureTransform, PCATransform
 REFIT_DEFAULTS: dict[str, int] = {
     "har": 1,
     "raw": 1,
-    "pca": 1,
+    "pca": 240,
     "ae": 240,
 }
 
