@@ -49,10 +49,10 @@ class SlurmBackend(HPCBackend):
                 text=True,
             )
             if result.returncode != 0:
-                raise subprocess.CalledProcessError(
-                    result.returncode,
-                    cmd,
-                    output=result.stdout,
-                    stderr=result.stderr,
+                stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
+                raise RuntimeError(
+                    f"sbatch failed (exit {result.returncode}) for array {task_range}:\n"
+                    f"  command: {' '.join(cmd)}\n"
+                    f"  stderr:  {stderr_msg}"
                 )
             start_task = end_task + 1
