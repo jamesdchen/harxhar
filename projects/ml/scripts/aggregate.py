@@ -1,9 +1,8 @@
 import sys
 from pathlib import Path
 
-_scripts_dir = Path(__file__).resolve().parent
-sys.path.insert(0, str(_scripts_dir.parent / "src"))
-sys.path.insert(0, str(_scripts_dir.parent.parent / "core" / "src"))
+_repo_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(_repo_root))
 
 import argparse  # noqa: E402
 import glob  # noqa: E402
