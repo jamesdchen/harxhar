@@ -9,6 +9,7 @@ __all__ = [
     "SARIMAXModel",
 ]
 
+
 def __getattr__(name: str):
     if name == "create_model":
         from projects.ml.models.registry import create_model
