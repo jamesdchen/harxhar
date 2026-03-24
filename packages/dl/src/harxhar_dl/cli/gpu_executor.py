@@ -1,9 +1,9 @@
 """CLI entry point for GPU-based backtests (PatchTSMixer and AE+Ridge).
 
 Usage:
-    python -m src.cli.gpu_executor --experiment patchts
-    python -m src.cli.gpu_executor --experiment ae_ridge --gpu-count 4
-    python -m src.cli.gpu_executor --experiment patchts --output results_dl.csv
+    python -m harxhar_dl.cli.gpu_executor --experiment patchts
+    python -m harxhar_dl.cli.gpu_executor --experiment ae_ridge --gpu-count 4
+    python -m harxhar_dl.cli.gpu_executor --experiment patchts --output results_dl.csv
 """
 
 from __future__ import annotations

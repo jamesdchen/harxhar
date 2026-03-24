@@ -24,7 +24,7 @@ __all__ = [
 import abc
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 
 class HPCBackend(abc.ABC):
@@ -38,7 +38,7 @@ class HPCBackend(abc.ABC):
         tasks_per_array: int,
         job_env: dict[str, str],
     ) -> None:
-        """Submit an array job. Each task runs src.cli.executor with a chunk ID."""
+        """Submit an array job. Each task runs harxhar_ml.cli.executor with a chunk ID."""
         ...
 
 
