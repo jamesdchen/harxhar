@@ -22,7 +22,7 @@ from harxhar_ml.cli.metadata import build_metadata, save_metadata
 logger = get_logger(__name__)
 
 # Resolve paths relative to the project root (two levels up from src/cli/)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DEFAULT_TASKS_PER_ARRAY = 100
 DEFAULT_TOTAL_CHUNKS = 100
 
