@@ -5,16 +5,16 @@ _scripts_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(_scripts_dir.parent / "src"))
 sys.path.insert(0, str(_scripts_dir.parent.parent / "core" / "src"))
 
-import argparse
-import glob
-import os
-import re
+import argparse  # noqa: E402
+import glob  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
 
-import pandas as pd
+import pandas as pd  # noqa: E402
 
 # Import the updated processor
-from harxhar_core.evaluation.aggregation import parse_config, process_single_experiment
-from harxhar_core.evaluation.metrics import calculate_baseline_deltas
+from harxhar_core.evaluation.aggregation import parse_config, process_single_experiment  # noqa: E402
+from harxhar_core.evaluation.metrics import calculate_baseline_deltas  # noqa: E402
 
 TARGET_SEGMENTS = ["morning", "midday", "closing", "overnight"]
 
