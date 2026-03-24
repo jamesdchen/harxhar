@@ -3,7 +3,7 @@ Shared experiment submission utilities.
 
 Handles config.txt creation, env var construction, and array job submission.
 All submission scripts delegate mechanical work here.  The actual scheduler
-interaction is handled by pluggable backends (see projects.ml.cli.backends).
+interaction is handled by pluggable backends (see core.backends).
 """
 
 from __future__ import annotations

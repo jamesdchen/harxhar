@@ -336,7 +336,7 @@ def main():
         "slurm": str(_repo_root / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm"),
         "sge": str(_repo_root / "projects" / "ml" / "infra" / "sge" / "submit_hoffman2.sh"),
     }
-    backend_kwargs = {}
+    backend_kwargs: dict[str, object] = {}
     if backend_name in ml_scripts:
         backend_kwargs["script"] = ml_scripts[backend_name]
     if backend_name == "sge":
