@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
 
 
 # --- Base Class ---
@@ -123,6 +122,8 @@ class PCATransform(BaseFeatureTransform):
     """Sklearn-like PCA wrapper for use as a rolling feature transform."""
 
     def __init__(self, n_components: int) -> None:
+        from sklearn.decomposition import PCA
+
         self.pca = PCA(n_components=n_components)
 
     def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> PCATransform:

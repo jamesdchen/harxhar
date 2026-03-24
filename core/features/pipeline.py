@@ -17,6 +17,7 @@ def resolve_lags(feature_type: str, lag: int) -> list[int]:
     """Return the lag index list for the given feature type and max lag.
 
     HAR  → geometric base-5 sequence [1, 5, 25, …] up to *lag*.
+    pca  → log-spaced lags from 1 to *lag*, dense at short horizons.
     raw  → consecutive lags [1, 2, …, lag].
     """
     if feature_type == "har":
@@ -25,6 +26,15 @@ def resolve_lags(feature_type: str, lag: int) -> list[int]:
             seq.append(v)
             v *= 5
         return seq
+    if feature_type == "pca":
+        # Log-spaced lags covering same range as HAR but with enough
+        # density for PCA to capture the autocorrelation structure.
+        import numpy as np
+
+        n_points = 20
+        raw = np.geomspace(1, lag, num=n_points)
+        seq = sorted(set(int(round(v)) for v in raw))
+        return [v for v in seq if 1 <= v <= lag]
     return list(range(1, lag + 1))
 
 

@@ -9,28 +9,10 @@ from core.backtest import get_chunk_indices_strided, run_backtest_agnostic, save
 from core.core.log import get_logger
 from core.data import apply_horizon_shift, load_and_prep_data_strided
 from core.features import BaseFeatureTransform, PCATransform
+from projects.ml.cli._feature_args import add_feature_args  # re-export
 from projects.ml.models import create_model
 
 logger = get_logger(__name__)
-
-
-def add_feature_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """Add feature-related arguments shared between executor and submit parsers."""
-    parser.add_argument("--train-window", type=int, default=500, help="Training window in days")
-    parser.add_argument(
-        "--n-components", type=int, default=5, help="Number of PCA/AE latent components (--features pca or ae)"
-    )
-    parser.add_argument(
-        "--ae-alpha", type=float, default=0.5, help="AE loss weight: alpha*recon + (1-alpha)*pred (--features ae)"
-    )
-    parser.add_argument("--ae-epochs", type=int, default=50, help="Training epochs per AE refit (--features ae)")
-    parser.add_argument(
-        "--ae-hidden", type=int, default=0, help="AE hidden layer width; 0 = auto (n_features // 2) (--features ae)"
-    )
-    parser.add_argument(
-        "--ae-weights-path", type=str, default=None, help="Path to pre-trained AE weights .pt file (--features ae)"
-    )
-    return parser
 
 
 def get_common_parser(description: str) -> argparse.ArgumentParser:
