@@ -41,5 +41,13 @@ class SlurmBackend(HPCBackend):
                 f"{self.log_dir}/slurm-%A_%a.out",
                 self.script,
             ]
-            subprocess.run(cmd, env=job_env, check=True, cwd=PROJECT_ROOT)
+            result = subprocess.run(
+                cmd, env=job_env, cwd=PROJECT_ROOT,
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd,
+                    output=result.stdout, stderr=result.stderr,
+                )
             start_task = end_task + 1
