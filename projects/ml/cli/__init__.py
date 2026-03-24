@@ -23,15 +23,20 @@ def __getattr__(name: str):
     _executor_names = {"add_feature_args", "get_common_hparams", "get_common_parser", "main"}
     if name in _executor_names:
         from projects.ml.cli import executor
+
         return getattr(executor, name)
 
     # Submit (light) imports
     _submit_names = {
-        "ExperimentSpec", "add_common_submit_args", "build_extra_args",
-        "submit_experiment", "submit_experiment_batch",
+        "ExperimentSpec",
+        "add_common_submit_args",
+        "build_extra_args",
+        "submit_experiment",
+        "submit_experiment_batch",
     }
     if name in _submit_names:
         from projects.ml.cli import submit
+
         return getattr(submit, name)
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
