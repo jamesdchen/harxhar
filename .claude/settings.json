@@ -1,5 +1,16 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions"
+    "allow": [
+      "Bash(python:*)",
+      "Bash(sbatch:*)",
+      "Bash(squeue:*)",
+      "Bash(sacct:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(conda:*)",
+      "Bash(module:*)"
+    ]
   }
 }
