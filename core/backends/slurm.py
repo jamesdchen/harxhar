@@ -37,5 +37,7 @@ class SlurmBackend(HPCBackend):
             self.account,
             "--output",
             f"{self.log_dir}/slurm-%A_%a.out",
+            "--error",
+            f"{self.log_dir}/slurm-%A_%a.err",
             self.script,
         ]

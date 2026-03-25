@@ -23,6 +23,7 @@ __all__ = [
 
 import abc
 import os
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -79,6 +80,44 @@ class HPCBackend(abc.ABC):
                     f"  stderr:  {stderr_msg}"
                 )
             start_task = end_task + 1
+
+    def submit_array_tracked(
+        self,
+        job_name: str,
+        total_chunks: int,
+        tasks_per_array: int,
+        job_env: dict[str, str],
+    ) -> list[tuple[str, str]]:
+        """Like submit_array but returns (task_range, job_id) pairs."""
+        os.makedirs(self.log_dir, exist_ok=True)
+        submissions: list[tuple[str, str]] = []
+
+        start_task = 1
+        while start_task <= total_chunks:
+            end_task = min(start_task + tasks_per_array - 1, total_chunks)
+            task_range = f"{start_task}-{end_task}"
+            cmd = self._build_command(task_range, job_name, job_env)
+            result = subprocess.run(
+                cmd,
+                env=job_env,
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
+                raise RuntimeError(
+                    f"Job submission failed (exit {result.returncode}) for array {task_range}:\n"
+                    f"  command: {' '.join(cmd)}\n"
+                    f"  stderr:  {stderr_msg}"
+                )
+            match = re.search(r"(\d+)", result.stdout)
+            if not match:
+                raise RuntimeError(f"Could not parse job ID from sbatch output: {result.stdout!r}")
+            submissions.append((task_range, match.group(1)))
+            start_task = end_task + 1
+
+        return submissions
 
 
 _REGISTRY: dict[str, type[HPCBackend]] = {}
