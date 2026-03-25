@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
 
@@ -37,12 +38,12 @@ class BaseModel(ABC):
 class RollingRegressionModel(BaseModel):
     def __init__(
         self,
-        model: object,
+        model: Any,
         train_win_periods: int,
         n_features: int,
         use_scaling: bool = True,
         refit_frequency: int = 1,
-        feature_transform: object | None = None,
+        feature_transform: Any | None = None,
     ) -> None:
         cfg.check_positive(train_win_periods, "train_win_periods")
         cfg.check_positive(n_features, "n_features")
