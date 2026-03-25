@@ -55,7 +55,7 @@ def _patchts_worker(
         def stateless_fwd(p, b, x):
             x_input = x.unsqueeze(-1)
             h_pred = functional_call(base_model_eval, (p, b), args=(x_input,), kwargs={})
-            return h_pred.squeeze(-1)
+            return h_pred.reshape(x.shape[0])
 
         predict_kernel = vmap(stateless_fwd, in_dims=(0, None, 0), out_dims=0)
 
@@ -137,8 +137,9 @@ def _patchts_make_windows(X_tensor, y_tensor, config):
     )
     all_train_y = torch.as_strided(y_offset, size=window_shape_y, stride=strides_y)
 
-    # OOS test tensor
-    X_test_start = X_tensor[train_window - context_len :]
+    # OOS test tensor — slice to exactly num_windows + context_len to prevent
+    # as_strided from reading beyond tensor bounds when prediction_length > 1
+    X_test_start = X_tensor[train_window - context_len : train_window - context_len + num_windows + context_len - 1]
     window_shape_test = (num_windows, 1, context_len)
     strides_test = (
         X_test_start.stride(0) * stride_step,

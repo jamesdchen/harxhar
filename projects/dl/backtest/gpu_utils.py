@@ -459,11 +459,11 @@ def run_worker(
             preds = chunk_fn(ctx, current_params, X_chunk, y_chunk, X_test_chunk, curr_bs, idx)
 
             # Flatten per-window predictions, preserving horizon dim if present
-            if preds.dim() > 1:
+            if preds.dim() > 1 and preds.shape[-1] > 1:
                 # Multi-horizon: shape (batch, H) → keep as-is
                 preds_cpu = preds.cpu()
             else:
-                preds_cpu = preds.view(-1).cpu()
+                preds_cpu = preds.reshape(-1).cpu()
 
             # Free GPU memory from this chunk before the next iteration
             del X_chunk, y_chunk, X_test_chunk, preds, current_params

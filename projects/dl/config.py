@@ -32,7 +32,7 @@ DL_CONFIG = {
     "train": {
         "num_epochs": 50,
         "learning_rate": 5e-4,
-        "batch_size": 64,
+        "batch_size": 32,  # reduced from 64 to avoid OOM on V100/A40
         "optimizer": "ADAMW",
         "loss_fn": "QLIKE",
     },

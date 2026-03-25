@@ -61,6 +61,8 @@ def _run_patchts(args: argparse.Namespace) -> None:
         config["train"]["learning_rate"] = args.learning_rate
     if args.train_window:
         config["train_window"] = args.train_window
+    if args.horizon:
+        config["model"]["prediction_length"] = args.horizon
 
     if args.checkpoint_dir:
         config["checkpoint_dir"] = args.checkpoint_dir
@@ -114,6 +116,8 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         config["train"]["learning_rate"] = args.learning_rate
     if args.train_window:
         config["train_window"] = args.train_window
+    if args.horizon:
+        config["model"]["prediction_length"] = args.horizon
     if args.weights_dir:
         config["weights_dir"] = args.weights_dir
     if args.checkpoint_dir:
@@ -228,7 +232,8 @@ def main() -> None:
         logger.error("FAILED: %s", exc)
         raise
     finally:
-        signal.alarm(0)
+        if args.timeout_hours > 0:
+            signal.alarm(0)
 
 
 if __name__ == "__main__":
