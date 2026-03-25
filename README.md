@@ -1,6 +1,6 @@
 # HARXHAR
 
-Realized volatility forecasting system using HAR-family models with exogenous features. Supports rolling-window backtesting across Ridge, XGBoost, LightGBM, Random Forest, SARIMAX, and deep learning (PatchTSMixer, Autoencoder+Ridge) models on intraday 30-minute bar data.
+Realized volatility forecasting system using HAR-family models with exogenous features. Supports rolling-window backtesting across Ridge, XGBoost, LightGBM, Random Forest, SARIMAX, and deep learning (PatchTST, Autoencoder+Ridge) models on intraday 30-minute bar data.
 
 The system takes raw parquet data, engineers lag-based features at multiple time scales (geometric base-5 HAR lags: 1, 5, 25, 125, 625, 3125 half-hour periods), and runs walk-forward backtests with online model updates. It is designed for large-scale distributed execution on HPC clusters (SLURM, SGE) and GPU-accelerated training on Google Colab.
 
@@ -11,23 +11,25 @@ core/                              # Shared foundation (no ML/DL deps)
 ├── core/                          # Config (lags, windows, segments), logging
 ├── data/                          # Loading, transforms, rolling buffers, synthetic data
 ├── features/                      # HAR/Raw lag features, PCA, feature groups
-├── models/                        # BaseModel ABC, NaiveBaseline
+├── models/                        # BaseModel ABC, RollingRegressionModel, NaiveBaseline
 ├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
 ├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
 ├── visualization/                 # Forecast, scatter, residual plots
+├── backends/                      # SLURM/SGE job submission
 └── tests/                         # Core unit tests
 
 projects/
 ├── ml/                            # Traditional ML
 │   ├── models/                    # Ridge, XGBoost, LightGBM, RF, SARIMAX, registry
-│   ├── cli/                       # Executor, job submission, experiment config, backends
+│   ├── cli/                       # Executor, job submission, experiment config
+│   ├── features/                  # Feature group definitions
 │   ├── scripts/                   # submit.py, aggregate.py, compare.py
 │   ├── experiments/               # YAML experiment configs
 │   ├── infra/                     # SLURM/SGE job templates
 │   └── tests/                     # ML model and integration tests
 │
 └── dl/                            # Deep learning
-    ├── models/                    # PatchTSMixer, LagAutoEncoder, QLIKE loss
+    ├── models/                    # PatchTST, LagAutoEncoder, QLIKE loss
     ├── backtest/                  # Multi-GPU engine, vmap kernels, scaling experiments
     ├── features/                  # DL-specific transforms
     ├── cli/                       # GPU executor
@@ -164,7 +166,7 @@ Wraps statsmodels SARIMAX with order `(2,0,1)`, seasonal `(1,0,0,48)`. Uses chro
 
 ### Deep Learning (`projects/dl/models/deep_learning.py`)
 
-**PatchTSMixer**: Hugging Face transformer-based patch mixing backbone with a linear prediction head. Configured with context_len=241, patch_len=47, stride=31.
+**PatchTST**: Hugging Face transformer-based patch time series backbone with a linear prediction head. Configured with context_len=241, patch_len=47, stride=31.
 
 **LagAutoEncoder**: Hybrid supervised/unsupervised architecture with shared encoder (n_features → hidden_dim → n_components), decoder (reconstruction), and prediction head (→ 1 scalar). The encoder output feeds into Ridge regression — combining nonlinear representation learning with linear prediction stability. Not used as a standalone predictor.
 
@@ -190,7 +192,7 @@ Wraps statsmodels SARIMAX with order `(2,0,1)`, seasonal `(1,0,0,48)`. Uses chro
 
 Two strategies with unified architecture:
 
-**PatchTSMixer** (`run_multigpu_backtest()`): Creates 3D strided windows via `torch.as_strided` (zero-copy). Per-GPU worker runs instance normalization → compiled training kernel → predict. Predictions converted from log-space to sqrt-space via `exp(h_pred / 2.0)`.
+**PatchTST** (`run_multigpu_backtest()`): Creates 3D strided windows via `torch.as_strided` (zero-copy). Per-GPU worker runs instance normalization → compiled training kernel → predict. Predictions converted from log-space to sqrt-space via `exp(h_pred / 2.0)`.
 
 **AE+Ridge** (`run_ae_multigpu_backtest()`): Creates 2D strided windows. Per-GPU worker runs normalize → train AE → encode training data → solve Ridge via closed-form `(X'X + αI)⁻¹X'y` → predict.
 
@@ -198,7 +200,7 @@ Two strategies with unified architecture:
 
 PyTorch-compiled training loops using `torch.func.vmap` + `torch.func.grad` for vectorized batch training. AdamW optimizer with gradient clipping. Two kernel factories:
 
-- `make_train_kernel()` — PatchTSMixer with QLIKE loss
+- `make_train_kernel()` — PatchTST with QLIKE loss
 - `make_ae_train_kernel()` — AE with hybrid reconstruction + prediction loss
 
 ### GPU Utilities (`projects/dl/backtest/gpu_utils.py`)
@@ -207,7 +209,7 @@ Shared infrastructure: chunk normalization, batched parameter allocation with fa
 
 ### Scaling Experiments (`projects/dl/backtest/gpu_engine_scaling.py`)
 
-`run_scaling_experiment()` studies how synthetic data augmentation affects deep learning performance: augment training data via `MovingBlockBootstrap` at various multipliers → train PatchTSMixer → evaluate on chronological holdout → report QLIKE, MSE, MAE.
+`run_scaling_experiment()` studies how synthetic data augmentation affects deep learning performance: augment training data via `MovingBlockBootstrap` at various multipliers → train PatchTST → evaluate on chronological holdout → report QLIKE, MSE, MAE.
 
 ## Evaluation
 
@@ -233,9 +235,9 @@ Shared infrastructure: chunk normalization, batched parameter allocation with fa
 ## Setup
 
 ```bash
-pip install -e packages/core
-pip install -e packages/ml
-pip install -e packages/dl
+pip install -e core
+pip install -e projects/ml
+pip install -e projects/dl
 ```
 
 Or install all packages at once:
@@ -291,34 +293,34 @@ pytest core/tests/ projects/ml/tests/
 pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu"
 
 # Per-package (run from package directory)
-cd packages/core && pytest
-cd packages/ml && pytest
+cd core && pytest
+cd projects/ml && pytest
 ```
 
 ## HPC Workflow
 
 ### Submission
 
-Submit experiment batches via `packages/ml/scripts/submit.py`, which supports six modes:
+Submit experiment batches via `projects/ml/scripts/submit.py`, which supports six modes:
 
 ```bash
 # Compare models on baseline HAR features
-python packages/ml/scripts/submit.py model_comparison --models ridge xgboost lightgbm
+python projects/ml/scripts/submit.py model_comparison --models ridge xgboost lightgbm
 
 # Compare feature engineering methods
-python packages/ml/scripts/submit.py feature_transforms --model ridge --features har pca ae
+python projects/ml/scripts/submit.py feature_transforms --model ridge --features har pca ae
 
 # Feature ablation: one job per feature in a subgroup
-python packages/ml/scripts/submit.py individual_features --model ridge --subgroup moments
+python projects/ml/scripts/submit.py individual_features --model ridge --subgroup moments
 
 # Cartesian product: subgroups × models × features
-python packages/ml/scripts/submit.py subgroup_analysis --models all --features all --subgroups all
+python projects/ml/scripts/submit.py subgroup_analysis --models all --features all --subgroups all
 
 # Naive baseline (cached and symlinked to other experiments)
-python packages/ml/scripts/submit.py naive
+python projects/ml/scripts/submit.py naive
 
 # From a declarative YAML config
-python packages/ml/scripts/submit.py from-config packages/ml/experiments/example_model_comparison.yaml
+python projects/ml/scripts/submit.py from-config projects/ml/experiments/example_model_comparison.yaml
 ```
 
 Common options: `--result-dir`, `--total-chunks` (default 100), `--backend` (slurm, sge, dry-run), `--no-naive`.
@@ -327,7 +329,7 @@ Each submission creates an experiment directory with `config.txt` (human-readabl
 
 ### YAML Experiment Configs
 
-Declarative experiment definitions in `packages/ml/experiments/`:
+Declarative experiment definitions in `projects/ml/experiments/`:
 
 ```yaml
 name: ridge_vs_trees
@@ -344,35 +346,35 @@ notes: "Baseline model comparison using HAR features"
 ### Aggregation and Comparison
 
 ```bash
-python packages/ml/scripts/aggregate.py              # stitch chunks, compute metrics, calculate baseline deltas
-python packages/ml/scripts/compare.py results/model_comparison --metric qlike --sort asc
-python packages/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (multipliers: 0, 1, 2, 5, 10, 50)
+python projects/ml/scripts/aggregate.py              # stitch chunks, compute metrics, calculate baseline deltas
+python projects/ml/scripts/compare.py results/model_comparison --metric qlike --sort asc
+python projects/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (multipliers: 0, 1, 2, 5, 10, 50)
 ```
 
 `aggregate.py` auto-discovers `.needs_aggregation` markers, stitches chunk CSVs, computes MSE/MAE/QLIKE/R², and calculates improvements over naive baseline.
 
 ### HPC Backends
 
-Pluggable backend system via registry pattern in `projects/ml/cli/backends/`:
+Pluggable backend system via registry pattern in `core/backends/`:
 
-- **SLURM** — Submits array jobs via `sbatch` using `packages/ml/infra/slurm/submit_carc.slurm` (16GB, 1hr, main partition). Configurable account and log directory via `SLURM_ACCOUNT` and `SLURM_LOG_DIR` environment variables.
-- **SGE** — Submits task arrays via `qsub` using `packages/ml/infra/sge/submit_hoffman2.sh` for UCLA Hoffman2.
+- **SLURM** — Submits array jobs via `sbatch` using `projects/ml/infra/slurm/submit_carc.slurm` (16GB, 1hr, main partition). Configurable account and log directory via `SLURM_ACCOUNT` and `SLURM_LOG_DIR` environment variables.
+- **SGE** — Submits task arrays via `qsub` using `projects/ml/infra/sge/submit_hoffman2.sh` for UCLA Hoffman2.
 - **Dry-run** — Prints submission details without executing.
 
-Additional SLURM templates in `packages/dl/infra/slurm/` for GPU jobs: `patchts_backtest.slurm`, `ae_ridge_backtest.slurm`, `submit_gpu.slurm`.
+Additional SLURM templates in `projects/dl/infra/slurm/` for GPU jobs: `patchts_backtest.slurm`, `ae_ridge_backtest.slurm`, `submit_gpu.slurm`.
 
 ## Notebooks
 
-Jupyter/Colab notebooks for deep learning model training and visualization are in `packages/dl/notebooks/`:
+Jupyter/Colab notebooks for deep learning model training and visualization are in `projects/dl/notebooks/`:
 
-- `patchts_colab.ipynb` / `patchts_viz.ipynb` — PatchTSMixer training and results visualization
+- `patchts_colab.ipynb` / `patchts_viz.ipynb` — PatchTST training and results visualization
 - `ae_ridge_colab.ipynb` / `ae_ridge_viz.ipynb` — Autoencoder+Ridge training and results visualization
 - `scaling_law_colab.ipynb` / `scaling_law_viz.ipynb` — Scaling-law experiments and visualization
 - `dl_runner.ipynb` — General deep learning runner with Drive-persisted status tracking
 
 `projects/dl/notebook_utils.py` provides shared utilities: CUDA configuration (TF32), GPU monitoring via nvidia-smi, Drive-persisted status management with atomic writes, and results download helpers.
 
-See `packages/dl/COWORK_DL_INSTRUCTIONS.md` for detailed deep learning workflow guidance.
+See `projects/dl/COWORK_DL_INSTRUCTIONS.md` for detailed deep learning workflow guidance.
 
 ## Key Design Decisions
 
@@ -401,7 +403,7 @@ Type checking with mypy:
 
 ```bash
 pip install mypy
-mypy packages/core/src/ packages/ml/src/ packages/dl/src/ --ignore-missing-imports
+mypy core/ projects/ml/ projects/dl/ --ignore-missing-imports
 ```
 
 ### CI Pipeline
@@ -409,5 +411,5 @@ mypy packages/core/src/ packages/ml/src/ packages/dl/src/ --ignore-missing-impor
 GitHub Actions runs three jobs on push/PR:
 
 1. **lint** — `ruff check .` + `ruff format --check .`
-2. **typecheck** — `mypy packages/core/src/ packages/ml/src/ packages/dl/src/ --ignore-missing-imports`
-3. **test** — `pytest -m "not slow and not gpu" --tb=short`
+2. **typecheck** — `mypy core/ projects/ml/ projects/dl/ --ignore-missing-imports`
+3. **test** — `pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short`
