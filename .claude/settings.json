@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)",
+      "Bash(python scripts/submit.py:*)",
+      "Bash(python scripts/aggregate.py:*)",
+      "Bash(python scripts/compare.py:*)",
+      "Bash(python -m projects.dl.cli.submit:*)",
+      "Bash(python -m projects.ml.cli.executor:*)",
+      "Bash(python -m projects.dl.cli.gpu_executor:*)",
       "Bash(sbatch:*)",
       "Bash(squeue:*)",
       "Bash(sacct:*)",
