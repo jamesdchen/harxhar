@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > **When to read this file:** Only consult this document when the user asks to
-> **submit SLURM jobs**, **aggregate experiment results**, or **debug HPC job failures/logs**.
+> **submit SLURM jobs** or **aggregate experiment results**.
 > Do not load this context for general code editing, testing, or exploration tasks.
 
 ## Cluster Context
