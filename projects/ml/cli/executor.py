@@ -183,7 +183,6 @@ def execute_chunk_backtest(
 
 
 def main(args: argparse.Namespace) -> None:
-    np.random.seed(42)
     hparams = get_common_hparams(args)
 
     logger.info("Loading data from '%s'", args.input_path)
@@ -318,5 +317,6 @@ def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
 
 
 if __name__ == "__main__":
+    np.random.seed(42)
     parser = get_common_parser("Time-Series Volatility Forecasting Pipeline")
     main(parser.parse_args())

@@ -23,130 +23,41 @@ _MODEL_SPECS: dict[str, tuple[type, bool, int, dict[str, Any]]] = {
 }
 
 
-def _make_sklearn_model(
-    spec_key: str,
-    train_win_periods: int,
-    n_features: int,
-    use_scaling: bool | None = None,
-    refit_frequency: int | None = None,
-    feature_transform: Any | None = None,
-    **model_kwargs: Any,
-) -> RollingRegressionModel:
-    """Construct a RollingRegressionModel from a spec key and overrides."""
-    cls, default_scaling, default_refit, defaults = _MODEL_SPECS[spec_key]
-    merged = {**defaults, **model_kwargs}
-    return RollingRegressionModel(
-        model=cls(**merged),
-        train_win_periods=train_win_periods,
-        n_features=n_features,
-        use_scaling=default_scaling if use_scaling is None else use_scaling,
-        refit_frequency=default_refit if refit_frequency is None else refit_frequency,
-        feature_transform=feature_transform,
-    )
+# ── Class factory ───────────────────────────────────────────────────────
 
 
-# ── Public thin wrappers (preserve existing API) ───────────────────────
+def _make_model_class(spec_key: str) -> type[RollingRegressionModel]:
+    """Generate a RollingRegressionModel subclass from _MODEL_SPECS."""
+    _, default_scaling, default_refit, _ = _MODEL_SPECS[spec_key]
 
-
-def _init_from_spec(
-    self, spec_key: str, train_win_periods, n_features, use_scaling, refit_frequency, feature_transform, **model_kwargs
-):
-    """Shared init logic: resolve defaults from _MODEL_SPECS and call super().__init__."""
-    cls, default_scaling, default_refit, defaults = _MODEL_SPECS[spec_key]
-    merged = {**defaults, **model_kwargs}
-    super(type(self), self).__init__(
-        model=cls(**merged),
-        train_win_periods=train_win_periods,
-        n_features=n_features,
-        use_scaling=default_scaling if use_scaling is None else use_scaling,
-        refit_frequency=default_refit if refit_frequency is None else refit_frequency,
-        feature_transform=feature_transform,
-    )
-
-
-class RidgeModel(RollingRegressionModel):
-    def __init__(
-        self,
-        train_win_periods: int,
-        n_features: int,
-        use_scaling: bool = True,
-        feature_transform: Any | None = None,
-        refit_frequency: int = 1,
-        **ridge_kwargs: Any,
-    ) -> None:
-        _init_from_spec(
+    class _Model(RollingRegressionModel):
+        def __init__(
             self,
-            "ridge",
-            train_win_periods,
-            n_features,
-            use_scaling,
-            refit_frequency,
-            feature_transform,
-            **ridge_kwargs,
-        )
+            train_win_periods: int,
+            n_features: int,
+            use_scaling: bool = default_scaling,
+            feature_transform: Any | None = None,
+            refit_frequency: int = default_refit,
+            **model_kwargs: Any,
+        ) -> None:
+            cls, _, _, defaults = _MODEL_SPECS[spec_key]
+            merged = {**defaults, **model_kwargs}
+            super().__init__(
+                model=cls(**merged),
+                train_win_periods=train_win_periods,
+                n_features=n_features,
+                use_scaling=use_scaling,
+                refit_frequency=refit_frequency,
+                feature_transform=feature_transform,
+            )
+
+    # Set readable class name for isinstance checks and repr
+    name = spec_key.title().replace("_", "") + "Model"
+    _Model.__name__ = _Model.__qualname__ = name
+    return _Model
 
 
-class XGBoostModel(RollingRegressionModel):
-    def __init__(
-        self,
-        train_win_periods: int,
-        n_features: int,
-        use_scaling: bool = False,
-        refit_frequency: int = 5,
-        feature_transform: Any | None = None,
-        **xgb_kwargs: Any,
-    ) -> None:
-        _init_from_spec(
-            self,
-            "xgboost",
-            train_win_periods,
-            n_features,
-            use_scaling,
-            refit_frequency,
-            feature_transform,
-            **xgb_kwargs,
-        )
-
-
-class LightGBMModel(RollingRegressionModel):
-    def __init__(
-        self,
-        train_win_periods: int,
-        n_features: int,
-        use_scaling: bool = False,
-        refit_frequency: int = 5,
-        feature_transform: Any | None = None,
-        **lgbm_kwargs: Any,
-    ) -> None:
-        _init_from_spec(
-            self,
-            "lightgbm",
-            train_win_periods,
-            n_features,
-            use_scaling,
-            refit_frequency,
-            feature_transform,
-            **lgbm_kwargs,
-        )
-
-
-class RandomForestModel(RollingRegressionModel):
-    def __init__(
-        self,
-        train_win_periods: int,
-        n_features: int,
-        use_scaling: bool = False,
-        refit_frequency: int = 5,
-        feature_transform: Any | None = None,
-        **rf_kwargs: Any,
-    ) -> None:
-        _init_from_spec(
-            self,
-            "random_forest",
-            train_win_periods,
-            n_features,
-            use_scaling,
-            refit_frequency,
-            feature_transform,
-            **rf_kwargs,
-        )
+RidgeModel = _make_model_class("ridge")
+XGBoostModel = _make_model_class("xgboost")
+LightGBMModel = _make_model_class("lightgbm")
+RandomForestModel = _make_model_class("random_forest")

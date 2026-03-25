@@ -12,9 +12,7 @@ __all__ = [
     "resolve_lags",
 ]
 
-from core.features.factory import (
-    create_feature_transform as create_feature_transform,
-)
+from core.features.factory import create_feature_transform as create_feature_transform
 from core.features.pipeline import (
     generate_lag_features as generate_lag_features,
 )

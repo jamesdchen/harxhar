@@ -47,6 +47,22 @@ class TestHARFeatures:
         mask = ~np.isnan(expected[:, 0])
         np.testing.assert_allclose(result[mask], expected[mask], atol=1e-10)
 
+    def test_multi_column_feature_names(self):
+        from core.features import HARFeatures
+
+        gen = HARFeatures(lags=[1, 5], target_col="adj_RV")
+        df = pd.DataFrame({"adj_RV": np.arange(10.0), "adj_exog": np.arange(10.0) * 2})
+        _, names = gen.generate_pandas(df, ["adj_RV", "adj_exog"])
+        assert names == ["har_ma_1", "har_ma_5", "adj_exog_ma_1", "adj_exog_ma_5"]
+
+    def test_first_value_is_nan(self):
+        from core.features import HARFeatures
+
+        gen = HARFeatures(lags=[1], target_col="adj_RV")
+        df = pd.DataFrame({"adj_RV": [10.0, 20.0, 30.0]})
+        feat_dict, _ = gen.generate_pandas(df, ["adj_RV"])
+        assert np.isnan(feat_dict["har_ma_1"].iloc[0])
+
 
 class TestRawLagFeatures:
     def test_shift_matches_pandas(self):
@@ -112,6 +128,14 @@ class TestPCATransform:
         pca.fit(X)
         result = pca.transform(X)
         assert result.shape == (50, 1)
+
+    def test_fit_transform_preserves_samples(self):
+        rng = np.random.RandomState(42)
+        X = rng.randn(30, 8)
+        pca = PCATransform(n_components=3)
+        pca.fit(X)
+        out = pca.transform(X[:5])
+        assert out.shape == (5, 3)
 
     def test_roundtrip_low_rank(self):
         """PCA(n_components=2) on rank-2 data should capture nearly all variance."""
