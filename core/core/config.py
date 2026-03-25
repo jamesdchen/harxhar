@@ -77,10 +77,23 @@ def find_naive_lag(feature_names: list[str]) -> int:
     )
 
 
+# --- Weekend boundary times (market hours filtering) ---
+FRIDAY_CLOSE = "20:00"
+SUNDAY_OPEN = "18:30"
+
+# --- PCA lag resolution ---
+PCA_GEOMSPACE_POINTS = 20
+
+
+def _hhmm(h: int, m: int) -> int:
+    """Convert hours and minutes to minutes-since-midnight."""
+    return h * 60 + m
+
+
 # 1. Define Segments with Overlaps
 SEGMENT_DEFINITIONS = {
-    "morning": {"start": 510, "end": 660},  # 08:30 - 11:00
-    "midday": {"start": 630, "end": 870},  # 10:30 - 14:30
-    "closing": {"start": 840, "end": 960},  # 14:00 - 16:00
-    "overnight": {"start": 990, "end": 510},  # 16:30 - 08:30 (Wraps)
+    "morning": {"start": _hhmm(8, 30), "end": _hhmm(11, 0)},
+    "midday": {"start": _hhmm(10, 30), "end": _hhmm(14, 30)},
+    "closing": {"start": _hhmm(14, 0), "end": _hhmm(16, 0)},
+    "overnight": {"start": _hhmm(16, 30), "end": _hhmm(8, 30)},  # wraps midnight
 }

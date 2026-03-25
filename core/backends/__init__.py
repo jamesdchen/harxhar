@@ -22,15 +22,33 @@ __all__ = [
 ]
 
 import abc
+import os
+import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class HPCBackend(abc.ABC):
-    """Minimal interface for HPC job submission backends."""
+    """Minimal interface for HPC job submission backends.
+
+    Subclasses implement ``_build_command`` to construct the scheduler-specific
+    command; the chunking loop and subprocess execution are handled here.
+    """
+
+    log_dir: str  # subclasses must set this
 
     @abc.abstractmethod
+    def _build_command(
+        self,
+        task_range: str,
+        job_name: str,
+        job_env: dict[str, str],
+    ) -> list[str]:
+        """Return the scheduler command for the given task range."""
+        ...
+
     def submit_array(
         self,
         job_name: str,
@@ -38,14 +56,35 @@ class HPCBackend(abc.ABC):
         tasks_per_array: int,
         job_env: dict[str, str],
     ) -> None:
-        """Submit an array job.  Each task receives its chunk ID via the scheduler."""
-        ...
+        """Submit an array job in batches of *tasks_per_array*."""
+        os.makedirs(self.log_dir, exist_ok=True)
+
+        start_task = 1
+        while start_task <= total_chunks:
+            end_task = min(start_task + tasks_per_array - 1, total_chunks)
+            task_range = f"{start_task}-{end_task}"
+            cmd = self._build_command(task_range, job_name, job_env)
+            result = subprocess.run(
+                cmd,
+                env=job_env,
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                stderr_msg = result.stderr.strip() if result.stderr else "(no stderr)"
+                raise RuntimeError(
+                    f"Job submission failed (exit {result.returncode}) for array {task_range}:\n"
+                    f"  command: {' '.join(cmd)}\n"
+                    f"  stderr:  {stderr_msg}"
+                )
+            start_task = end_task + 1
 
 
 _REGISTRY: dict[str, type[HPCBackend]] = {}
 
 
-def register(name: str):
+def register(name: str) -> Callable[[type[HPCBackend]], type[HPCBackend]]:
     """Decorator to register a backend class."""
 
     def decorator(cls: type[HPCBackend]) -> type[HPCBackend]:
@@ -59,10 +98,20 @@ def register(name: str):
 class DryRunBackend(HPCBackend):
     """Print what would be submitted without actually running anything."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: object) -> None:
+        self.log_dir = ""  # unused, satisfies base class attribute
         pass  # Accept and ignore backend-specific kwargs (e.g. script)
 
-    def submit_array(self, job_name, total_chunks, tasks_per_array, job_env):
+    def _build_command(self, task_range: str, job_name: str, job_env: dict[str, str]) -> list[str]:
+        return []  # Not used — submit_array is overridden entirely
+
+    def submit_array(
+        self,
+        job_name: str,
+        total_chunks: int,
+        tasks_per_array: int,
+        job_env: dict[str, str],
+    ) -> None:
         result_dir = job_env.get("RESULT_DIR", "?")
         print(f"  [DRY RUN] Job: {job_name}")
         print(f"            Chunks: 1-{total_chunks} (batches of {tasks_per_array})")
@@ -76,7 +125,7 @@ class DryRunBackend(HPCBackend):
         print()
 
 
-def get_backend(name: str = "slurm", **kwargs) -> HPCBackend:
+def get_backend(name: str = "slurm", **kwargs: object) -> HPCBackend:
     """Instantiate a backend by name.  *kwargs* are forwarded to the constructor."""
     # Lazy imports to populate registry
     from core.backends import sge as _sge  # noqa: F401

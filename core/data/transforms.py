@@ -112,15 +112,15 @@ def robust_transform(
     df: pd.DataFrame,
     col_name: str,
     time_col: str = "time_of_day",
-    diurnal_window=config.DIURNAL_WINDOW,
-    min_periods=config.DIURNAL_MIN_PERIODS,
-    use_transform=True,
-    allow_missing=False,
-    use_diurnal=True,
-    winsor_window=None,
-    is_target=False,
-    diurnal_excluded_cols=None,
-):
+    diurnal_window: int = config.DIURNAL_WINDOW,
+    min_periods: int = config.DIURNAL_MIN_PERIODS,
+    use_transform: bool = True,
+    allow_missing: bool = False,
+    use_diurnal: bool = True,
+    winsor_window: int | None = None,
+    is_target: bool = False,
+    diurnal_excluded_cols: set[str] | None = None,
+) -> tuple[pd.Series, pd.Series]:
     """
     Applies diurnal adjustment, data-driven transform, then winsorization.
 

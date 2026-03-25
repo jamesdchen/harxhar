@@ -12,7 +12,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> object:
     _MODEL_ATTRS = {
         "PatchTSTForecaster",
         "LagAutoEncoder",

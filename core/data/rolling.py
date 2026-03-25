@@ -141,14 +141,14 @@ class RollingRobustScaler:
 # Helper: Vector Rolling Median (Replacing the Naive Rolling Mean)
 # ------------------------------------------------------------------------------
 class RollingMedian:
-    def __init__(self, window_size, n_features):
+    def __init__(self, window_size: int, n_features: int) -> None:
         self.window_size = window_size
         self.n_features = n_features
         self.buffer = np.zeros((window_size, n_features), dtype=np.float64)
         self.ptr = 0
         self.is_full = False
 
-    def initialize(self, data_block):
+    def initialize(self, data_block: np.ndarray) -> None:
         if data_block.ndim == 1:
             data_block = data_block.reshape(-1, 1)
 
@@ -158,13 +158,13 @@ class RollingMedian:
         for row in relevant_data:
             self.add(row)
 
-    def add(self, x_new):
+    def add(self, x_new: np.ndarray) -> None:
         self.buffer[self.ptr] = x_new
         self.ptr = (self.ptr + 1) % self.window_size
         if self.ptr == 0 and not self.is_full:
             self.is_full = True
 
-    def get_median(self):
+    def get_median(self) -> np.ndarray:
         count = self.window_size if self.is_full else self.ptr
         if count == 0:
             return np.zeros(self.n_features)

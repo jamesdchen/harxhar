@@ -63,7 +63,7 @@ def run_backtest_agnostic(
     return preds, coef_history
 
 
-def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
+def get_chunk_indices_strided(X_np: np.ndarray, train_window_size: int, chunk_id: int, total_chunks: int) -> np.ndarray:
     """Calculates indices for chunked evaluation."""
     num_samples = X_np.shape[0]
     valid_test_start = train_window_size
@@ -76,7 +76,9 @@ def get_chunk_indices_strided(X_np, train_window_size, chunk_id, total_chunks):
     return chunk_indices_list[chunk_id]
 
 
-def apply_duan_smearing(forecasts, y_true, baselines):
+def apply_duan_smearing(
+    forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """Apply Duan's smearing estimator to convert from adjusted to raw space."""
     check_finite(forecasts, "forecasts")
     check_finite(y_true, "y_true")
@@ -87,7 +89,13 @@ def apply_duan_smearing(forecasts, y_true, baselines):
     return pred_raw, true_raw
 
 
-def build_results_dataframe(forecasts, y_subset, dates_subset, baselines_subset, horizon=1):
+def build_results_dataframe(
+    forecasts: np.ndarray,
+    y_subset: np.ndarray,
+    dates_subset: np.ndarray,
+    baselines_subset: np.ndarray,
+    horizon: int = 1,
+) -> pd.DataFrame:
     """Build a results DataFrame with adjusted and raw-space columns."""
     pred_raw, true_raw = apply_duan_smearing(forecasts, y_subset, baselines_subset)
     return pd.DataFrame(
@@ -102,12 +110,21 @@ def build_results_dataframe(forecasts, y_subset, dates_subset, baselines_subset,
     )
 
 
-def extract_subset(data, indices):
+def extract_subset(data: pd.Series | pd.DataFrame | np.ndarray, indices: np.ndarray) -> np.ndarray:
     """Extract subset from pandas Series/DataFrame or numpy array."""
     return data.iloc[indices].values if hasattr(data, "iloc") else data[indices]
 
 
-def save_chunk_results(output_file, forecasts, indices, train_window, y_true, dates, baselines, horizon=1):
+def save_chunk_results(
+    output_file: str | Path,
+    forecasts: np.ndarray,
+    indices: np.ndarray,
+    train_window: int,
+    y_true: np.ndarray,
+    dates: pd.Series | np.ndarray,
+    baselines: np.ndarray,
+    horizon: int = 1,
+) -> np.ndarray:
     """Saves predictions and reconstructs raw space values for the primary model only."""
     y_subset = y_true[indices]
     base_subset = baselines[indices]

@@ -43,8 +43,12 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
             "fit_window": cfg.SARIMAX_FIT_WINDOW,
             "refit_frequency": cfg.SARIMAX_REFIT_FREQUENCY,
         },
+        "constructor_args": {"train_win_periods", "n_features", "horizon"},
     },
 }
+
+# Default constructor args for sklearn-style models (used when entry lacks explicit set)
+_DEFAULT_CONSTRUCTOR_ARGS = {"train_win_periods", "n_features", "feature_transform", "refit_frequency"}
 
 
 def create_model(
@@ -80,20 +84,16 @@ def create_model(
     entry = MODEL_REGISTRY[model_name]
     kwargs = {**entry["defaults"], **overrides}
 
-    # SARIMAX uses its own refit_frequency, doesn't take feature_transform,
-    # and supports native multi-step via horizon parameter
-    if model_name == "sarimax":
-        return entry["class"](
-            train_win_periods=train_win_periods,
-            n_features=n_features,
-            horizon=horizon,
-            **kwargs,
-        )
+    # Build the full set of possible constructor kwargs, then filter to
+    # only those the entry declares it accepts (avoids special-casing per model).
+    all_kwargs = {
+        "train_win_periods": train_win_periods,
+        "n_features": n_features,
+        "feature_transform": feature_transform,
+        "refit_frequency": refit_frequency,
+        "horizon": horizon,
+    }
+    accepted = entry.get("constructor_args", _DEFAULT_CONSTRUCTOR_ARGS)
+    filtered = {k: v for k, v in all_kwargs.items() if k in accepted}
 
-    return entry["class"](
-        train_win_periods=train_win_periods,
-        n_features=n_features,
-        feature_transform=feature_transform,
-        refit_frequency=refit_frequency,
-        **kwargs,
-    )
+    return entry["class"](**filtered, **kwargs)

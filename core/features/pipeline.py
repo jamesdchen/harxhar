@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pandas as pd
 
 from core.core import config
+from core.core.log import get_logger
 from core.features.transforms import HARFeatures, RawLagFeatures
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Lag resolution
@@ -33,10 +32,7 @@ def resolve_lags(feature_type: str, lag: int) -> list[int]:
     if feature_type == "pca":
         # Log-spaced lags covering same range as HAR but with enough
         # density for PCA to capture the autocorrelation structure.
-        import numpy as np
-
-        n_points = 20
-        raw = np.geomspace(1, lag, num=n_points)
+        raw = np.geomspace(1, lag, num=config.PCA_GEOMSPACE_POINTS)
         seq = sorted(set(int(round(v)) for v in raw))
         return [v for v in seq if 1 <= v <= lag]
     return list(range(1, lag + 1))

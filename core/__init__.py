@@ -7,7 +7,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> object:
     if name == "load_and_prep_data_strided":
         from core.data import load_and_prep_data_strided
 

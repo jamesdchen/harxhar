@@ -29,6 +29,8 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
     """
     if os.path.isdir(input_path):
         files = [f for f in os.listdir(input_path) if f.endswith(".parquet")]
+        if not files:
+            raise FileNotFoundError(f"No .parquet files found in {input_path}")
         dataframes = [pd.read_parquet(os.path.join(input_path, f), engine="pyarrow") for f in files]
         data = reduce(lambda left, right: pd.merge(left, right, on="endbartime", how="outer"), dataframes)
     else:
@@ -51,16 +53,22 @@ def load_and_clean_base_data(hparams: dict, input_path: str) -> tuple[pd.DataFra
     data = data.reset_index()
 
     # Drop target weekend hours and pre-start dates
-    mask_friday_night = (data["t"].dt.dayofweek == 4) & (data["t"].dt.time > pd.to_datetime("20:00").time())
+    mask_friday_night = (data["t"].dt.dayofweek == 4) & (data["t"].dt.time > pd.to_datetime(config.FRIDAY_CLOSE).time())
     mask_saturday = data["t"].dt.dayofweek == 5
-    mask_sunday_morning = (data["t"].dt.dayofweek == 6) & (data["t"].dt.time < pd.to_datetime("18:30").time())
+    mask_sunday_morning = (data["t"].dt.dayofweek == 6) & (
+        data["t"].dt.time < pd.to_datetime(config.SUNDAY_OPEN).time()
+    )
     mask_pre_start = data["t"] < config.START_DATE
     data = data[~(mask_friday_night | mask_saturday | mask_sunday_morning | mask_pre_start)]
 
     exog_col_names = []
     if hparams.get("exog_cols") and str(hparams["exog_cols"]).lower() != "none":
         sep = "|" if "|" in hparams["exog_cols"] else ","
-        exog_col_names = [c.strip() for c in hparams["exog_cols"].split(sep) if c.strip() in data.columns]
+        requested = [c.strip() for c in hparams["exog_cols"].split(sep)]
+        missing = [c for c in requested if c and c not in data.columns]
+        if missing:
+            logger.warning("Exog columns not found in data (skipped): %s", missing)
+        exog_col_names = [c for c in requested if c in data.columns]
         for col in exog_col_names:
             if any(vix in col.lower() for vix in {"vvix", "vix3m"}):
                 data[col] = pd.to_numeric(data[col], errors="coerce")

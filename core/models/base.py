@@ -36,8 +36,14 @@ class BaseModel(ABC):
 
 class RollingRegressionModel(BaseModel):
     def __init__(
-        self, model, train_win_periods, n_features, use_scaling=True, refit_frequency=1, feature_transform=None
-    ):
+        self,
+        model: object,
+        train_win_periods: int,
+        n_features: int,
+        use_scaling: bool = True,
+        refit_frequency: int = 1,
+        feature_transform: object | None = None,
+    ) -> None:
         cfg.check_positive(train_win_periods, "train_win_periods")
         cfg.check_positive(n_features, "n_features")
         self.model = model
@@ -69,7 +75,7 @@ class RollingRegressionModel(BaseModel):
             return self.feature_transform.transform(X)
         return X
 
-    def initialize(self, X_init, y_init):
+    def initialize(self, X_init: np.ndarray, y_init: np.ndarray) -> None:
         if y_init.ndim == 1:
             y_init = y_init.reshape(-1, 1)
 
@@ -87,7 +93,7 @@ class RollingRegressionModel(BaseModel):
         X_tr, y_tr = self.buffer.get_view()
         self._fit_model(X_tr, y_tr)
 
-    def predict(self, x_t):
+    def predict(self, x_t: np.ndarray) -> float:
         if self.use_scaling:
             x_input = (x_t - self.mean_x) / self.std_x
         else:
@@ -96,12 +102,12 @@ class RollingRegressionModel(BaseModel):
         x_input = self._transform_input(x_input.reshape(1, -1))
         return self.model.predict(x_input).item()
 
-    def get_coefs(self):
+    def get_coefs(self) -> np.ndarray | None:
         if hasattr(self.model, "coef_"):
             return self.model.coef_.ravel()
         return None
 
-    def update(self, x_t, y_t):
+    def update(self, x_t: np.ndarray, y_t: float) -> None:
         # Update Scaler
         if self.use_scaling:
             self.scaler.update(x_t)
