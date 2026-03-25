@@ -43,3 +43,7 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Logs
+logs/
+worker_log.txt
