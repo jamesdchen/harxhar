@@ -1,6 +1,7 @@
 """Shared utilities for GPU backtest pipelines."""
 
 import csv
+import gc
 import importlib
 import json
 import logging
@@ -602,6 +603,11 @@ def run_backtest(
         )
 
     results_nested = distribute_and_run(worker_fn, worker_args, gpu_count, num_windows, chunk_size)
+
+    # Free large tensors before aggregation to reduce peak memory
+    all_train_X = all_train_y = all_test_X = X_tensor = y_tensor = None  # noqa: F841
+    torch.cuda.empty_cache()
+    gc.collect()
 
     logger.info("Workers finished. Aggregating results...")
     preds = aggregate_predictions(results_nested, num_windows)
