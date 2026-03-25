@@ -1,119 +1,186 @@
-Help me submit SLURM jobs using the context below.
+Help me submit SLURM experiments using the workflow below.
 
-## Cluster Context
+## Step 1: Clarify What to Run
 
-- Account is restricted to the **Discovery** cluster (USC CARC, SLURM scheduler)
-- Username: `jc_905`
-- CPU partition: `main`
-- GPU partition: `gpu`
-- SLURM logs (stdout/stderr): grep in `/scratch1/jc_905/`
+Ask me (if not already clear) which **mode** to use:
 
-## Key Paths
+| Mode | Purpose | Key flags |
+|------|---------|-----------|
+| `model_comparison` | Compare models on HAR features | `--models ridge xgboost lightgbm random_forest` |
+| `feature_transforms` | Compare feature types (HAR/PCA/AE) on one model | `--model ridge --features har pca ae --subgroup all_features` |
+| `individual_features` | Ablate features one-by-one within a subgroup | `--model ridge --subgroup moments` |
+| `subgroup_analysis` | Cartesian product: models × features × subgroups | `--models all --features all --subgroups all` |
+| `naive` | Baseline only | (none) |
+| `from-config` | Load from YAML/JSON config | `<config_file>` |
 
-| What | Path |
-|---|---|
-| Input data (6 parquet files) | `all30min/` |
-| ML SLURM template | `projects/ml/infra/slurm/submit_carc.slurm` |
-| GPU SLURM templates | `projects/dl/infra/slurm/{submit_gpu,patchts_backtest,ae_ridge_backtest}.slurm` |
-| ML submit script | `projects/ml/scripts/submit.py` |
-| DL submit script (module) | `projects.dl.cli.submit` |
-| ML executor (module) | `projects.ml.cli.executor` |
-| DL executor (module) | `projects.dl.cli.gpu_executor` |
+### Available Models
+`ridge`, `xgboost`, `lightgbm`, `random_forest`
 
-## SLURM Job Defaults
+### Available Feature Types
+`har` (rolling means), `pca` (compression), `ae` (autoencoder)
 
-### ML (CPU)
-- `--partition=main`, `--cpus-per-task=1`, `--mem=64G`, `--time=1:00:00`
-- Default: 100 array chunks
-- Module setup: `module purge && module load python`
+### Available Subgroups
+`baseline` (empty), `moments`, `liquidity`, `market_ew`, `market_vw`, `sentiment`, `implied_vol`, `vol_demand`, `all_features` (51 vars)
 
-### DL (GPU)
-- `--partition=gpu`, `--cpus-per-task=8`, `--mem=128G`, `--gres=gpu:2`, `--time=6:00:00`
-- GPU constraint: `a100|a40|v100|l40s`
-- Conda setup: `conda activate project-cucuringu`
-- Env: `PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"`
+## Step 2: Pre-Flight Validation
 
-### Chunk ID Conversion
-SLURM array IDs are **1-based**. The executor expects **0-based**. The SLURM templates handle this conversion (`chunk_id = SLURM_ARRAY_TASK_ID - 1`).
+Before submitting, verify:
 
-## Submitting ML Jobs
+1. **No duplicate submission** — check for existing results:
+   ```bash
+   ls -d results/<SET>/exp_*/.submitted 2>/dev/null
+   ```
+   If `.submitted` markers exist, the script will skip those experiments automatically.
+
+2. **Naive baseline exists** (unless `--no-naive`):
+   ```bash
+   ls -d results/naive/exp_0_naive_baseline/ 2>/dev/null
+   ```
+   If missing, the submission will auto-submit a naive job (or run `python scripts/submit.py naive` first).
+
+3. **Cluster availability:**
+   ```bash
+   squeue -u jc_905  # check current job load
+   ```
+
+## Step 3: Dry Run (Recommended)
+
+Preview what will be submitted without actually launching jobs:
+
+```bash
+python scripts/submit.py <mode> [flags] --backend dry-run
+```
+
+This prints the experiments, env vars, and array ranges without calling `sbatch`. Review the output before proceeding.
+
+## Step 4: Submit
+
 ```bash
 python scripts/submit.py <mode> [flags]
 ```
 
-**Modes:**
-- `model_comparison` — compare models on HAR features (`--models ridge xgboost ...`)
-- `feature_transforms` — compare feature types on one model (`--features har pca ae`)
-- `individual_features` — test each feature in a subgroup (`--subgroup moments`)
-- `subgroup_analysis` — cartesian product (`--models all --features all --subgroups all`)
-- `naive` — baseline only
-- `from-config` — load from YAML/JSON config file
+### Common Flag Reference
 
-**Common flags:** `--total-chunks 100`, `--train-window 500`, `--horizon H`, `--n-components 5`
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--total-chunks` | 100 | Number of array tasks per experiment |
+| `--train-window` | 500 | Rolling window size in days |
+| `--horizon` | 1 | Multi-horizon: runs h=1..H |
+| `--n-components` | 5 | PCA/AE latent dimensions |
+| `--ae-alpha` | 0.5 | AE loss: alpha×recon + (1-alpha)×pred |
+| `--ae-epochs` | 50 | AE training epochs per refit |
+| `--ae-hidden` | 0 (auto) | AE hidden width; 0 = n_features//2 |
+| `--ae-weights-path` | None | Pre-trained AE weights .pt file |
+| `--no-naive` | false | Skip naive baseline submission |
+| `--backend` | slurm | `slurm`, `sge`, or `dry-run` |
+| `--result-dir` | mode-dependent | Override output directory |
 
-## Submitting DL Jobs
+### Example Commands
+
 ```bash
-python -m projects.dl.cli.submit \
-    --experiment {patchts|ae_ridge} \
-    --result-dir results_patchts \
-    --total-chunks 10
-```
-Optional: `--gpu-count`, `--batch-size`, `--epochs`, `--learning-rate`
+# Compare 4 models on HAR features (100 chunks each = 500 total array tasks)
+python scripts/submit.py model_comparison --models ridge xgboost lightgbm random_forest
 
-## Output Structure
+# PCA vs AE feature transforms on ridge, moments subgroup, 5 components
+python scripts/submit.py feature_transforms --model ridge --features pca ae --subgroup moments --n-components 5
 
-```
-results/<experiment_set>/
-  exp_{ID}_{MODEL}_{FEATURES}_{NAME}/
-    config.txt                          # experiment metadata
-    metadata.json                       # git hash, timestamp, full config
-    .submitted                          # marker: prevents re-submission
-    results_chunk_1.csv ... _100.csv    # per-chunk backtest results
-    results_chunk_1_h{H}.csv           # (multi-horizon only)
-    results_chunk_1_coefs.npz          # (if --save-coefs)
-  .needs_aggregation                    # marker: triggers aggregation
+# Full grid: all models × all features × all subgroups
+python scripts/submit.py subgroup_analysis --models all --features all --subgroups all
+
+# Multi-horizon (h=1..4) model comparison
+python scripts/submit.py model_comparison --models ridge xgboost --horizon 4
+
+# From YAML config
+python scripts/submit.py from-config experiments/example_subgroup_analysis.yaml
 ```
 
-## Debugging
+### YAML Config Format
 
-### Job Status
+Example at `experiments/example_subgroup_analysis.yaml`:
+```yaml
+name: my_experiment
+mode: subgroup_analysis
+models: [ridge, xgboost]
+features: [har, pca]
+subgroups: [moments, liquidity]
+total_chunks: 100
+horizon: 1
+```
+
+## Step 5: Monitor Jobs
+
+After submission, track progress:
+
 ```bash
-squeue -u jc_905                                    # running/pending jobs
-sacct -j <JOBID> --format=JobID,State,ExitCode,MaxRSS,Elapsed  # completed job details
+# Watch job queue
+squeue -u jc_905
+
+# Check completed job details
+sacct -j <JOBID> --format=JobID,State,ExitCode,MaxRSS,Elapsed
+
+# Quick health check: count completed chunks
+for d in results/<SET>/exp_*/; do
+    n=$(ls "$d"/results_chunk_*.csv 2>/dev/null | wc -l)
+    echo "$d: $n/100 chunks"
+done
 ```
 
-### Finding Logs
-SLURM stdout/stderr land in `/scratch1/jc_905/`. Grep there for job output:
-```bash
-find /scratch1/jc_905/ -name "slurm-<JOBID>*" -type f
-grep -r "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/slurm-<JOBID>*
-```
+## Step 6: Handle Failures
 
-### Detecting Failed Chunks
-Count result CSVs vs expected total-chunks to find gaps:
-```bash
-ls results/<experiment_set>/exp_*/results_chunk_*.csv | wc -l
-```
-Missing chunk IDs indicate failed array tasks.
+If some array tasks fail:
+
+1. **Identify failures:**
+   ```bash
+   sacct -j <JOBID> --format=JobID%20,State,ExitCode,MaxRSS | grep -v COMPLETED
+   ```
+
+2. **Check logs:**
+   ```bash
+   grep -l "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/slurm-<JOBID>_*.out
+   ```
+
+3. **Resubmit failed task IDs** (1-based):
+   ```bash
+   sbatch --array=5,23,78 projects/ml/infra/slurm/submit_carc.slurm
+   ```
+   Ensure the same `--export` env vars are passed as the original submission.
 
 ### Common Failure Modes
 
-**OOM kills** — Job exceeded memory limit.
-- Symptom: `sacct` shows State=OUT_OF_MEMORY or ExitCode=0:125
-- Fix: Increase `--mem` in the SLURM template (e.g., 64G → 96G for ML, 128G → 192G for GPU)
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| State=OUT_OF_MEMORY, ExitCode 0:125 | Exceeded `--mem` | Increase in SLURM template (64G → 96G) |
+| State=TIMEOUT | Exceeded `--time` | Increase walltime or reduce `--total-chunks` |
+| ModuleNotFoundError | Python/conda not loaded | Check `module load python` in template |
+| `.submitted` marker blocks resubmit | Previous partial run | Delete marker: `rm results/<SET>/exp_*/.submitted` |
 
-**Timeouts** — Job exceeded walltime.
-- Symptom: `sacct` shows State=TIMEOUT
-- Fix: Increase `--time` in the SLURM template, or reduce `--total-chunks` (fewer chunks = more work per task = longer runtime)
+## Cluster Context
 
-**Module/env issues** — Python or conda environment not found.
-- Symptom: `ModuleNotFoundError` or `conda: command not found` in logs
-- Fix: Verify module loads in the SLURM template match Discovery's available modules (`module avail python`). For GPU jobs, ensure conda source path is correct: `/apps/conda/miniforge3/25.3.0/etc/profile.d/conda.sh`
+- **Cluster:** Discovery (USC CARC, SLURM)
+- **Account:** `pollok_1603`
+- **Username:** `jc_905`
+- **CPU partition:** `main` (1 CPU, 64G, 1hr default)
+- **GPU partition:** `gpu` (8 CPUs, 128G, 2 GPUs, 6hr default)
+- **SLURM logs:** `/scratch1/jc_905/`
+- **Chunk ID conversion:** SLURM 1-based → executor 0-based (handled by template)
 
-### Resubmitting Failed Tasks
-Resubmit only the failed array indices:
+## Key Paths
+
+| What | Path |
+|------|------|
+| Submit orchestrator | `projects/ml/scripts/submit.py` |
+| Submit utilities | `projects/ml/cli/submit.py` |
+| Executor | `projects/ml/cli/executor.py` |
+| SLURM template | `projects/ml/infra/slurm/submit_carc.slurm` |
+| SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
+| Feature definitions | `projects/ml/features/feature_groups.py` |
+| Example configs | `projects/ml/experiments/` |
+| HPC backends | `core/backends/` |
+
+## After Submission
+
+Once all jobs complete, aggregate results:
 ```bash
-# If tasks 5, 23, 78 failed (1-based SLURM IDs):
-sbatch --array=5,23,78 projects/ml/infra/slurm/submit_carc.slurm
+python scripts/aggregate.py
 ```
-Ensure the same `--export` variables are passed as the original submission.
+Or use the `/aggregate` command for the full validation + aggregation workflow.
