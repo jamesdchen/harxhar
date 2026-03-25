@@ -3,8 +3,10 @@ Help me submit SLURM jobs using the context below.
 ## Cluster Context
 
 - Account is restricted to the **Discovery** cluster (USC CARC, SLURM scheduler)
+- Username: `jc_905`
 - CPU partition: `main`
 - GPU partition: `gpu`
+- SLURM logs (stdout/stderr): grep in `/scratch1/jc_905/`
 
 ## Key Paths
 
@@ -72,12 +74,46 @@ results/<experiment_set>/
   .needs_aggregation                    # marker: triggers aggregation
 ```
 
-## Debugging Submissions
+## Debugging
+
+### Job Status
 ```bash
-squeue -u $USER                          # check running/pending jobs
-sacct -j <JOBID> --format=State,ExitCode # check completed job status
+squeue -u jc_905                                    # running/pending jobs
+sacct -j <JOBID> --format=JobID,State,ExitCode,MaxRSS,Elapsed  # completed job details
 ```
 
-- Check `config.txt` in experiment dir for what was submitted
-- Count result CSVs vs total-chunks to find failed array tasks
-- SLURM stdout/stderr go to default location or `logs/` dir depending on template
+### Finding Logs
+SLURM stdout/stderr land in `/scratch1/jc_905/`. Grep there for job output:
+```bash
+find /scratch1/jc_905/ -name "slurm-<JOBID>*" -type f
+grep -r "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/slurm-<JOBID>*
+```
+
+### Detecting Failed Chunks
+Count result CSVs vs expected total-chunks to find gaps:
+```bash
+ls results/<experiment_set>/exp_*/results_chunk_*.csv | wc -l
+```
+Missing chunk IDs indicate failed array tasks.
+
+### Common Failure Modes
+
+**OOM kills** — Job exceeded memory limit.
+- Symptom: `sacct` shows State=OUT_OF_MEMORY or ExitCode=0:125
+- Fix: Increase `--mem` in the SLURM template (e.g., 64G → 96G for ML, 128G → 192G for GPU)
+
+**Timeouts** — Job exceeded walltime.
+- Symptom: `sacct` shows State=TIMEOUT
+- Fix: Increase `--time` in the SLURM template, or reduce `--total-chunks` (fewer chunks = more work per task = longer runtime)
+
+**Module/env issues** — Python or conda environment not found.
+- Symptom: `ModuleNotFoundError` or `conda: command not found` in logs
+- Fix: Verify module loads in the SLURM template match Discovery's available modules (`module avail python`). For GPU jobs, ensure conda source path is correct: `/apps/conda/miniforge3/25.3.0/etc/profile.d/conda.sh`
+
+### Resubmitting Failed Tasks
+Resubmit only the failed array indices:
+```bash
+# If tasks 5, 23, 78 failed (1-based SLURM IDs):
+sbatch --array=5,23,78 projects/ml/infra/slurm/submit_carc.slurm
+```
+Ensure the same `--export` variables are passed as the original submission.
