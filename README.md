@@ -9,12 +9,11 @@ The system takes raw parquet data, engineers lag-based features at multiple time
 ```
 core/                              # Shared foundation (no ML/DL deps)
 ├── core/                          # Config (lags, windows, segments), logging
-├── data/                          # Loading, transforms, rolling buffers, synthetic data
-├── features/                      # HAR/Raw lag features, PCA, feature groups
+├── data/                          # Loading, transforms, rolling buffers, pipeline
+├── features/                      # HAR/Raw lag features, PCA, factory
 ├── models/                        # BaseModel ABC, RollingRegressionModel, NaiveBaseline
 ├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
 ├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
-├── visualization/                 # Forecast, scatter, residual plots
 ├── backends/                      # SLURM/SGE job submission
 └── tests/                         # Core unit tests
 
@@ -22,7 +21,8 @@ projects/
 ├── ml/                            # Traditional ML
 │   ├── models/                    # Ridge, XGBoost, LightGBM, RF, SARIMAX, registry
 │   ├── cli/                       # Executor, job submission, experiment config
-│   ├── features/                  # Feature group definitions
+│   ├── features/                  # Feature group definitions and subgroup registry
+│   ├── evaluation/                # ML-specific aggregation utilities
 │   ├── scripts/                   # submit.py, aggregate.py, compare.py
 │   ├── experiments/               # YAML experiment configs
 │   ├── infra/                     # SLURM/SGE job templates
@@ -31,11 +31,19 @@ projects/
 └── dl/                            # Deep learning
     ├── models/                    # PatchTST, LagAutoEncoder, QLIKE loss
     ├── backtest/                  # Multi-GPU engine, vmap kernels, scaling experiments
-    ├── features/                  # DL-specific transforms
-    ├── cli/                       # GPU executor
+    ├── features/                  # AE transform (DL-specific)
+    ├── data/                      # Synthetic data (MovingBlockBootstrap)
+    ├── visualization/             # Forecast, scatter, residual, loss plots
+    ├── cli/                       # GPU executor, lifecycle manager, submission
+    ├── scripts/                   # DL runner template, aggregate, scaling experiments
     ├── notebooks/                 # Colab training and visualization notebooks
-    ├── scripts/                   # DL runner template, scaling experiments
     └── infra/                     # GPU SLURM templates
+
+writeup/                           # LaTeX paper
+├── main.tex                       # Main document
+├── sections/                      # abstract, intro, methodology, data, results, etc.
+├── references.bib                 # Bibliography
+└── figures/                       # Paper figures
 ```
 
 **ml and dl are independent of each other.** Both depend on core only.
@@ -105,7 +113,7 @@ Online data structures for streaming walk-forward evaluation:
 - **`RollingBuffer`** — Stores (X, y) pairs in a ring buffer. `get_ordered_view()` returns chronologically-ordered data, critical for SARIMAX.
 - **`RollingMedian`** — Simple rolling median over a ring buffer.
 
-### Synthetic Data (`core/data/synth_data.py`)
+### Synthetic Data (`projects/dl/data/synth_data.py`)
 
 `MovingBlockBootstrap` generates synthetic time series by randomly sampling contiguous blocks (default 48 = one trading day) from source data. Preserves local temporal dependencies and diurnal patterns while breaking long-range dependence. Used for data augmentation in scaling-law experiments.
 
@@ -124,7 +132,7 @@ A class hierarchy rooted in `BaseFeatureTransform` with dual interfaces — skle
 
 Segmented mode (`generate_lag_features_segmented()`) supports intraday time-slicing with a `lag_scope` parameter: `'global'` computes lags on the full dataset then slices (prevents lookahead bias), `'intra'` computes within each segment independently.
 
-### Feature Groups (`core/features/feature_groups.py`)
+### Feature Groups (`projects/ml/features/feature_groups.py`)
 
 Central registry of ~50 available exogenous features organized into subgroups:
 
@@ -225,7 +233,7 @@ Shared infrastructure: chunk normalization, batched parameter allocation with fa
 
 `load_all_chunks()` stitches per-chunk CSVs. `process_single_experiment()` loads chunks → filters by time-of-day (optional) → computes per-horizon metrics → adds cross-horizon aggregates. Supports three evaluation modes: global, pre-segmented results, and time-of-day filtering.
 
-### Visualization (`core/visualization/plots.py`)
+### Visualization (`projects/dl/visualization/plots.py`)
 
 - `plot_timeseries_forecast()` — True vs predicted RV time series
 - `plot_diagnostic_scatter()` — Log-log scatter with 45° reference line
