@@ -84,13 +84,13 @@ list — do not look elsewhere for parameter semantics.
 |-------------------|---------|-----------------|-----------------------------|---------------|----------------------------------------------------------|
 | `EXPERIMENT`      | str     | —               | `"patchts"`, `"ae_ridge"`   | All           | Required. Selects model type.                            |
 | `HORIZON`         | int     | —               | 1–48                        | All           | Required. Forecast horizon in 30-min slots.              |
-| `TRAIN_WINDOW`    | int     | `None`          | Any positive int or `None`  | All           | `None` uses config default (50000 patchts, 24000 ae_ridge). Reduce to save memory. |
-| `BATCH_SIZE`      | int     | Model default   | Any positive int            | All           | Default: 50 (patchts), 4 (ae_ridge). Halve on OOM.      |
+| `TRAIN_WINDOW`    | int     | `None`          | Any positive int or `None`  | All           | `None` uses config default (24000 for both). Reduce to save memory. |
+| `BATCH_SIZE`      | int     | Model default   | Any positive int            | All           | Default: 32 (patchts), 4 (ae_ridge). Halve on OOM.      |
 | `GPU_COUNT`       | int     | 1               | 1–N (match available GPUs)  | All           | 1 for Colab free tier.                                   |
 | `TIMEOUT_HOURS`   | float   | 2.0             | > 0                         | All           | Increase for large windows / slow GPUs.                  |
 | `CHECKPOINT_DIR`  | str     | `None`          | Drive path or `None`        | All           | Set for runs > 1 hr. Enables crash recovery resume.      |
-| `EPOCHS`          | int     | Model default   | Any positive int            | All           | Default: 150 (patchts), 50 (ae_ridge).                   |
-| `LR`              | float   | Model default   | > 0                         | All           | Default: 1e-4 (patchts), 1e-3 (ae_ridge).               |
+| `EPOCHS`          | int     | Model default   | Any positive int            | All           | Default: 50 (patchts), 50 (ae_ridge).                    |
+| `LR`              | float   | Model default   | > 0                         | All           | Default: 5e-4 (patchts), 1e-3 (ae_ridge).               |
 | `N_COMPONENTS`    | int     | 5               | ≥ 1                         | ae_ridge only | Autoencoder latent dimension.                            |
 
 ## Status JSON & State Transitions
@@ -201,7 +201,7 @@ When you see `RuntimeError: CUDA out of memory`:
 3. If both fail, note the GPU type and memory ceiling and report to the user.
 
 **Model-specific OOM context:**
-- **PatchTSMixer** is memory-hungry. T4 (16 GB) may struggle with the default
+- **PatchTST** is memory-hungry. T4 (16 GB) may struggle with the default
   window. Start with `BATCH_SIZE = 25` on T4 if preempting OOM.
 - **AE+Ridge** is more memory-efficient. OOM is rare at default settings.
 
@@ -217,7 +217,7 @@ When status is `failed`:
    log at `/content/harxhar_train.log` (e.g., `!tail -200 /content/harxhar_train.log`
    or `!cat /content/harxhar_train.log` for the complete output).
 3. Cross-reference against local source files:
-   - PatchTSMixer/AE+Ridge issues → `projects/dl/models/deep_learning.py`, `projects/dl/backtest/gpu_engine.py`
+   - PatchTST/AE+Ridge issues → `projects/dl/models/deep_learning.py`, `projects/dl/backtest/gpu_engine.py`
    - Data issues → `core/data/pipeline.py`, `core/data/transforms.py`
    - GPU/CUDA errors → `projects/dl/backtest/gpu_kernels.py`
 
@@ -275,22 +275,22 @@ If `CHECKPOINT_DIR` was not set, the run must restart from scratch.
 
 ## Model-Specific Notes
 
-### PatchTSMixer
+### PatchTST
 - `EXPERIMENT = "patchts"`
-- HuggingFace transformer: context=241, patch=47, stride=31
-- Defaults: epochs=150, lr=1e-4, batch_size=50, train_window=50000
+- HuggingFace PatchTSTForecaster: context=240, patch=48, stride=48
+- Defaults: epochs=50, lr=5e-4, batch_size=32, train_window=24000
 - See §OOM Handling for memory guidance on T4.
 
 ### AE+Ridge
 - `EXPERIMENT = "ae_ridge"`
 - Hybrid: autoencoder with mixed loss (0.5× reconstruction + 0.5× prediction) + Ridge
 - Defaults: epochs=50, lr=1e-3, batch_size=4, train_window=24000, n_components=5
-- More memory-efficient than PatchTSMixer
+- More memory-efficient than PatchTST
 - Uses `np.random.seed(42)` for reproducibility
 
 ## Scheduling Multiple Experiments
 
-When running a sweep (e.g., "PatchTSMixer across horizons 1, 6, 12, 48"):
+When running a sweep (e.g., "PatchTST across horizons 1, 6, 12, 48"):
 
 - Run sequentially in the same notebook, editing Cell 2 between runs.
 - After each run, **always collect results (Cell 5) before starting the next.**

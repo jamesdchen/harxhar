@@ -89,8 +89,11 @@ def _run_patchts(args: argparse.Namespace) -> None:
     )
     logger.info("Data: %d samples, %d features", X_np.shape[0], X_np.shape[1])
 
+    # PatchTST is univariate: its windowing function (_patchts_make_windows)
+    # constructs sliding windows from a 1D time series via as_strided.
+    # Pass the raw target series (y_np) as X so the stride math is correct.
     results = run_multigpu_backtest(
-        X_np, y_np, dates, baselines, config, model_module="projects.dl.models.deep_learning"
+        y_np, y_np, dates, baselines, config, model_module="projects.dl.models.deep_learning"
     )
     shape = results.shape if hasattr(results, "shape") else len(results)
     logger.info("PatchTST backtest complete. Results shape: %s", shape)
