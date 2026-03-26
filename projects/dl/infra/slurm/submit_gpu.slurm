@@ -10,8 +10,8 @@
 # ==============================================================
 
 #SBATCH --job-name=harx_gpu
-#SBATCH --output=logs/gpu_%A_%a.out
-#SBATCH --error=logs/gpu_%A_%a.err
+#SBATCH --output=/scratch1/jc_905/logs/slurm-%A_%a.out
+#SBATCH --error=/scratch1/jc_905/logs/slurm-%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -74,7 +74,7 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # CUDA memory optimization
 export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
 
-mkdir -p logs
+mkdir -p /scratch1/jc_905/logs
 
 # --- BUILD COMMAND ---
 CMD="python3 -m projects.dl.cli.gpu_executor --experiment $EXPERIMENT --input-path $INPUT_PATH --gpu-count $GPU_COUNT"

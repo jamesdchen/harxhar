@@ -5,8 +5,8 @@ Monitors array jobs, diagnoses failures, resubmits with appropriate fixes,
 and runs aggregation once all chunks complete.
 
 Usage:
-    python -m projects.dl.cli.lifecycle --experiment patchts --result-dir /scratch1/jc_905/patchts_results
-    python -m projects.dl.cli.lifecycle --experiment ae_ridge --result-dir /scratch1/jc_905/ae_results \
+    python -m projects.dl.cli.lifecycle --experiment patchts
+    python -m projects.dl.cli.lifecycle --experiment ae_ridge --result-dir results/dl_ae_ridge \
         --no-submit --job-ids 12345678,12345679
 """
 
@@ -602,8 +602,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--result-dir",
         type=str,
-        required=True,
-        help="Output directory for chunk results.",
+        default=None,
+        help="Output directory for chunk results. Defaults to results/dl_<experiment>.",
     )
     parser.add_argument("--total-chunks", type=int, default=10, help="Number of array tasks.")
     parser.add_argument(
@@ -672,9 +672,11 @@ def main() -> None:
     if args.job_ids:
         job_ids = [jid.strip() for jid in args.job_ids.split(",") if jid.strip()]
 
+    result_dir = args.result_dir or str(PROJECT_ROOT / "results" / f"dl_{args.experiment}")
+
     manager = LifecycleManager(
         experiment=args.experiment,
-        result_dir=args.result_dir,
+        result_dir=result_dir,
         total_chunks=args.total_chunks,
         poll_interval=args.poll_interval,
         max_retries=args.max_retries,

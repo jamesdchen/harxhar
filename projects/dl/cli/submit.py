@@ -5,12 +5,13 @@ Submits GPU backtest array jobs using the same backend infrastructure as ML.
 
 Usage:
     python -m projects.dl.cli.submit --experiment patchts --total-chunks 10
-    python -m projects.dl.cli.submit --experiment ae_ridge --total-chunks 20 --result-dir /scratch1/jc_905/ae_results
+    python -m projects.dl.cli.submit --experiment ae_ridge --auto-chunks
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import os
 from pathlib import Path
 
@@ -58,6 +59,54 @@ def build_job_env(
     return env
 
 
+def get_sample_count(input_path: str) -> int:
+    """Get post-filter sample count by running the data cleaning pipeline."""
+    from core.data.loading import load_and_clean_base_data
+
+    hparams = {
+        "use_transform_exog": False,
+        "use_diurnal": True,
+        "allow_missing": False,
+        "use_winsor": False,
+    }
+    df, _ = load_and_clean_base_data(hparams, input_path)
+    return len(df)
+
+
+def estimate_total_chunks(
+    experiment: str,
+    input_path: str = "all30min",
+    walltime: int | None = None,
+    train_window: int | None = None,
+) -> int:
+    """Auto-calculate optimal chunk count from data size and experiment type."""
+    from projects.dl.config import AE_RIDGE_GPU_CONFIG, CHUNK_SIZING, DEFAULT_WALLTIME_SECONDS, DL_CONFIG
+
+    sizing = CHUNK_SIZING[experiment]
+    walltime = walltime or DEFAULT_WALLTIME_SECONDS
+
+    cfg = DL_CONFIG if experiment == "patchts" else AE_RIDGE_GPU_CONFIG
+    tw = train_window or cfg["train_window"]
+    pred_len = cfg.get("model", {}).get("prediction_length", 1)
+
+    total_samples = get_sample_count(input_path)
+    num_windows = total_samples - tw - (pred_len - 1)
+
+    usable_time = walltime - sizing["startup_overhead"]
+    windows_per_task = max(1, int(usable_time / sizing["per_window_seconds"]))
+    total_chunks = max(1, math.ceil(num_windows / windows_per_task))
+
+    logger.info(
+        "Auto-chunks: %d samples, %d windows, ~%ds/window, %d windows/task → %d chunks",
+        total_samples,
+        num_windows,
+        sizing["per_window_seconds"],
+        windows_per_task,
+        total_chunks,
+    )
+    return total_chunks
+
+
 def submit_dl_experiment(
     experiment: str,
     result_dir: str,
@@ -99,8 +148,20 @@ def main() -> None:
         required=True,
         help="Which DL experiment to run.",
     )
-    parser.add_argument("--result-dir", type=str, required=True, help="Output directory for chunk results.")
-    parser.add_argument("--total-chunks", type=int, default=10, help="Number of array tasks / chunks.")
+    parser.add_argument(
+        "--result-dir",
+        type=str,
+        default=None,
+        help="Output directory for chunk results. Defaults to results/dl_<experiment>.",
+    )
+    chunk_group = parser.add_mutually_exclusive_group()
+    chunk_group.add_argument("--total-chunks", type=int, default=None, help="Number of array tasks / chunks.")
+    chunk_group.add_argument(
+        "--auto-chunks", action="store_true", help="Auto-calculate chunk count from data size and experiment."
+    )
+    parser.add_argument(
+        "--walltime", type=int, default=None, help="Walltime in seconds (default: 6h). Used with --auto-chunks."
+    )
     parser.add_argument("--tasks-per-array", type=int, default=DEFAULT_TASKS_PER_ARRAY, help="Max tasks per sbatch.")
     parser.add_argument("--backend", type=str, default="slurm", help="HPC backend (slurm, sge, dry-run).")
     parser.add_argument("--input-path", type=str, default="all30min", help="Data directory.")
@@ -119,10 +180,25 @@ def main() -> None:
         if val is not None:
             env_kwargs[key] = val
 
+    # Resolve total chunks
+    if args.auto_chunks:
+        total_chunks = estimate_total_chunks(
+            experiment=args.experiment,
+            input_path=args.input_path,
+            walltime=args.walltime,
+            train_window=env_kwargs.get("train_window"),
+        )
+    elif args.total_chunks is not None:
+        total_chunks = args.total_chunks
+    else:
+        total_chunks = 10  # legacy default
+
+    result_dir = args.result_dir or str(PROJECT_ROOT / "results" / f"dl_{args.experiment}")
+
     submit_dl_experiment(
         experiment=args.experiment,
-        result_dir=args.result_dir,
-        total_chunks=args.total_chunks,
+        result_dir=result_dir,
+        total_chunks=total_chunks,
         tasks_per_array=args.tasks_per_array,
         backend_name=args.backend,
         **env_kwargs,

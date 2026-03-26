@@ -56,3 +56,16 @@ AE_RIDGE_GPU_CONFIG = {
         "batch_size": 4,  # windows per batch (reduced from 10 to avoid OOM)
     },
 }
+
+# --- Auto Chunk Sizing ---
+CHUNK_SIZING = {
+    "patchts": {
+        "per_window_seconds": 45,  # ~45s/window on 2×V100 (50 epochs, batch=32)
+        "startup_overhead": 600,  # ~10 min for conda + data load + GPU init
+    },
+    "ae_ridge": {
+        "per_window_seconds": 90,  # ~90s/window on 2×V100 (50 epochs, batch=4)
+        "startup_overhead": 600,
+    },
+}
+DEFAULT_WALLTIME_SECONDS = 6 * 3600  # 6 hours, matches SLURM --time
