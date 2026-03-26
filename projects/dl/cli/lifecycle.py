@@ -401,7 +401,7 @@ class LifecycleManager:
 
     def _read_err_log(self, tid: int) -> str | None:
         """Read the .err log for a given task ID from all tracked jobs."""
-        log_dir = self._backend.log_dir if hasattr(self._backend, "log_dir") else "/scratch1/jc_905/logs"
+        log_dir = self._backend.log_dir
 
         for job_id in reversed(self.tracked_job_ids):
             err_path = os.path.join(log_dir, f"slurm-{job_id}_{tid}.err")
@@ -424,48 +424,33 @@ class LifecycleManager:
             ft = self.chunks[tid].failure_type or FailureType.UNKNOWN
             groups.setdefault(ft, []).append(tid)
 
-        backend = self._backend
-        cluster = getattr(backend, "cluster", "discovery")
-        account = getattr(backend, "account", "pollok_1603")
-        log_dir = getattr(backend, "log_dir", "/scratch1/jc_905/logs")
-        script = getattr(backend, "script", DL_SLURM_SCRIPT)
         job_name = f"dl_{self.experiment}"
 
         for failure_type, chunk_ids in groups.items():
             array_spec = ",".join(str(t) for t in sorted(chunk_ids))
 
-            # Build sbatch command with overrides
-            cmd = [
-                "sbatch",
-                f"--clusters={cluster}",
-                f"--array={array_spec}",
-                f"--job-name={job_name}",
-                f"--account={account}",
-                f"--output={log_dir}/slurm-%A_%a.out",
-                f"--error={log_dir}/slurm-%A_%a.err",
-            ]
+            # Build base command via the backend
+            cmd = self._backend._build_command(array_spec, job_name, {})
 
             # Build env with potential modifications
             env_kwargs = dict(self.env_kwargs)
 
+            # Insert resource overrides before the script (last element)
             if failure_type == FailureType.OOM:
                 retry_num = max(self.chunks[t].retries for t in chunk_ids)
                 if retry_num >= 1:
                     # 2nd+ retry: 256G, quarter batch size
-                    cmd.append("--mem=256G")
+                    cmd.insert(-1, "--mem=256G")
                     if self._original_batch_size is not None:
                         env_kwargs["batch_size"] = self._original_batch_size // 4
                 else:
                     # 1st retry: 192G, halve batch size
-                    cmd.append("--mem=192G")
+                    cmd.insert(-1, "--mem=192G")
                     if self._original_batch_size is not None:
                         env_kwargs["batch_size"] = self._original_batch_size // 2
 
             elif failure_type == FailureType.TIMEOUT:
-                cmd.append("--time=10:00:00")
-
-            # Append the script
-            cmd.append(script)
+                cmd.insert(-1, "--time=10:00:00")
 
             # Build job env
             job_env = build_job_env(
