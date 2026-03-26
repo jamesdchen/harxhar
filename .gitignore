@@ -8,7 +8,12 @@ results_chunk_*.csv
 *.out
 
 # Data and results (large / generated)
-results/
+results/**
+!results/
+!results/*/
+!results/**/
+!results/**/global_results_summary.csv
+!results/dl_global_results_summary.csv
 
 # Build artifacts
 *.egg-info/
