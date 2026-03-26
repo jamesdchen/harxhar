@@ -1,9 +1,10 @@
-"""Tests for projects/ml/evaluation/aggregation.py — parse_config, load_all_chunks, filter_by_time."""
+"""Tests for aggregation: parse_config (ML-specific) + core chunk loading & time filtering."""
 
 import numpy as np
 import pandas as pd
 
-from projects.ml.evaluation.aggregation import filter_by_time, load_all_chunks, parse_config
+from core.evaluation.aggregation import filter_by_time, load_all_chunks
+from projects.ml.evaluation.aggregation import parse_config
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -60,6 +61,13 @@ class TestParseConfig:
 
 
 class TestLoadAllChunks:
+    def test_stitches_multiple_csvs(self, tmp_path):
+        for i in range(3):
+            _write_chunk(tmp_path / f"results_chunk_{i}.csv", n=5, start_date=f"2020-01-0{i + 1}")
+        df = load_all_chunks(str(tmp_path))
+        assert len(df) == 15
+        assert isinstance(df.index, pd.DatetimeIndex)
+
     def test_ignore_suffixes(self, tmp_path):
         _write_chunk(tmp_path / "results_chunk_0_am.csv", n=3)
         _write_chunk(tmp_path / "results_chunk_1_pm.csv", n=4)
