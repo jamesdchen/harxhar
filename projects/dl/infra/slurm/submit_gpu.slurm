@@ -32,6 +32,9 @@ BATCH_SIZE="${BATCH_SIZE:-}"
 EPOCHS="${EPOCHS:-}"
 LEARNING_RATE="${LEARNING_RATE:-}"
 TRAIN_WINDOW="${TRAIN_WINDOW:-}"
+CONTEXT_LEN="${CONTEXT_LEN:-}"
+PATCH_LEN="${PATCH_LEN:-}"
+STRIDE="${STRIDE:-}"
 WEIGHTS_DIR="${WEIGHTS_DIR:-}"            # ae_ridge only
 
 # --- CHUNKING ---
@@ -85,6 +88,9 @@ CMD="$CMD --chunk-id $CHUNK_ID --total-chunks $TOTAL_CHUNKS"
 [ -n "$EPOCHS" ]        && CMD="$CMD --epochs $EPOCHS"
 [ -n "$LEARNING_RATE" ] && CMD="$CMD --learning-rate $LEARNING_RATE"
 [ -n "$TRAIN_WINDOW" ]  && CMD="$CMD --train-window $TRAIN_WINDOW"
+[ -n "$CONTEXT_LEN" ]   && CMD="$CMD --context-len $CONTEXT_LEN"
+[ -n "$PATCH_LEN" ]     && CMD="$CMD --patch-len $PATCH_LEN"
+[ -n "$STRIDE" ]        && CMD="$CMD --stride $STRIDE"
 [ -n "$WEIGHTS_DIR" ]   && CMD="$CMD --weights-dir $WEIGHTS_DIR"
 
 echo "Running: $CMD"

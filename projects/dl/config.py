@@ -53,19 +53,22 @@ AE_RIDGE_GPU_CONFIG = {
     "train": {
         "num_epochs": 50,
         "learning_rate": 1e-3,
-        "batch_size": 4,  # windows per batch (reduced from 10 to avoid OOM)
+        "batch_size": 2,  # windows per batch (reduced from 4 to avoid OOM on V100-32GB)
     },
 }
 
 # --- Auto Chunk Sizing ---
+# Measured 2026-03-25 on 2×V100 (job 7580680): 221,820 windows in ~29 min
+# computation across 2 GPUs, plus ~180s startup per task.
+# Optimal range: 5-10 chunks (balances parallelism vs startup overhead).
 CHUNK_SIZING = {
     "patchts": {
-        "per_window_seconds": 45,  # ~45s/window on 2×V100 (50 epochs, batch=32)
-        "startup_overhead": 600,  # ~10 min for conda + data load + GPU init
+        "per_window_seconds": 0.016,  # ~0.5s per 32-window batch / 32 ≈ 16ms/window on 2×GPU
+        "startup_overhead": 180,  # ~3 min: conda + data load + GPU init + torch compile
     },
     "ae_ridge": {
-        "per_window_seconds": 90,  # ~90s/window on 2×V100 (50 epochs, batch=4)
-        "startup_overhead": 600,
+        "per_window_seconds": 0.064,  # ~4× patchts (batch_size=2, AE refit overhead)
+        "startup_overhead": 180,
     },
 }
 DEFAULT_WALLTIME_SECONDS = 6 * 3600  # 6 hours, matches SLURM --time

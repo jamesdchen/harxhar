@@ -36,6 +36,9 @@ def build_job_env(
     epochs: int | None = None,
     learning_rate: float | None = None,
     train_window: int | None = None,
+    context_len: int | None = None,
+    patch_len: int | None = None,
+    stride: int | None = None,
     weights_dir: str | None = None,
 ) -> dict[str, str]:
     """Build the env dict that submit_gpu.slurm expects."""
@@ -54,6 +57,12 @@ def build_job_env(
         env["LEARNING_RATE"] = str(learning_rate)
     if train_window is not None:
         env["TRAIN_WINDOW"] = str(train_window)
+    if context_len is not None:
+        env["CONTEXT_LEN"] = str(context_len)
+    if patch_len is not None:
+        env["PATCH_LEN"] = str(patch_len)
+    if stride is not None:
+        env["STRIDE"] = str(stride)
     if weights_dir is not None:
         env["WEIGHTS_DIR"] = weights_dir
     return env
@@ -79,11 +88,14 @@ def estimate_total_chunks(
     walltime: int | None = None,
     train_window: int | None = None,
 ) -> int:
-    """Auto-calculate optimal chunk count from data size and experiment type."""
-    from projects.dl.config import AE_RIDGE_GPU_CONFIG, CHUNK_SIZING, DEFAULT_WALLTIME_SECONDS, DL_CONFIG
+    """Auto-calculate optimal chunk count from data size and experiment type.
+
+    Targets per-task computation ≈ 2× startup overhead, balancing parallelism
+    against wasted GPU-hours on repeated startup.  Result is clamped to [1, 100].
+    """
+    from projects.dl.config import AE_RIDGE_GPU_CONFIG, CHUNK_SIZING, DL_CONFIG
 
     sizing = CHUNK_SIZING[experiment]
-    walltime = walltime or DEFAULT_WALLTIME_SECONDS
 
     cfg = DL_CONFIG if experiment == "patchts" else AE_RIDGE_GPU_CONFIG
     tw = train_window or cfg["train_window"]
@@ -91,18 +103,23 @@ def estimate_total_chunks(
 
     total_samples = get_sample_count(input_path)
     num_windows = total_samples - tw - (pred_len - 1)
+    total_compute = num_windows * sizing["per_window_seconds"]
+    startup = sizing["startup_overhead"]
 
-    usable_time = walltime - sizing["startup_overhead"]
-    windows_per_task = max(1, int(usable_time / sizing["per_window_seconds"]))
-    total_chunks = max(1, math.ceil(num_windows / windows_per_task))
+    # Target: each task's compute time ≈ 2× startup → ~67% efficiency
+    target_task_compute = 2 * startup
+    total_chunks = max(1, min(100, math.ceil(total_compute / target_task_compute)))
 
     logger.info(
-        "Auto-chunks: %d samples, %d windows, ~%ds/window, %d windows/task → %d chunks",
+        "Auto-chunks: %d samples, %d windows, %.1fs total compute, "
+        "%ds startup → %d chunks (%.0fs/task, %.0f%% efficiency)",
         total_samples,
         num_windows,
-        sizing["per_window_seconds"],
-        windows_per_task,
+        total_compute,
+        startup,
         total_chunks,
+        total_compute / total_chunks,
+        100 * total_compute / (total_compute + total_chunks * startup),
     )
     return total_chunks
 
@@ -170,12 +187,26 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=None, help="Training epochs.")
     parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
     parser.add_argument("--train-window", type=int, default=None, help="Training window size.")
+    parser.add_argument("--context-len", type=int, default=None, help="Context length (patchts only).")
+    parser.add_argument("--patch-len", type=int, default=None, help="Patch length (patchts only).")
+    parser.add_argument("--stride", type=int, default=None, help="Stride between patches (patchts only).")
     parser.add_argument("--weights-dir", type=str, default=None, help="AE weights directory (ae_ridge only).")
 
     args = parser.parse_args()
 
     env_kwargs = {}
-    for key in ("input_path", "gpu_count", "batch_size", "epochs", "learning_rate", "train_window", "weights_dir"):
+    for key in (
+        "input_path",
+        "gpu_count",
+        "batch_size",
+        "epochs",
+        "learning_rate",
+        "train_window",
+        "context_len",
+        "patch_len",
+        "stride",
+        "weights_dir",
+    ):
         val = getattr(args, key)
         if val is not None:
             env_kwargs[key] = val

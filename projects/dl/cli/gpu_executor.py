@@ -63,6 +63,12 @@ def _run_patchts(args: argparse.Namespace) -> None:
         config["train_window"] = args.train_window
     if args.horizon:
         config["model"]["prediction_length"] = args.horizon
+    if args.context_len:
+        config["model"]["context_len"] = args.context_len
+    if args.patch_len:
+        config["model"]["patch_len"] = args.patch_len
+    if args.stride:
+        config["model"]["stride"] = args.stride
 
     if args.checkpoint_dir:
         config["checkpoint_dir"] = args.checkpoint_dir
@@ -184,6 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--loss-log-path", type=str, default=None, help="CSV path to save per-epoch training losses.")
     parser.add_argument("--progress-path", type=str, default=None, help="JSON path to write live training progress.")
     parser.add_argument("--horizon", type=int, default=1, help="Forecast horizon.")
+    parser.add_argument("--context-len", type=int, default=None, help="Context length (number of past observations).")
+    parser.add_argument("--patch-len", type=int, default=None, help="Patch length for PatchTST.")
+    parser.add_argument("--stride", type=int, default=None, help="Stride between patches for PatchTST.")
     parser.add_argument("--chunk-id", type=int, default=None, help="0-based chunk index for SLURM array chunking.")
     parser.add_argument("--total-chunks", type=int, default=None, help="Total number of SLURM array chunks.")
     parser.add_argument("--timeout-hours", type=float, default=0, help="Max runtime in hours (0=no limit).")

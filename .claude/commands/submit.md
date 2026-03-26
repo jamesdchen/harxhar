@@ -40,7 +40,7 @@ Before submitting, verify:
 
 3. **Cluster availability:**
    ```bash
-   squeue -u jc_905  # check current job load
+   squeue -u jc_905 --clusters=discovery  # check current job load
    ```
 
 ## Step 3: Dry Run (Recommended)
@@ -109,14 +109,14 @@ horizon: 1
 
 ## Step 5: Monitor Jobs
 
-After submission, track progress:
+After submission, track progress. **All SLURM commands need `--clusters=discovery`** since jobs run on the discovery cluster:
 
 ```bash
 # Watch job queue
-squeue -u jc_905
+squeue -u jc_905 --clusters=discovery
 
 # Check completed job details
-sacct -j <JOBID> --format=JobID,State,ExitCode,MaxRSS,Elapsed
+sacct -j <JOBID> --clusters=discovery --format=JobID,State,ExitCode,MaxRSS,Elapsed
 
 # Quick health check: count completed chunks
 for d in results/<SET>/exp_*/; do
@@ -129,30 +129,61 @@ done
 
 If some array tasks fail:
 
-1. **Identify failures:**
+1. **Identify failures** (must use `--clusters=discovery`):
    ```bash
-   sacct -j <JOBID> --format=JobID%20,State,ExitCode,MaxRSS | grep -v COMPLETED
+   sacct -j <JOBID> --clusters=discovery --format=JobID%20,State,ExitCode,MaxRSS,Elapsed | grep -v COMPLETED
    ```
 
-2. **Check logs:**
+2. **Check logs** (logs are in `/scratch1/jc_905/logs/`, not `/scratch1/jc_905/`):
    ```bash
-   grep -l "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/slurm-<JOBID>_*.out
+   grep -l "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/logs/slurm-<JOBID>_*.err
    ```
 
-3. **Resubmit failed task IDs** (1-based):
+3. **Reconstruct env vars from metadata.json** in the experiment's result dir:
    ```bash
-   sbatch --array=5,23,78 projects/ml/infra/slurm/submit_carc.slurm
+   cat results/<SET>/exp_<N>_<name>/metadata.json
+   # Extract: model_type, feature_type, variables, extra_args
+   cat results/<SET>/exp_<N>_<name>/config.txt
    ```
-   Ensure the same `--export` env vars are passed as the original submission.
+
+4. **Resubmit failed task IDs** (1-based) with full context:
+   ```bash
+   # ML experiments — must include --clusters, --account, and --export
+   sbatch --clusters=discovery --array=5,23,78 \
+     --account=pollok_1603 \
+     --output=/scratch1/jc_905/logs/slurm-%A_%a.out \
+     --error=/scratch1/jc_905/logs/slurm-%A_%a.err \
+     --export=RESULT_DIR=results/<SET>/exp_<N>_<name>,TOTAL_CHUNKS=100,MODEL_TYPE=<model>,EXOG_COLS="<comma-separated vars or NONE>",EXTRA_ARGS="<extra args from config>" \
+     projects/ml/infra/slurm/submit_carc.slurm
+
+   # Add resource overrides as needed (see table below):
+   #   --mem=96G          (for OOM fixes)
+   #   --time=4:00:00     (for timeout fixes)
+   ```
 
 ### Common Failure Modes
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| State=OUT_OF_MEMORY, ExitCode 0:125 | Exceeded `--mem` | Increase in SLURM template (64G → 96G) |
-| State=TIMEOUT | Exceeded `--time` | Increase walltime or reduce `--total-chunks` |
+| State=OUT_OF_MEMORY, ExitCode 0:125 | Exceeded `--mem` | Resubmit with `--mem=96G` (or higher) |
+| State=TIMEOUT | Exceeded `--time` | Resubmit with `--time=4:00:00` (or higher) |
+| `torch.OutOfMemoryError: CUDA out of memory` | GPU OOM | Reduce batch_size in `projects/dl/config.py` |
 | ModuleNotFoundError | Python/conda not loaded | Check `module load python` in template |
 | `.submitted` marker blocks resubmit | Previous partial run | Delete marker: `rm results/<SET>/exp_*/.submitted` |
+
+### Model-Specific Resource Requirements
+
+Some models need more resources than the SLURM template defaults (64GB, 1hr):
+
+| Model | Memory | Time per chunk (100 chunks) | Notes |
+|-------|--------|-----------------------------|-------|
+| `ridge` | 64G | ~10 min | Default is fine |
+| `xgboost` | **96G** | ~30 min | Some chunks OOM at 64G |
+| `lightgbm` | **96G** | ~30 min | Some chunks OOM at 64G |
+| `random_forest` | 64G | **~3-4 hrs** | Needs `--time=4:00:00` minimum |
+| `ridge` + `vol_demand` subgroup | **96G** | ~15 min | High feature count causes OOM at 64G |
+
+When submitting these models, override resources at sbatch time or update the template.
 
 ## Cluster Context
 
@@ -161,7 +192,7 @@ If some array tasks fail:
 - **Username:** `jc_905`
 - **CPU partition:** `main` (1 CPU, 64G, 1hr default)
 - **GPU partition:** `gpu` (8 CPUs, 128G, 2 GPUs, 6hr default)
-- **SLURM logs:** `/scratch1/jc_905/`
+- **SLURM logs:** `/scratch1/jc_905/logs/`
 - **Chunk ID conversion:** SLURM 1-based → executor 0-based (handled by template)
 
 ## Key Paths

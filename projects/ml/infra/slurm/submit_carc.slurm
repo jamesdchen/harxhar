@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1        # CPU cores per task. (See note below*)
 #SBATCH --mem=64G                # Memory per node
 #SBATCH --partition=main         # 'main' partition on discovery
-#SBATCH --time=1:00:00
+#SBATCH --time=4:00:00
 
 # *Note on CPUs: If your script uses heavy Numpy/Pandas matrix math, 
 # you can increase --cpus-per-task to 4 or 8 to speed it up.

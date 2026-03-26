@@ -21,19 +21,19 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "class": XGBoostModel,
         "defaults": {
             "use_scaling": False,
-            "n_estimators": 100,
-            "max_depth": 3,
+            "n_estimators": 500,
+            "max_depth": 5,
             "learning_rate": 0.1,
             "tree_method": "hist",
         },
     },
     "lightgbm": {
         "class": LightGBMModel,
-        "defaults": {"use_scaling": False, "n_estimators": 100, "max_depth": 3, "learning_rate": 0.1},
+        "defaults": {"use_scaling": False, "n_estimators": 500, "max_depth": 5, "learning_rate": 0.1},
     },
     "random_forest": {
         "class": RandomForestModel,
-        "defaults": {"use_scaling": False, "n_estimators": 100, "max_depth": 3},
+        "defaults": {"use_scaling": False, "n_estimators": 500, "max_depth": 5},
     },
     "sarimax": {
         "class": SARIMAXModel,
