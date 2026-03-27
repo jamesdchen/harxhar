@@ -185,6 +185,73 @@ Some models need more resources than the SLURM template defaults (64GB, 1hr):
 
 When submitting these models, override resources at sbatch time or update the template.
 
+---
+
+# DL Experiments
+
+## Step 1: Clarify What to Run
+
+Ask me (if not already clear) which **experiment** to use:
+
+| Experiment | Description |
+|-----------|-------------|
+| `patchts` | PatchTST transformer backtest |
+| `ae_ridge` | Autoencoder + Ridge GPU backtest |
+
+## Step 2: Pre-Flight Validation
+
+```bash
+# Check current job load
+squeue -u jc_905 --clusters=discovery
+# Check for existing results
+ls results/dl_<experiment>/results_chunk_*.csv 2>/dev/null | wc -l
+```
+
+## Step 3: Submit
+
+```bash
+cd /home1/jc_905/harxhar && python -m projects.dl.cli.lifecycle submit \
+    --experiment <experiment> --total-chunks <N> [flags]
+```
+
+This prints JSON with job IDs and writes a `submitted` event to `lifecycle.jsonl`.
+
+### Flag Reference
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--total-chunks` | 10 | Number of array tasks |
+| `--result-dir` | `results/dl_<experiment>` | Override output directory |
+| `--batch-size` | config default | Windows per training batch |
+| `--epochs` | config default | Training epochs |
+| `--learning-rate` | config default | Learning rate |
+| `--train-window` | config default | Rolling window size in days |
+| `--input-path` | `all30min` | Data directory |
+| `--weights-dir` | None | Pre-trained AE weights (ae_ridge only) |
+
+### Examples
+
+```bash
+# PatchTST with 10 chunks
+python -m projects.dl.cli.lifecycle submit --experiment patchts --total-chunks 10
+
+# AE-Ridge with custom batch size
+python -m projects.dl.cli.lifecycle submit --experiment ae_ridge --total-chunks 10 --batch-size 32
+```
+
+## Step 4: Start Monitoring
+
+**After submission succeeds, automatically invoke `/loop 5m /monitor`** with the experiment args.
+
+Parse the job IDs from the submit JSON output, then start:
+```
+/loop 5m /monitor <experiment> <result_dir> <job_ids> <total_chunks>
+```
+
+This monitors every 5 minutes: checks status, diagnoses failures, resubmits with resource fixes, and runs aggregation when complete.
+
+---
+
 ## Cluster Context
 
 - **Cluster:** Discovery (USC CARC, SLURM)
@@ -199,13 +266,16 @@ When submitting these models, override resources at sbatch time or update the te
 
 | What | Path |
 |------|------|
-| Submit orchestrator | `projects/ml/scripts/submit.py` |
-| Submit utilities | `projects/ml/cli/submit.py` |
-| Executor | `projects/ml/cli/executor.py` |
-| SLURM template | `projects/ml/infra/slurm/submit_carc.slurm` |
+| ML submit orchestrator | `projects/ml/scripts/submit.py` |
+| ML submit utilities | `projects/ml/cli/submit.py` |
+| ML executor | `projects/ml/cli/executor.py` |
+| ML SLURM template | `projects/ml/infra/slurm/submit_carc.slurm` |
 | SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
 | Feature definitions | `projects/ml/features/feature_groups.py` |
 | Example configs | `projects/ml/experiments/` |
+| DL submit + status | `projects/dl/cli/lifecycle.py` |
+| DL GPU executor | `projects/dl/cli/gpu_executor.py` |
+| DL SLURM template | `projects/dl/infra/slurm/submit_gpu.slurm` |
 | HPC backends | `core/backends/` |
 
 ## After Submission
