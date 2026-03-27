@@ -111,17 +111,17 @@ class TestDataTransforms:
     def test_apply_data_transform_sqrt(self):
         s = pd.Series([1.0, 4.0, 9.0])
         result = apply_data_transform(s, "RV", has_negatives=False, allow_missing=False)
-        np.testing.assert_allclose(result.values, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(np.asarray(result), [1.0, 2.0, 3.0])
 
     def test_apply_data_transform_log(self):
         s = pd.Series([1.0, np.e, np.e**2])
         result = apply_data_transform(s, "some_col", has_negatives=False, allow_missing=False)
-        np.testing.assert_allclose(result.values, [0.0, 1.0, 2.0])
+        np.testing.assert_allclose(np.asarray(result), [0.0, 1.0, 2.0])
 
     def test_apply_data_transform_signed_sqrt(self):
         s = pd.Series([4.0, -4.0, 0.0])
         result = apply_data_transform(s, "autocov_x", has_negatives=True, allow_missing=False)
-        np.testing.assert_allclose(result.values, [2.0, -2.0, 0.0])
+        np.testing.assert_allclose(np.asarray(result), [2.0, -2.0, 0.0])
 
     def test_rolling_winsorize_clips(self):
         from core.data import rolling_winsorize
@@ -152,7 +152,7 @@ class TestDataTransforms:
                 "hour": list(range(10)),
             }
         )
-        df.index = range(10)
+        df.index = pd.RangeIndex(10)
         result, baseline = robust_transform(df, "hour")
         # 'hour' is in SKIP_VARS, should return raw values
         pd.testing.assert_series_equal(result, df["hour"])
@@ -167,12 +167,12 @@ class TestApplyDataTransformEdgeCases:
     def test_ret3_cube_root(self):
         s = pd.Series([8.0, 27.0])
         result = apply_data_transform(s, "ret3_col", has_negatives=False, allow_missing=False)
-        np.testing.assert_allclose(result.values, [2.0, 3.0])
+        np.testing.assert_allclose(np.asarray(result), [2.0, 3.0])
 
     def test_ret4_fourth_root(self):
         s = pd.Series([16.0, 81.0])
         result = apply_data_transform(s, "ret4_col", has_negatives=False, allow_missing=False)
-        np.testing.assert_allclose(result.values, [2.0, 3.0])
+        np.testing.assert_allclose(np.asarray(result), [2.0, 3.0])
 
     def test_has_negatives_fillna(self):
         s = pd.Series([1.0, np.nan, 3.0])

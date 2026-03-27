@@ -97,9 +97,9 @@ def estimate_total_chunks(
 
     sizing = CHUNK_SIZING[experiment]
 
-    cfg = DL_CONFIG if experiment == "patchts" else AE_RIDGE_GPU_CONFIG
+    cfg: dict = DL_CONFIG if experiment == "patchts" else AE_RIDGE_GPU_CONFIG
     tw = train_window or cfg["train_window"]
-    pred_len = cfg.get("model", {}).get("prediction_length", 1)
+    pred_len: int = cfg.get("model", {}).get("prediction_length", 1)
 
     total_samples = get_sample_count(input_path)
     num_windows = total_samples - tw - (pred_len - 1)

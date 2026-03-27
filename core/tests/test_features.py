@@ -42,7 +42,7 @@ class TestHARFeatures:
         feat_dict, _ = gen.generate_pandas(df, ["adj_RV"])
         expected = np.column_stack([feat_dict["har_ma_1"], feat_dict["har_ma_5"]])
 
-        result = gen.transform(series.values.reshape(-1, 1))
+        result = gen.transform(np.asarray(series).reshape(-1, 1))
         # Both should have NaN at position 0 (shift), compare non-NaN
         mask = ~np.isnan(expected[:, 0])
         np.testing.assert_allclose(result[mask], expected[mask], atol=1e-10)

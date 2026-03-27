@@ -29,12 +29,12 @@ def calculate_global_metrics(df: pd.DataFrame) -> dict[str, float]:
         errors_sq = (df["true_adj"] - df["pred_adj"]) ** 2
         errors_abs = np.abs(df["true_adj"] - df["pred_adj"])
 
-        metrics["mse"] = np.mean(errors_sq)
-        metrics["mae"] = np.mean(errors_abs)
+        metrics["mse"] = float(np.mean(errors_sq))
+        metrics["mae"] = float(np.mean(errors_abs))
 
         # Winsorized variants — clip the error distribution then average
-        metrics["w_mse"] = float(np.mean(winsorize_series(errors_sq.values)))
-        metrics["w_mae"] = float(np.mean(winsorize_series(errors_abs.values)))
+        metrics["w_mse"] = float(np.mean(winsorize_series(np.asarray(errors_sq))))
+        metrics["w_mae"] = float(np.mean(winsorize_series(np.asarray(errors_abs))))
 
     # 2. Raw Scale Metrics
     if "true_raw" in df.columns and "pred_raw" in df.columns:
@@ -44,8 +44,8 @@ def calculate_global_metrics(df: pd.DataFrame) -> dict[str, float]:
             vol_pred = df.loc[mask_raw, "pred_raw"]
             qlike_vals = (vol_true / vol_pred) - np.log(vol_true / vol_pred) - 1
 
-            metrics["qlike"] = np.mean(qlike_vals)
-            metrics["w_qlike"] = float(np.mean(winsorize_series(qlike_vals.values)))
+            metrics["qlike"] = float(np.mean(qlike_vals))
+            metrics["w_qlike"] = float(np.mean(winsorize_series(np.asarray(qlike_vals))))
         else:
             metrics["qlike"] = np.nan
             metrics["w_qlike"] = np.nan

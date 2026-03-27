@@ -60,16 +60,16 @@ def apply_data_transform(
         return any(kw in col_name for kw in keywords)
 
     if _col_matches("ret2", "RV", "turnover", "bipow", "effspread"):
-        return np.sqrt(series)
+        return pd.Series(np.sqrt(series), index=series.index)
 
     elif _col_matches("autocov"):
-        return np.sign(series) * np.sqrt(np.abs(series))
+        return pd.Series(np.sign(series) * np.sqrt(np.abs(series)), index=series.index)
 
     elif _col_matches("ret3"):
-        return np.cbrt(series)
+        return pd.Series(np.cbrt(series), index=series.index)
 
     elif _col_matches("ret4"):
-        return np.power(series, 0.25)
+        return pd.Series(np.power(series, 0.25), index=series.index)
 
     elif has_negatives or _col_matches("sumabsret"):
         if not allow_missing:
@@ -77,7 +77,7 @@ def apply_data_transform(
         return series
 
     else:
-        return np.log(series)
+        return pd.Series(np.log(series), index=series.index)
 
 
 def rolling_winsorize(

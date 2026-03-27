@@ -123,10 +123,10 @@ def generate_lag_features(
     data = data[required_cols]
     data = _clean_nans(data, target_col, allow_missing, max(lags_list))
 
-    X_np = data[final_features].values.astype(np.float64)
-    y_np = data[target_col].values.astype(np.float64)
+    X_np = np.asarray(data[final_features], dtype=np.float64)
+    y_np = np.asarray(data[target_col], dtype=np.float64)
 
-    return X_np, y_np, data["t"], data["baseline_RV"].values, final_features
+    return X_np, y_np, data["t"], np.asarray(data["baseline_RV"]), final_features
 
 
 def generate_lag_features_segmented(

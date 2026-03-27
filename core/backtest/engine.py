@@ -112,7 +112,7 @@ def build_results_dataframe(
 
 def extract_subset(data: pd.Series | pd.DataFrame | np.ndarray, indices: np.ndarray) -> np.ndarray:
     """Extract subset from pandas Series/DataFrame or numpy array."""
-    return data.iloc[indices].values if hasattr(data, "iloc") else data[indices]
+    return np.asarray(data.iloc[indices]) if hasattr(data, "iloc") else data[indices]
 
 
 def save_chunk_results(

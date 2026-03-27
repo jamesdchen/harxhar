@@ -198,5 +198,5 @@ class TestCalculateBaselineDeltas:
             }
         )
         result = calculate_baseline_deltas(summary)
-        assert np.isnan(result.loc[0, "delta_mse"])
-        assert np.isnan(result.loc[0, "oos_r2"])
+        assert pd.isna(result.loc[0, "delta_mse"])
+        assert pd.isna(result.loc[0, "oos_r2"])
