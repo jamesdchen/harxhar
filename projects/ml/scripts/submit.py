@@ -335,11 +335,12 @@ def main():
     ml_scripts = {
         "slurm": str(_repo_root / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm"),
         "sge": str(_repo_root / "projects" / "ml" / "infra" / "sge" / "submit_hoffman2.sh"),
+        "sge-remote": "projects/ml/infra/sge/submit_hoffman2.sh",  # relative to remote repo
     }
     backend_kwargs: dict[str, object] = {}
     if backend_name in ml_scripts:
         backend_kwargs["script"] = ml_scripts[backend_name]
-    if backend_name == "sge":
+    if backend_name in ("sge", "sge-remote"):
         backend_kwargs["pass_env_keys"] = ("TOTAL_CHUNKS", "EXOG_COLS", "RESULT_DIR", "MODEL_TYPE", "EXTRA_ARGS")
     backend = get_backend(backend_name, **backend_kwargs)
     submit_experiment_batch(

@@ -1,4 +1,7 @@
-Help me submit SLURM experiments using the workflow below.
+Help me submit SGE experiments on Hoffman2 via SSH using the workflow below.
+
+All cluster commands run remotely via `ssh jamesdc1@hoffman2.idre.ucla.edu`.
+Code is synced from the local machine before submission.
 
 ## Step 1: Clarify What to Run
 
@@ -9,7 +12,7 @@ Ask me (if not already clear) which **mode** to use:
 | `model_comparison` | Compare models on HAR features | `--models ridge xgboost lightgbm random_forest` |
 | `feature_transforms` | Compare feature types (HAR/PCA/AE) on one model | `--model ridge --features har pca ae --subgroup all_features` |
 | `individual_features` | Ablate features one-by-one within a subgroup | `--model ridge --subgroup moments` |
-| `subgroup_analysis` | Cartesian product: models × features × subgroups | `--models all --features all --subgroups all` |
+| `subgroup_analysis` | Cartesian product: models x features x subgroups | `--models all --features all --subgroups all` |
 | `naive` | Baseline only | (none) |
 | `from-config` | Load from YAML/JSON config | `<config_file>` |
 
@@ -22,42 +25,75 @@ Ask me (if not already clear) which **mode** to use:
 ### Available Subgroups
 `baseline` (empty), `moments`, `liquidity`, `market_ew`, `market_vw`, `sentiment`, `implied_vol`, `vol_demand`, `all_features` (51 vars)
 
-## Step 2: Pre-Flight Validation
+## Step 2: Sync Code to Cluster
 
-Before submitting, verify:
+Before anything else, push local code to Hoffman2:
 
-1. **No duplicate submission** — check for existing results:
+```bash
+cd /path/to/harxhar && python -c "from core.remote import rsync_push; r = rsync_push(); print(r.stdout or 'synced'); print(r.stderr)"
+```
+
+Or directly:
+```bash
+rsync -az --delete \
+    --exclude='.git/' --exclude='results/' --exclude='__pycache__/' \
+    --exclude='*.pyc' --exclude='.mypy_cache/' --exclude='all30min/' \
+    --exclude='.claude/' \
+    . jamesdc1@hoffman2.idre.ucla.edu:$HPC_REPO/
+```
+
+Verify the sync succeeded (exit code 0) before proceeding.
+
+## Step 3: Pre-Flight Validation
+
+Run these checks via SSH:
+
+1. **Cluster job load:**
    ```bash
-   ls -d results/<SET>/exp_*/.submitted 2>/dev/null
+   ssh jamesdc1@hoffman2.idre.ucla.edu "qstat -u jamesdc1"
+   ```
+
+2. **No duplicate submission** — check for existing results:
+   ```bash
+   ssh jamesdc1@hoffman2.idre.ucla.edu "ls -d $HPC_REPO/results/<SET>/exp_*/.submitted 2>/dev/null"
    ```
    If `.submitted` markers exist, the script will skip those experiments automatically.
 
-2. **Naive baseline exists** (unless `--no-naive`):
+3. **Naive baseline exists** (unless `--no-naive`):
    ```bash
-   ls -d results/naive/exp_0_naive_baseline/ 2>/dev/null
-   ```
-   If missing, the submission will auto-submit a naive job (or run `python scripts/submit.py naive` first).
-
-3. **Cluster availability:**
-   ```bash
-   squeue -u jc_905 --clusters=discovery  # check current job load
+   ssh jamesdc1@hoffman2.idre.ucla.edu "ls -d $HPC_REPO/results/naive/exp_0_naive_baseline/ 2>/dev/null"
    ```
 
-## Step 3: Dry Run (Recommended)
+## Step 4: Dry Run (Recommended)
 
-Preview what will be submitted without actually launching jobs:
-
-```bash
-python scripts/submit.py <mode> [flags] --backend dry-run
-```
-
-This prints the experiments, env vars, and array ranges without calling `sbatch`. Review the output before proceeding.
-
-## Step 4: Submit
+Preview what will be submitted without actually launching jobs. Dry run runs locally:
 
 ```bash
-python scripts/submit.py <mode> [flags]
+python projects/ml/scripts/submit.py <mode> [flags] --backend dry-run
 ```
+
+This prints the experiments, env vars, and array ranges without calling `qsub`.
+
+## Step 5: Submit
+
+### ML Experiments
+
+Submit via SSH using the `sge-remote` backend (wraps qsub over SSH):
+
+```bash
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/submit.py <mode> [flags] --backend sge"
+```
+
+### DL Experiments
+
+```bash
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python -m projects.dl.cli.lifecycle submit --experiment <experiment> --total-chunks <N> [flags]"
+```
+
+| Experiment | Description |
+|-----------|-------------|
+| `patchts` | PatchTST transformer backtest |
+| `ae_ridge` | Autoencoder + Ridge GPU backtest |
 
 ### Common Flag Reference
 
@@ -67,221 +103,111 @@ python scripts/submit.py <mode> [flags]
 | `--train-window` | 500 | Rolling window size in days |
 | `--horizon` | 1 | Multi-horizon: runs h=1..H |
 | `--n-components` | 5 | PCA/AE latent dimensions |
-| `--ae-alpha` | 0.5 | AE loss: alpha×recon + (1-alpha)×pred |
+| `--ae-alpha` | 0.5 | AE loss: alpha x recon + (1-alpha) x pred |
 | `--ae-epochs` | 50 | AE training epochs per refit |
 | `--ae-hidden` | 0 (auto) | AE hidden width; 0 = n_features//2 |
 | `--ae-weights-path` | None | Pre-trained AE weights .pt file |
 | `--no-naive` | false | Skip naive baseline submission |
-| `--backend` | slurm | `slurm`, `sge`, or `dry-run` |
+| `--backend` | slurm | `slurm`, `sge`, `sge-remote`, or `dry-run` |
 | `--result-dir` | mode-dependent | Override output directory |
 
 ### Example Commands
 
 ```bash
-# Compare 4 models on HAR features (100 chunks each = 500 total array tasks)
-python scripts/submit.py model_comparison --models ridge xgboost lightgbm random_forest
+# Compare 4 models on HAR features
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/submit.py model_comparison --models ridge xgboost lightgbm random_forest --backend sge"
 
-# PCA vs AE feature transforms on ridge, moments subgroup, 5 components
-python scripts/submit.py feature_transforms --model ridge --features pca ae --subgroup moments --n-components 5
+# PCA vs AE feature transforms
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/submit.py feature_transforms --model ridge --features pca ae --subgroup moments --n-components 5 --backend sge"
 
-# Full grid: all models × all features × all subgroups
-python scripts/submit.py subgroup_analysis --models all --features all --subgroups all
-
-# Multi-horizon (h=1..4) model comparison
-python scripts/submit.py model_comparison --models ridge xgboost --horizon 4
-
-# From YAML config
-python scripts/submit.py from-config experiments/example_subgroup_analysis.yaml
+# Full grid
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/submit.py subgroup_analysis --models all --features all --subgroups all --backend sge"
 ```
 
-### YAML Config Format
+## Step 6: Monitor Jobs
 
-Example at `experiments/example_subgroup_analysis.yaml`:
-```yaml
-name: my_experiment
-mode: subgroup_analysis
-models: [ridge, xgboost]
-features: [har, pca]
-subgroups: [moments, liquidity]
-total_chunks: 100
-horizon: 1
-```
-
-## Step 5: Monitor Jobs
-
-After submission, track progress. **All SLURM commands need `--clusters=discovery`** since jobs run on the discovery cluster:
+After submission, track progress via SSH:
 
 ```bash
 # Watch job queue
-squeue -u jc_905 --clusters=discovery
+ssh jamesdc1@hoffman2.idre.ucla.edu "qstat -u jamesdc1"
 
 # Check completed job details
-sacct -j <JOBID> --clusters=discovery --format=JobID,State,ExitCode,MaxRSS,Elapsed
+ssh jamesdc1@hoffman2.idre.ucla.edu "qacct -j <JOBID>"
 
 # Quick health check: count completed chunks
-for d in results/<SET>/exp_*/; do
-    n=$(ls "$d"/results_chunk_*.csv 2>/dev/null | wc -l)
-    echo "$d: $n/100 chunks"
-done
+ssh jamesdc1@hoffman2.idre.ucla.edu "for d in $HPC_REPO/results/<SET>/exp_*/; do n=\$(ls \"\$d\"/results_chunk_*.csv 2>/dev/null | wc -l); echo \"\$d: \$n/100 chunks\"; done"
 ```
 
-## Step 6: Handle Failures
+## Step 7: Handle Failures
 
 If some array tasks fail:
 
-1. **Identify failures** (must use `--clusters=discovery`):
+1. **Identify failures:**
    ```bash
-   sacct -j <JOBID> --clusters=discovery --format=JobID%20,State,ExitCode,MaxRSS,Elapsed | grep -v COMPLETED
+   ssh jamesdc1@hoffman2.idre.ucla.edu "qacct -j <JOBID>" | grep -E "taskid|failed|exit_status"
    ```
 
-2. **Check logs** (logs are in `/scratch1/jc_905/logs/`, not `/scratch1/jc_905/`):
+2. **Check logs:**
    ```bash
-   grep -l "Error\|OOM\|CANCELLED\|TIMEOUT" /scratch1/jc_905/logs/slurm-<JOBID>_*.err
+   ssh jamesdc1@hoffman2.idre.ucla.edu "tail -100 $HPC_REPO/logs/<job_log_file>"
    ```
 
-3. **Reconstruct env vars from metadata.json** in the experiment's result dir:
+3. **Reconstruct env vars from metadata.json:**
    ```bash
-   cat results/<SET>/exp_<N>_<name>/metadata.json
-   # Extract: model_type, feature_type, variables, extra_args
-   cat results/<SET>/exp_<N>_<name>/config.txt
+   ssh jamesdc1@hoffman2.idre.ucla.edu "cat $HPC_REPO/results/<SET>/exp_<N>_<name>/metadata.json"
+   ssh jamesdc1@hoffman2.idre.ucla.edu "cat $HPC_REPO/results/<SET>/exp_<N>_<name>/config.txt"
    ```
 
-4. **Resubmit failed task IDs** (1-based) with full context:
+4. **Resubmit failed task IDs:**
    ```bash
-   # ML experiments — must include --clusters, --account, and --export
-   sbatch --clusters=discovery --array=5,23,78 \
-     --account=pollok_1603 \
-     --output=/scratch1/jc_905/logs/slurm-%A_%a.out \
-     --error=/scratch1/jc_905/logs/slurm-%A_%a.err \
-     --export=RESULT_DIR=results/<SET>/exp_<N>_<name>,TOTAL_CHUNKS=100,MODEL_TYPE=<model>,EXOG_COLS="<comma-separated vars or NONE>",EXTRA_ARGS="<extra args from config>" \
-     projects/ml/infra/slurm/submit_carc.slurm
-
-   # Add resource overrides as needed (see table below):
-   #   --mem=96G          (for OOM fixes)
-   #   --time=4:00:00     (for timeout fixes)
+   ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && qsub -t <FAILED_IDS> \
+       -N <job_name> -o logs -j y \
+       -v RESULT_DIR=results/<SET>/exp_<N>_<name>,TOTAL_CHUNKS=100,MODEL_TYPE=<model>,EXOG_COLS='<vars or NONE>',EXTRA_ARGS='<from config>' \
+       projects/ml/infra/sge/submit_hoffman2.sh"
    ```
 
 ### Common Failure Modes
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| State=OUT_OF_MEMORY, ExitCode 0:125 | Exceeded `--mem` | Resubmit with `--mem=96G` (or higher) |
-| State=TIMEOUT | Exceeded `--time` | Resubmit with `--time=4:00:00` (or higher) |
-| `torch.OutOfMemoryError: CUDA out of memory` | GPU OOM | Reduce batch_size in `projects/dl/config.py` |
-| ModuleNotFoundError | Python/conda not loaded | Check `module load python` in template |
-| `.submitted` marker blocks resubmit | Previous partial run | Delete marker: `rm results/<SET>/exp_*/.submitted` |
-
-### Model-Specific Resource Requirements
-
-Some models need more resources than the SLURM template defaults (64GB, 1hr):
-
-| Model | Memory | Time per chunk (100 chunks) | Notes |
-|-------|--------|-----------------------------|-------|
-| `ridge` | 64G | ~10 min | Default is fine |
-| `xgboost` | **96G** | ~30 min | Some chunks OOM at 64G |
-| `lightgbm` | **96G** | ~30 min | Some chunks OOM at 64G |
-| `random_forest` | 64G | **~3-4 hrs** | Needs `--time=4:00:00` minimum |
-| `ridge` + `vol_demand` subgroup | **96G** | ~15 min | High feature count causes OOM at 64G |
-
-When submitting these models, override resources at sbatch time or update the template.
-
----
-
-# DL Experiments
-
-## Step 1: Clarify What to Run
-
-Ask me (if not already clear) which **experiment** to use:
-
-| Experiment | Description |
-|-----------|-------------|
-| `patchts` | PatchTST transformer backtest |
-| `ae_ridge` | Autoencoder + Ridge GPU backtest |
-
-## Step 2: Pre-Flight Validation
-
-```bash
-# Check current job load
-squeue -u jc_905 --clusters=discovery
-# Check for existing results
-ls results/dl_<experiment>/results_chunk_*.csv 2>/dev/null | wc -l
-```
-
-## Step 3: Submit
-
-```bash
-cd /home1/jc_905/harxhar && python -m projects.dl.cli.lifecycle submit \
-    --experiment <experiment> --total-chunks <N> [flags]
-```
-
-This prints JSON with job IDs and writes a `submitted` event to `lifecycle.jsonl`.
-
-### Flag Reference
-
-| Flag | Default | Notes |
-|------|---------|-------|
-| `--total-chunks` | 10 | Number of array tasks |
-| `--result-dir` | `results/dl_<experiment>` | Override output directory |
-| `--batch-size` | config default | Windows per training batch |
-| `--epochs` | config default | Training epochs |
-| `--learning-rate` | config default | Learning rate |
-| `--train-window` | config default | Rolling window size in days |
-| `--input-path` | `all30min` | Data directory |
-| `--weights-dir` | None | Pre-trained AE weights (ae_ridge only) |
-
-### Examples
-
-```bash
-# PatchTST with 10 chunks
-python -m projects.dl.cli.lifecycle submit --experiment patchts --total-chunks 10
-
-# AE-Ridge with custom batch size
-python -m projects.dl.cli.lifecycle submit --experiment ae_ridge --total-chunks 10 --batch-size 32
-```
-
-## Step 4: Start Monitoring
-
-**After submission succeeds, automatically invoke `/loop 5m /monitor`** with the experiment args.
-
-Parse the job IDs from the submit JSON output, then start:
-```
-/loop 5m /monitor <experiment> <result_dir> <job_ids> <total_chunks>
-```
-
-This monitors every 5 minutes: checks status, diagnoses failures, resubmits with resource fixes, and runs aggregation when complete.
+| `Eqw` state in qstat | Job error (check qacct) | Fix issue, `qmod -cj <JOBID>` or resubmit |
+| Memory exceeded | Exceeded h_vmem | Resubmit with `-l h_vmem=96G` |
+| Walltime exceeded | Exceeded h_rt | Resubmit with `-l h_rt=14400` (4hrs) |
+| `torch.OutOfMemoryError` | GPU OOM | Reduce batch_size |
+| ModuleNotFoundError | Python not loaded | Check `module load` in template |
+| `.submitted` marker blocks resubmit | Previous partial run | `ssh ... "rm $HPC_REPO/results/<SET>/exp_*/.submitted"` |
 
 ---
 
 ## Cluster Context
 
-- **Cluster:** Discovery (USC CARC, SLURM)
-- **Account:** `pollok_1603`
-- **Username:** `jc_905`
-- **CPU partition:** `main` (1 CPU, 64G, 1hr default)
-- **GPU partition:** `gpu` (8 CPUs, 128G, 2 GPUs, 6hr default)
-- **SLURM logs:** `/scratch1/jc_905/logs/`
-- **Chunk ID conversion:** SLURM 1-based → executor 0-based (handled by template)
+- **Cluster:** Hoffman2 (UCLA IDRE, SGE)
+- **Username:** `jamesdc1`
+- **SSH target:** `jamesdc1@hoffman2.idre.ucla.edu`
+- **Remote repo:** `$HPC_REPO` (env var, default `/u/project/project-cucuringu/harxhar`)
+- **SGE logs:** `$HPC_REPO/logs/`
+- **Chunk ID conversion:** SGE 1-based -> executor 0-based (handled by template)
 
-## Key Paths
+## Key Paths (on cluster)
 
 | What | Path |
 |------|------|
 | ML submit orchestrator | `projects/ml/scripts/submit.py` |
 | ML submit utilities | `projects/ml/cli/submit.py` |
 | ML executor | `projects/ml/cli/executor.py` |
-| ML SLURM template | `projects/ml/infra/slurm/submit_carc.slurm` |
 | SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
 | Feature definitions | `projects/ml/features/feature_groups.py` |
 | Example configs | `projects/ml/experiments/` |
 | DL submit + status | `projects/dl/cli/lifecycle.py` |
 | DL GPU executor | `projects/dl/cli/gpu_executor.py` |
-| DL SLURM template | `projects/dl/infra/slurm/submit_gpu.slurm` |
 | HPC backends | `core/backends/` |
+| SSH/rsync utilities | `core/remote.py` |
 
 ## After Submission
 
 Once all jobs complete, aggregate results:
 ```bash
-python scripts/aggregate.py
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/aggregate.py"
 ```
-Or use the `/aggregate` command for the full validation + aggregation workflow.
+Or use the `/aggregate` command for the full remote aggregation + download workflow.
