@@ -1,4 +1,15 @@
-"""Core package for harxhar volatility forecasting framework."""
+"""Core package for harxhar volatility forecasting framework.
+
+Shared foundation used by both ``projects.ml`` and ``projects.dl`` (which are
+independent of each other).  Re-exports the three most common entry points:
+
+- ``load_and_prep_data_strided`` — full data pipeline (load → grid → transform → lags → horizon shift)
+- ``BaseModel`` — walk-forward model ABC (initialize → predict → update)
+- ``run_backtest_agnostic`` — CPU walk-forward backtester
+
+Subpackages: data, features, models, backtest, evaluation, backends.
+Each subpackage's ``__init__.py`` lists its public API via ``__all__``.
+"""
 
 __all__ = [
     "load_and_prep_data_strided",

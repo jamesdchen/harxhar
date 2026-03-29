@@ -1,4 +1,14 @@
-"""Data loading, cleaning, and rolling window utilities."""
+"""Data loading, cleaning, and rolling window utilities.
+
+Pipeline: load_and_clean_base_data (parquet → grid → market-hours filter →
+robust_transform) → generate_lag_features → apply_horizon_shift →
+load_and_prep_data_strided (combines all steps).
+
+Key classes for online walk-forward evaluation:
+- RollingRobustScaler — O(W) online (median, IQR) normalization via Numba JIT
+- RollingBuffer — ring buffer storing (X, y) pairs with chronological views
+- RollingMedian — simple rolling median over a ring buffer
+"""
 
 __all__ = [
     "load_and_clean_base_data",

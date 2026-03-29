@@ -1,3 +1,12 @@
+"""Aggregate ML experiment results: stitch chunks, compute metrics, calculate baseline deltas.
+
+Auto-discovers experiment directories with ``.needs_aggregation`` markers, or
+processes a specific ``--base_dir``.  Supports global, segmented, and
+time-of-day filtering evaluation modes.
+
+Run ``python projects/ml/scripts/aggregate.py --help`` for usage.
+"""
+
 import sys
 from pathlib import Path
 
@@ -161,7 +170,13 @@ if __name__ == "__main__":
         description="Aggregate Global/Segment Raw MSE, MAE & QLIKE",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--eval-mode", type=str, choices=["global", "segments", "filter_by_tod"], default="global", help="Evaluation mode.")
+    parser.add_argument(
+        "--eval-mode",
+        type=str,
+        choices=["global", "segments", "filter_by_tod"],
+        default="global",
+        help="Evaluation mode.",
+    )
     parser.add_argument(
         "--base_dir",
         type=str,

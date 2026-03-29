@@ -1,4 +1,14 @@
-"""Traditional ML models for harxhar volatility forecasting."""
+"""Traditional ML project — depends on ``core`` only, independent of ``projects.dl``.
+
+Models: Ridge, XGBoost, LightGBM, RandomForest, SARIMAX, NaiveBaseline.
+All registered in ``projects.ml.models.MODEL_REGISTRY``; use ``create_model()``
+factory.  Feature groups (~50 exogenous features in subgroups) defined in
+``projects.ml.features.feature_groups``.
+
+CLI: ``python -m projects.ml.cli.executor --help`` for single-chunk backtests;
+``python projects/ml/scripts/submit.py --help`` for HPC batch submission.
+Imports are lazy to keep submit-only paths lightweight.
+"""
 
 __all__ = [
     "create_model",
