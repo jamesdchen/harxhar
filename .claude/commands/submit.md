@@ -84,16 +84,72 @@ Submit via SSH using the `sge-remote` backend (wraps qsub over SSH):
 ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python projects/ml/scripts/submit.py <mode> [flags] --backend sge"
 ```
 
-### DL Experiments
+### DL Experiments (GPU)
+
+Submit DL GPU backtests on Hoffman2 via the `sge` backend:
 
 ```bash
-ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python -m projects.dl.cli.lifecycle submit --experiment <experiment> --total-chunks <N> [flags]"
+# PatchTST (default 2x A100)
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python -m projects.dl.cli.submit --experiment patchts --total-chunks 10 --backend sge"
+
+# AE+Ridge
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python -m projects.dl.cli.submit --experiment ae_ridge --total-chunks 10 --backend sge"
+
+# Or via lifecycle manager (tracks job IDs)
+ssh jamesdc1@hoffman2.idre.ucla.edu "cd $HPC_REPO && python -m projects.dl.cli.lifecycle submit --experiment patchts --total-chunks 10 --backend sge"
 ```
 
 | Experiment | Description |
 |-----------|-------------|
 | `patchts` | PatchTST transformer backtest |
 | `ae_ridge` | Autoencoder + Ridge GPU backtest |
+
+#### Hoffman2 GPU Reference
+
+| GPU | Cards/node | SGE flag | Notes |
+|-----|-----------|----------|-------|
+| H200 | 4 | `-l gpu,H200,cuda={1,4}` | Best performance |
+| A100 | 4 | `-l gpu,A100,cuda={1,4}` | Default in template |
+| H100 | 1 | `-l gpu,H100,cuda=1` | Single GPU only |
+| A6000 | 2 | `-l gpu,A6000,cuda={1,2}` | |
+| V100 | 1 | `-l gpu,V100,cuda=1` | Single GPU only |
+| RTX2080Ti | 2 | `-l gpu,RTX2080Ti,cuda={1,2}` | No TF32, 11GB VRAM |
+| ~~P4~~ | 1 | — | **Excluded:** 4GB VRAM too small |
+
+To override GPU type, edit the `#$ -l gpu,...` line in `projects/dl/infra/sge/submit_gpu.sh` or submit manually with custom resource flags.
+
+#### DL Venv Setup (prerequisite)
+
+If the DL venv doesn't exist on Hoffman2, create it:
+
+```bash
+ssh jamesdc1@hoffman2.idre.ucla.edu
+module load conda cuda/12.3
+mamba create -n harxhar-dl python=3.11 --no-default-packages -y
+conda activate harxhar-dl
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install --only-binary :all: transformers "numpy<2" "pandas<3" scikit-learn pyarrow numba tqdm statsmodels lightgbm xgboost
+# Verify:
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+Note: System Python already has numpy, pandas, sklearn, xgboost, lightgbm, pyarrow. The `--system-site-packages` flag inherits these.
+
+#### DL Log Path
+
+SGE DL logs go to `$SCRATCH` (`/u/scratch/j/jamesdc1/`):
+- Pattern: `<jobname>.o<JOBID>.<TASKID>` (e.g., `dl_patchts.o12345678.1`)
+- Read: `ssh jamesdc1@hoffman2.idre.ucla.edu "cat /u/scratch/j/jamesdc1/dl_patchts.o<JOBID>.<TASKID>"`
+
+#### DL Error Diagnosis
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `CUDA not available` | Missing cuda module | Check `module load cuda/12.3` in template |
+| `torch.OutOfMemoryError` | GPU OOM | Reduce `--batch-size` or request more GPUs |
+| `ModuleNotFoundError` | venv missing package | `pip install <pkg>` in `~/envs/harxhar-dl` |
+| Walltime exceeded | Too few chunks | Increase `--total-chunks` or `-l h_rt` |
+| `No module named 'projects'` | Wrong working dir | Ensure `cd $HPC_REPO` before running |
 
 ### Common Flag Reference
 
@@ -186,7 +242,8 @@ If some array tasks fail:
 - **Username:** `jamesdc1`
 - **SSH target:** `jamesdc1@hoffman2.idre.ucla.edu`
 - **Remote repo:** `$HPC_REPO` (env var, default `/u/project/project-cucuringu/harxhar`)
-- **SGE logs:** `$HPC_REPO/logs/`
+- **ML SGE logs:** `$HPC_REPO/logs/`
+- **DL SGE logs:** `/u/scratch/j/jamesdc1/` (`$SCRATCH`)
 - **Chunk ID conversion:** SGE 1-based -> executor 0-based (handled by template)
 
 ## Key Paths (on cluster)
@@ -196,7 +253,8 @@ If some array tasks fail:
 | ML submit orchestrator | `projects/ml/scripts/submit.py` |
 | ML submit utilities | `projects/ml/cli/submit.py` |
 | ML executor | `projects/ml/cli/executor.py` |
-| SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
+| ML SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
+| DL SGE template | `projects/dl/infra/sge/submit_gpu.sh` |
 | Feature definitions | `projects/ml/features/feature_groups.py` |
 | Example configs | `projects/ml/experiments/` |
 | DL submit + status | `projects/dl/cli/lifecycle.py` |

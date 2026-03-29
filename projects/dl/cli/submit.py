@@ -23,6 +23,12 @@ logger = get_logger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DEFAULT_TASKS_PER_ARRAY = 100
 DL_SLURM_SCRIPT = str(PROJECT_ROOT / "projects" / "dl" / "infra" / "slurm" / "submit_gpu.slurm")
+DL_SGE_SCRIPT = str(PROJECT_ROOT / "projects" / "dl" / "infra" / "sge" / "submit_gpu.sh")
+DL_SGE_PASS_ENV_KEYS = (
+    "EXPERIMENT", "RESULT_DIR", "TOTAL_CHUNKS", "INPUT_PATH", "GPU_COUNT",
+    "BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "TRAIN_WINDOW",
+    "CONTEXT_LEN", "PATCH_LEN", "STRIDE", "WEIGHTS_DIR",
+)
 
 
 def build_job_env(
@@ -146,7 +152,10 @@ def submit_dl_experiment(
         result_path,
     )
 
-    backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
+    if backend_name in ("sge", "sge-remote"):
+        backend = get_backend(backend_name, script=DL_SGE_SCRIPT, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
+    else:
+        backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
 
     logger.info("Submitted %s (%d array tasks).", experiment, total_chunks)

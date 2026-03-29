@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 from core.backends import PROJECT_ROOT, get_backend
-from projects.dl.cli.submit import DL_SLURM_SCRIPT, build_job_env
+from projects.dl.cli.submit import DL_SGE_PASS_ENV_KEYS, DL_SGE_SCRIPT, DL_SLURM_SCRIPT, build_job_env
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +243,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--train-window", type=int, default=None)
     sm.add_argument("--input-path", type=str, default=None)
     sm.add_argument("--weights-dir", type=str, default=None)
+    sm.add_argument("--backend", type=str, default="slurm", help="HPC backend (slurm, sge, sge-remote).")
 
     return parser
 
@@ -269,7 +270,11 @@ def main() -> None:
                 env_kwargs[key] = val
 
         job_env = build_job_env(args.experiment, result_dir, args.total_chunks, **env_kwargs)
-        backend = get_backend("slurm", script=DL_SLURM_SCRIPT)
+        backend_name = args.backend
+        if backend_name in ("sge", "sge-remote"):
+            backend = get_backend(backend_name, script=DL_SGE_SCRIPT, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
+        else:
+            backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
         job_name = f"dl_{args.experiment}"
 
         submissions = backend.submit_array_tracked(job_name, args.total_chunks, args.total_chunks, job_env)

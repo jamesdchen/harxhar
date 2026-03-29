@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 REMOTE_HOST = os.environ.get("HPC_HOST", "hoffman2.idre.ucla.edu")
 REMOTE_USER = os.environ.get("HPC_USER", "jamesdc1")
-REMOTE_REPO = os.environ.get("HPC_REPO", "/u/project/project-cucuringu/harxhar")
+REMOTE_REPO = os.environ.get("HPC_REPO", "/u/home/j/jamesdc1/project-cucuringu/harxhar")
 
 RSYNC_EXCLUDES = [
     ".git/",
