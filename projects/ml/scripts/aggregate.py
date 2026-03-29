@@ -20,20 +20,11 @@ import re  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
+from core.evaluation.aggregation import build_segment_configs, print_and_save_summary  # noqa: E402
 from core.evaluation.metrics import calculate_baseline_deltas  # noqa: E402
 
 # Import the updated processor
 from projects.ml.evaluation.aggregation import parse_config, process_single_experiment  # noqa: E402
-
-TARGET_SEGMENTS = ["morning", "midday", "closing", "overnight"]
-
-# Define exact boundaries for the memory slicer
-TOD_BOUNDS = {
-    "morning": {"start": "09:30", "end": "11:30"},
-    "midday": {"start": "11:30", "end": "14:00"},
-    "closing": {"start": "14:00", "end": "16:00"},
-    "overnight": {"start": "16:00", "end": "09:30"},
-}
 
 
 def natural_sort_key(s):
@@ -44,31 +35,7 @@ def natural_sort_key(s):
 def aggregate_base_dir(base_dir, eval_mode):
     """Aggregate all experiments in a single base_dir."""
     # 1. --- Route Logic & Dynamic Configurations ---
-    if eval_mode == "segments":
-        title_str = f"PRE-SEGMENTED FILES SUMMARY: {TARGET_SEGMENTS}"
-        out_filename = "segment_results_summary.csv"
-        segment_configs = [
-            {"name": seg.upper(), "load_kwargs": {"require_suffixes": [seg], "ignore_suffixes": None}}
-            for seg in TARGET_SEGMENTS
-        ]
-
-    elif eval_mode == "filter_by_tod":
-        title_str = "GLOBAL DATA (Filtered into TOD Segments in Memory)"
-        out_filename = "global_results_tod_filtered.csv"
-        segment_configs = [
-            {
-                "name": f"GLOBAL_{seg.upper()}",
-                "load_kwargs": {"require_suffixes": None, "ignore_suffixes": TARGET_SEGMENTS},
-                "time_bounds": bounds,
-            }
-            for seg, bounds in TOD_BOUNDS.items()
-        ]
-    else:
-        title_str = "GLOBAL SUMMARY (All Hours)"
-        out_filename = "global_results_summary.csv"
-        segment_configs = [
-            {"name": "GLOBAL", "load_kwargs": {"require_suffixes": None, "ignore_suffixes": TARGET_SEGMENTS}}
-        ]
+    title_str, out_filename, segment_configs = build_segment_configs(eval_mode)
 
     # Find Experiments
     search_path = os.path.join(base_dir, "exp_*")
@@ -99,47 +66,7 @@ def aggregate_base_dir(base_dir, eval_mode):
     summary_df = calculate_baseline_deltas(pd.DataFrame(results))
 
     # 4. --- Final Table Output ---
-    final_cols = [
-        "exp_id",
-        "model",
-        "experiment_name",
-        "segment",
-        "horizon",
-        "mse",
-        "delta_mse",
-        "oos_r2",
-        "mae",
-        "delta_mae",
-        "qlike",
-        "delta_qlike",
-        "n_samples",
-    ]
-    final_cols = [c for c in final_cols if c in summary_df.columns]
-
-    print("\n" + "=" * 175)
-    print(title_str)
-    print("=" * 165)
-
-    formatters = {
-        "mse": "{:.4e}".format,
-        "delta_mse": "{:.4e}".format,
-        "mae": "{:.4e}".format,
-        "delta_mae": "{:.4e}".format,
-        "qlike": "{:.6f}".format,
-        "delta_qlike": "{:.6f}".format,
-        "oos_r2": "{:.4%}".format,
-    }
-
-    pd.set_option("display.width", 1000)
-    print(
-        summary_df[final_cols].to_string(
-            index=False, formatters={k: v for k, v in formatters.items() if k in final_cols}
-        )
-    )
-
-    output_file = os.path.join(base_dir, out_filename)
-    summary_df.to_csv(output_file, index=False)
-    print(f"\nSaved summary to: {output_file}")
+    print_and_save_summary(summary_df, title_str, os.path.join(base_dir, out_filename))
 
 
 def main(args):
