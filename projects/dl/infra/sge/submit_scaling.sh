@@ -19,7 +19,7 @@
 #$ -j y
 #$ -o /u/scratch/j/jamesdc1/
 #$ -l gpu,A100,cuda=1
-#$ -l h_data=16G,h_rt=3600
+#$ -l h_data=16G,h_rt=14400
 #$ -pe shared 4
 
 # --- Configuration (override via -v or edit here) ---
