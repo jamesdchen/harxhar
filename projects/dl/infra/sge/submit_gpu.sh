@@ -79,6 +79,7 @@ CMD="python3 -m projects.dl.cli.gpu_executor --experiment $EXPERIMENT --input-pa
 CMD="$CMD --chunk-id $CHUNK_ID --total-chunks $TOTAL_CHUNKS"
 
 [ -n "$OUTPUT_FILE" ]   && CMD="$CMD --output $OUTPUT_FILE"
+[ -n "$RESULT_DIR" ]    && CMD="$CMD --progress-path $RESULT_DIR/progress_chunk_${SGE_TASK_ID}.json"
 [ -n "$BATCH_SIZE" ]    && CMD="$CMD --batch-size $BATCH_SIZE"
 [ -n "$EPOCHS" ]        && CMD="$CMD --epochs $EPOCHS"
 [ -n "$LEARNING_RATE" ] && CMD="$CMD --learning-rate $LEARNING_RATE"

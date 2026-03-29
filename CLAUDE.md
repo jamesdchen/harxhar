@@ -57,7 +57,7 @@ pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short
 - **Cluster:** Hoffman2 (UCLA IDRE), SGE scheduler
 - **Username:** `jamesdc1`
 - **SSH target:** `jamesdc1@hoffman2.idre.ucla.edu`
-- **Remote repo:** `$HPC_REPO` (default `/u/project/project-cucuringu/harxhar`)
+- **Remote repo:** `$HPC_REPO` (default `/u/home/j/jamesdc1/project-cucuringu/harxhar`)
 - **ML SGE logs:** `$HPC_REPO/logs/`
 - **DL SGE logs:** `/u/scratch/j/jamesdc1/` (`$SCRATCH`)
 - **Results:** `results/`
