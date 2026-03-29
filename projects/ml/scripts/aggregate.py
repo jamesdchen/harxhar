@@ -157,8 +157,11 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Aggregate Global/Segment Raw MSE, MAE & QLIKE")
-    parser.add_argument("--eval-mode", type=str, choices=["global", "segments", "filter_by_tod"], default="global")
+    parser = argparse.ArgumentParser(
+        description="Aggregate Global/Segment Raw MSE, MAE & QLIKE",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--eval-mode", type=str, choices=["global", "segments", "filter_by_tod"], default="global", help="Evaluation mode.")
     parser.add_argument(
         "--base_dir",
         type=str,
