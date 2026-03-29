@@ -18,7 +18,10 @@ logger = get_logger(__name__)
 
 def get_common_parser(description: str) -> argparse.ArgumentParser:
     """Returns a standardized arg parser for all scripts."""
-    parser = argparse.ArgumentParser(description=description)
+    parser = argparse.ArgumentParser(
+        description=description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "--model",
         type=str,

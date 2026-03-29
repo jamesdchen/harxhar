@@ -182,10 +182,13 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Aggregate DL experiment results")
+    parser = argparse.ArgumentParser(
+        description="Aggregate DL experiment results",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("dirs", nargs="*", help="DL result directories to aggregate")
     parser.add_argument("--auto", action="store_true", help="Auto-discover results/dl_* directories")
-    parser.add_argument("--eval-mode", choices=["global", "segments", "filter_by_tod"], default="global")
+    parser.add_argument("--eval-mode", choices=["global", "segments", "filter_by_tod"], default="global", help="Evaluation mode.")
     parser.add_argument(
         "--baseline-dir",
         type=str,
