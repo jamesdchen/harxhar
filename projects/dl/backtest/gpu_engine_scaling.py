@@ -54,12 +54,19 @@ def _build_augmented_data(
     context_len: int,
     block_size: int,
     seed: int,
+    max_synth_ratio: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Combine real training data with MBB-generated synthetic windows.
 
     The MBB operates on the 1-D target series (adj_RV) to preserve temporal
     structure, then sliding windows are extracted from the synthetic series
     using the same lag convention as the real data.
+
+    Parameters
+    ----------
+    max_synth_ratio : float
+        If > 0, cap synthetic windows at ``max_synth_ratio * len(X_train)``.
+        Prevents the real signal from being diluted at high multipliers.
     """
     if multiplier <= 0:
         return X_train, y_train
@@ -68,6 +75,18 @@ def _build_augmented_data(
     n_synth_raw = multiplier * len(y_train)
     synth_series = mbb.generate(n_synth_raw, seed=seed)
     X_synth, y_synth = _windows_from_series(synth_series, context_len)
+
+    # Cap synthetic windows to preserve real-data signal
+    if max_synth_ratio > 0:
+        max_synth = int(max_synth_ratio * len(X_train))
+        if len(X_synth) > max_synth:
+            logger.info(
+                "Capping synthetic windows: %d -> %d (%.1f× real)",
+                len(X_synth), max_synth, max_synth_ratio,
+            )
+            rng = np.random.default_rng(seed)
+            idx = rng.choice(len(X_synth), size=max_synth, replace=False)
+            X_synth, y_synth = X_synth[idx], y_synth[idx]
 
     logger.info(
         "Augmentation: %d real + %d synthetic = %d total windows",
@@ -195,6 +214,7 @@ def run_scaling_experiment(
     train_config: dict,
     multiplier: int,
     block_size: int = 48,
+    max_synth_ratio: float = 0.0,
     seed: int = 42,
     device: torch.device | None = None,
 ) -> dict:
@@ -209,6 +229,7 @@ def run_scaling_experiment(
     train_config : training hyperparameters (epochs, lr, batch_size).
     multiplier : 0 = real only, k = real + k× synthetic.
     block_size : MBB block length (default 48 = one trading day).
+    max_synth_ratio : cap synthetic windows at this multiple of real windows.
     seed : random seed for reproducibility.
     device : torch device (auto-detected if None).
 
@@ -226,7 +247,9 @@ def run_scaling_experiment(
     context_len = model_config["context_len"]
 
     # --- Augment ---
-    X_aug, y_aug = _build_augmented_data(X_train, y_train, multiplier, context_len, block_size, seed)
+    X_aug, y_aug = _build_augmented_data(
+        X_train, y_train, multiplier, context_len, block_size, seed, max_synth_ratio
+    )
     n_windows = len(X_aug)
 
     # --- Normalize & tensorize ---

@@ -6,7 +6,7 @@ Usage:
     python -m scripts.run_scaling_experiment --results-dir results_scaling_laws --repeats 5
 
 SGE array job usage:
-    qsub -t 1-18 ... -- python -m scripts.run_scaling_experiment --task-id \$SGE_TASK_ID --total-tasks 18
+    qsub -t 1-54 ... -- python -m scripts.run_scaling_experiment --task-id \$SGE_TASK_ID --total-tasks 54
 """
 
 from __future__ import annotations
@@ -56,28 +56,84 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--repeats", type=int, default=3, help="Repeats per multiplier.")
     parser.add_argument(
-        "--block-size",
+        "--block-sizes",
         type=int,
-        default=48,
-        help="MBB block size (one trading day of 30-min bars).",
+        nargs="+",
+        default=[48, 96, 240],
+        help="MBB block sizes to sweep (48=1day, 96=2day, 240=5day).",
     )
     parser.add_argument("--train-frac", type=float, default=0.8, help="Train fraction.")
     parser.add_argument("--batch-size", type=int, default=None, help="Windows per batch.")
-    parser.add_argument("--epochs", type=int, default=None, help="Training epochs.")
+    parser.add_argument("--epochs", type=int, default=None, help="Training epochs (base, before scaling).")
     parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
+    parser.add_argument(
+        "--max-synth-ratio",
+        type=float,
+        default=5.0,
+        help="Cap synthetic windows at this multiple of real windows.",
+    )
     parser.add_argument(
         "--task-id",
         type=int,
         default=None,
-        help="SGE array task ID (0-based). Maps to (multiplier, repeat) pair via divmod.",
+        help="SGE array task ID (0-based). Maps to (block_size, multiplier, repeat) via divmod.",
     )
     parser.add_argument(
         "--total-tasks",
         type=int,
         default=None,
-        help="Total number of SGE array tasks (len(multipliers) * repeats).",
+        help="Total number of SGE array tasks (len(block_sizes) * len(multipliers) * repeats).",
     )
     return parser
+
+
+def _run_single(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    block_size: int,
+    mult: int,
+    rep: int,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    baselines_test,
+    device: torch.device,
+) -> dict:
+    """Run a single (block_size, multiplier, repeat) experiment."""
+    base_epochs = config["train"]["num_epochs"]
+    seed = block_size * 100_000 + mult * 1000 + rep
+
+    # Scale epochs so real samples get ~same number of passes
+    effective_ratio = min(1 + mult, 1 + args.max_synth_ratio)
+    scaled_epochs = int(base_epochs * effective_ratio)
+
+    run_train_config = {**config["train"], "num_epochs": scaled_epochs}
+
+    logger.info("=" * 60)
+    logger.info(
+        "Block=%d, Mult=%d, Rep=%d, Seed=%d, Epochs=%d",
+        block_size, mult, rep, seed, scaled_epochs,
+    )
+    logger.info("=" * 60)
+
+    result = run_scaling_experiment(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        baselines_test=baselines_test,
+        model_config=config["model"],
+        train_config=run_train_config,
+        multiplier=mult,
+        block_size=block_size,
+        max_synth_ratio=args.max_synth_ratio,
+        seed=seed,
+        device=device,
+    )
+    result["repeat"] = rep
+    result["block_size"] = block_size
+    return result
 
 
 def main() -> None:
@@ -129,13 +185,20 @@ def main() -> None:
     # Run experiments with incremental saving for fault tolerance
     os.makedirs(args.results_dir, exist_ok=True)
 
-    # SGE array job mode: run a single (multiplier, repeat) pair
+    # Build the full grid: (block_size, multiplier, repeat)
+    grid = [
+        (bs, mult, rep)
+        for bs in args.block_sizes
+        for mult in args.multipliers
+        for rep in range(args.repeats)
+    ]
+
+    # SGE array job mode: run a single (block_size, multiplier, repeat) triple
     if args.task_id is not None:
-        n_multipliers = len(args.multipliers)
-        expected_tasks = n_multipliers * args.repeats
+        expected_tasks = len(grid)
         if args.total_tasks is not None and args.total_tasks != expected_tasks:
             logger.warning(
-                "--total-tasks=%d does not match len(multipliers)*repeats=%d",
+                "--total-tasks=%d does not match grid size=%d",
                 args.total_tasks,
                 expected_tasks,
             )
@@ -144,81 +207,61 @@ def main() -> None:
                 f"task_id={args.task_id} out of range [0, {expected_tasks})"
             )
 
-        mult_idx, rep = divmod(args.task_id, args.repeats)
-        mult = args.multipliers[mult_idx]
-        seed = mult * 1000 + rep
-
-        logger.info("SGE array task %d: multiplier=%d, repeat=%d, seed=%d", args.task_id, mult, rep, seed)
-
-        result = run_scaling_experiment(
-            X_train=X_train,
-            y_train=y_train,
-            X_test=X_test,
-            y_test=y_test,
-            baselines_test=baselines_test,
-            model_config=config["model"],
-            train_config=config["train"],
-            multiplier=mult,
-            block_size=args.block_size,
-            seed=seed,
-            device=device,
+        block_size, mult, rep = grid[args.task_id]
+        logger.info(
+            "SGE array task %d: block=%d, multiplier=%d, repeat=%d",
+            args.task_id, block_size, mult, rep,
         )
-        result["repeat"] = rep
+
+        result = _run_single(
+            args, config, block_size, mult, rep,
+            X_train, y_train, X_test, y_test, baselines_test, device,
+        )
 
         csv_path = os.path.join(args.results_dir, f"scaling_result_{args.task_id}.csv")
         pd.DataFrame([result]).drop(columns=["epoch_losses"], errors="ignore").to_csv(csv_path, index=False)
         logger.info("Task %d result saved to %s (QLIKE=%.6f)", args.task_id, csv_path, result["qlike"])
         return
 
-    # Sequential mode: run all multiplier x repeat combinations
+    # Sequential mode: run all block_size x multiplier x repeat combinations
     csv_path = os.path.join(args.results_dir, "scaling_results.csv")
 
     all_results: list[dict] = []
-    done_keys: set[tuple[int, int]] = set()
+    done_keys: set[tuple[int, int, int]] = set()
 
     if os.path.exists(csv_path):
         prev_df = pd.read_csv(csv_path)
-        done_keys = set(zip(prev_df["multiplier"], prev_df["repeat"], strict=False))
+        done_keys = set(
+            zip(prev_df["block_size"], prev_df["multiplier"], prev_df["repeat"], strict=False)
+        )
         all_results = prev_df.to_dict("records")
         logger.info("Resuming: %d runs already completed", len(done_keys))
 
-    for mult in args.multipliers:
-        for rep in range(args.repeats):
-            if (mult, rep) in done_keys:
-                logger.info("Skipping multiplier=%d, repeat=%d (already done)", mult, rep)
-                continue
-
-            seed = mult * 1000 + rep
-            logger.info("=" * 60)
-            logger.info("Multiplier=%d, Repeat=%d, Seed=%d", mult, rep, seed)
-            logger.info("=" * 60)
-
-            result = run_scaling_experiment(
-                X_train=X_train,
-                y_train=y_train,
-                X_test=X_test,
-                y_test=y_test,
-                baselines_test=baselines_test,
-                model_config=config["model"],
-                train_config=config["train"],
-                multiplier=mult,
-                block_size=args.block_size,
-                seed=seed,
-                device=device,
+    for block_size, mult, rep in grid:
+        key = (block_size, mult, rep)
+        if key in done_keys:
+            logger.info(
+                "Skipping block=%d, mult=%d, rep=%d (already done)",
+                block_size, mult, rep,
             )
-            result["repeat"] = rep
-            all_results.append(result)
+            continue
 
-            # Save incrementally
-            pd.DataFrame(all_results).drop(columns=["epoch_losses"], errors="ignore").to_csv(csv_path, index=False)
-            logger.info("  -> QLIKE=%.6f, n_windows=%d", result["qlike"], result["n_train_windows"])
+        result = _run_single(
+            args, config, block_size, mult, rep,
+            X_train, y_train, X_test, y_test, baselines_test, device,
+        )
+        all_results.append(result)
+
+        # Save incrementally
+        pd.DataFrame(all_results).drop(columns=["epoch_losses"], errors="ignore").to_csv(csv_path, index=False)
+        logger.info("  -> QLIKE=%.6f, n_windows=%d", result["qlike"], result["n_train_windows"])
 
     logger.info("All results saved to %s", csv_path)
 
     # Print summary
     df = pd.read_csv(csv_path)
     summary = (
-        df.groupby("multiplier")
+        df.groupby(["block_size", "multiplier"])
         .agg(
             qlike_mean=("qlike", "mean"),
             qlike_std=("qlike", "std"),
