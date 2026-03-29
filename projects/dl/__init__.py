@@ -1,13 +1,4 @@
-"""Deep learning project — depends on ``core`` only, independent of ``projects.ml``.
-
-Models: PatchTST (transformer-based patch time series) and LagAutoEncoder
-(hybrid supervised/unsupervised, encoder feeds into Ridge regression).
-GPU backtest engines use torch.func.vmap for vectorized batch training.
-
-CLI: ``python -m projects.dl.cli.gpu_executor --help`` for single runs;
-``python -m projects.dl.cli.lifecycle --help`` for submit + status tracking.
-Imports are lazy to avoid pulling torch at import time.
-"""
+"""Deep learning models for harxhar volatility forecasting."""
 
 __all__ = [
     "PatchTSTForecaster",

@@ -1,12 +1,3 @@
-"""CLI entry point and shared parser for single-chunk ML backtests.
-
-Provides ``get_common_parser()`` (used by all ML scripts) and ``main()`` which
-loads data, iterates over horizons, and calls ``execute_chunk_backtest()`` for
-each.  Supports global and segmented (morning/midday/closing/overnight) modes.
-
-Run ``python -m projects.ml.cli.executor --help`` for full usage.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -27,16 +18,12 @@ logger = get_logger(__name__)
 
 def get_common_parser(description: str) -> argparse.ArgumentParser:
     """Returns a standardized arg parser for all scripts."""
-    parser = argparse.ArgumentParser(
-        description=description,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--model",
         type=str,
         choices=["ridge", "naive", "xgboost", "lightgbm", "random_forest", "sarimax"],
         required=True,
-        help="Model to run.",
     )
     parser.add_argument(
         "--features",
@@ -49,12 +36,10 @@ def get_common_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--ae-loss-path", type=str, default=None, help="File path to save AE training loss log CSV (--features ae)"
     )
-    parser.add_argument("--input-path", type=str, default="all30min", help="Directory containing .parquet data files.")
-    parser.add_argument("--output-file", type=str, required=True, help="Path to save chunk results CSV.")
-    parser.add_argument("--chunk-id", type=int, required=True, help="Zero-based chunk index for this worker.")
-    parser.add_argument(
-        "--total-chunks", type=int, required=True, help="Total number of chunks to split the dataset into."
-    )
+    parser.add_argument("--input-path", type=str, default="all30min")
+    parser.add_argument("--output-file", type=str, required=True)
+    parser.add_argument("--chunk-id", type=int, required=True)
+    parser.add_argument("--total-chunks", type=int, required=True)
     parser.add_argument("--exog-cols", type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument(
         "--lag-scope",

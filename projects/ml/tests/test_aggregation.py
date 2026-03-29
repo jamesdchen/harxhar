@@ -44,17 +44,15 @@ class TestParseConfig:
         exp_id, name, model = parse_config(exp_dir)
         # ID inferred from directory name suffix
         assert exp_id == 5
-        # Name inferred from directory name via dirname fallback
-        assert name == "results_5"
-        assert model == "5"
+        assert name == "Unknown"
+        assert model == "Unknown"
 
     def test_malformed_file(self, tmp_path):
         (tmp_path / "config.txt").write_text("Experiment ID: not_a_number\ngarbage line\n")
-        # ValueError on int() is caught; falls back to dirname inference
+        # ValueError on int() is caught; ID falls back to path inference
         exp_id, name, model = parse_config(tmp_path)
-        # Name and model inferred from directory name
-        assert isinstance(name, str)
-        assert isinstance(model, str)
+        assert name == "Unknown"
+        assert model == "Unknown"
 
 
 # ---------------------------------------------------------------------------

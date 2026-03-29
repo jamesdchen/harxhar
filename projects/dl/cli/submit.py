@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 
 from core.backends import get_backend
-from core.cli.metadata import build_metadata, save_metadata
 from core.core.log import get_logger
 
 logger = get_logger(__name__)
@@ -29,12 +28,6 @@ DL_SGE_PASS_ENV_KEYS = (
     "EXPERIMENT", "RESULT_DIR", "TOTAL_CHUNKS", "INPUT_PATH", "GPU_COUNT",
     "BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "TRAIN_WINDOW",
     "CONTEXT_LEN", "PATCH_LEN", "STRIDE", "WEIGHTS_DIR",
-)
-DL_SGE_SCALING_SCRIPT = str(PROJECT_ROOT / "projects" / "dl" / "infra" / "sge" / "submit_scaling.sh")
-DL_SGE_SCALING_ENV_KEYS = (
-    "MULTIPLIERS", "REPEATS", "BLOCK_SIZE", "TRAIN_FRAC",
-    "RESULTS_DIR", "INPUT_PATH", "TOTAL_TASKS",
-    "BATCH_SIZE", "EPOCHS", "LEARNING_RATE",
 )
 
 
@@ -78,39 +71,6 @@ def build_job_env(
         env["STRIDE"] = str(stride)
     if weights_dir is not None:
         env["WEIGHTS_DIR"] = weights_dir
-    return env
-
-
-def build_scaling_env(
-    result_dir: str,
-    total_tasks: int,
-    multipliers: list[int],
-    repeats: int,
-    *,
-    input_path: str = "all30min",
-    block_size: int | None = None,
-    train_frac: float | None = None,
-    batch_size: int | None = None,
-    epochs: int | None = None,
-    learning_rate: float | None = None,
-) -> dict[str, str]:
-    """Build the env dict for submit_scaling.sh."""
-    env = os.environ.copy()
-    env["RESULTS_DIR"] = result_dir
-    env["TOTAL_TASKS"] = str(total_tasks)
-    env["MULTIPLIERS"] = " ".join(str(m) for m in multipliers)
-    env["REPEATS"] = str(repeats)
-    env["INPUT_PATH"] = input_path
-    if block_size is not None:
-        env["BLOCK_SIZE"] = str(block_size)
-    if train_frac is not None:
-        env["TRAIN_FRAC"] = str(train_frac)
-    if batch_size is not None:
-        env["BATCH_SIZE"] = str(batch_size)
-    if epochs is not None:
-        env["EPOCHS"] = str(epochs)
-    if learning_rate is not None:
-        env["LEARNING_RATE"] = str(learning_rate)
     return env
 
 
@@ -182,30 +142,8 @@ def submit_dl_experiment(
     result_path = Path(result_dir).resolve()
     result_path.mkdir(parents=True, exist_ok=True)
 
-    metadata = build_metadata({"experiment": experiment, "total_chunks": total_chunks, **env_kwargs})
-    save_metadata(result_path, metadata)
-
     job_name = f"dl_{experiment}"
-
-    if experiment == "scaling":
-        job_env = build_scaling_env(
-            result_dir=str(result_path),
-            total_tasks=total_chunks,
-            multipliers=env_kwargs.pop("multipliers"),
-            repeats=env_kwargs.pop("repeats"),
-            input_path=env_kwargs.pop("input_path", "all30min"),
-            block_size=env_kwargs.pop("block_size", None),
-            train_frac=env_kwargs.pop("train_frac", None),
-            batch_size=env_kwargs.pop("batch_size", None),
-            epochs=env_kwargs.pop("epochs", None),
-            learning_rate=env_kwargs.pop("learning_rate", None),
-        )
-        sge_script = DL_SGE_SCALING_SCRIPT
-        sge_env_keys = DL_SGE_SCALING_ENV_KEYS
-    else:
-        job_env = build_job_env(experiment, str(result_path), total_chunks, **env_kwargs)
-        sge_script = DL_SGE_SCRIPT
-        sge_env_keys = DL_SGE_PASS_ENV_KEYS
+    job_env = build_job_env(experiment, str(result_path), total_chunks, **env_kwargs)
 
     logger.info(
         "Submitting %s: %d chunks to %s",
@@ -215,7 +153,7 @@ def submit_dl_experiment(
     )
 
     if backend_name in ("sge", "sge-remote"):
-        backend = get_backend(backend_name, script=sge_script, pass_env_keys=sge_env_keys)
+        backend = get_backend(backend_name, script=DL_SGE_SCRIPT, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
     else:
         backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
@@ -232,7 +170,7 @@ def main() -> None:
     parser.add_argument(
         "--experiment",
         type=str,
-        choices=["patchts", "ae_ridge", "scaling"],
+        choices=["patchts", "ae_ridge"],
         required=True,
         help="Which DL experiment to run.",
     )
@@ -262,10 +200,6 @@ def main() -> None:
     parser.add_argument("--patch-len", type=int, default=None, help="Patch length (patchts only).")
     parser.add_argument("--stride", type=int, default=None, help="Stride between patches (patchts only).")
     parser.add_argument("--weights-dir", type=str, default=None, help="AE weights directory (ae_ridge only).")
-    parser.add_argument("--multipliers", type=int, nargs="+", default=[0, 1, 2, 5, 10, 50], help="Scaling multipliers (scaling only).")
-    parser.add_argument("--repeats", type=int, default=3, help="Repeats per multiplier (scaling only).")
-    parser.add_argument("--block-size", type=int, default=None, help="MBB block size (scaling only).")
-    parser.add_argument("--train-frac", type=float, default=None, help="Train fraction (scaling only).")
 
     args = parser.parse_args()
 
@@ -281,10 +215,6 @@ def main() -> None:
         "patch_len",
         "stride",
         "weights_dir",
-        "multipliers",
-        "repeats",
-        "block_size",
-        "train_frac",
     ):
         val = getattr(args, key)
         if val is not None:
@@ -300,8 +230,6 @@ def main() -> None:
         )
     elif args.total_chunks is not None:
         total_chunks = args.total_chunks
-    elif args.experiment == "scaling":
-        total_chunks = len(args.multipliers) * args.repeats
     else:
         total_chunks = 10  # legacy default
 

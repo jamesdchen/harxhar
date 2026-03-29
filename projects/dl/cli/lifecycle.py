@@ -222,7 +222,6 @@ def report_status(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="SLURM DL experiment status reporter and job submitter.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -230,20 +229,20 @@ def _build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("status", help="Print JSON status report to stdout.")
     st.add_argument("--result-dir", required=True, help="Result directory.")
     st.add_argument("--job-ids", type=str, default="", help="Comma-separated SLURM job IDs.")
-    st.add_argument("--total-chunks", type=int, required=True, help="Total number of chunks.")
-    st.add_argument("--experiment", type=str, default="", help="Experiment name.")
+    st.add_argument("--total-chunks", type=int, required=True)
+    st.add_argument("--experiment", type=str, default="")
 
     # --- submit ---
     sm = sub.add_parser("submit", help="Submit array job, print job IDs, exit.")
-    sm.add_argument("--experiment", required=True, choices=["patchts", "ae_ridge"], help="Experiment type.")
-    sm.add_argument("--total-chunks", type=int, default=10, help="Number of array tasks.")
-    sm.add_argument("--result-dir", default=None, help="Override result directory.")
-    sm.add_argument("--batch-size", type=int, default=None, help="Training batch size.")
-    sm.add_argument("--epochs", type=int, default=None, help="Training epochs.")
-    sm.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
-    sm.add_argument("--train-window", type=int, default=None, help="Training window size in days.")
-    sm.add_argument("--input-path", type=str, default=None, help="Data directory.")
-    sm.add_argument("--weights-dir", type=str, default=None, help="Pre-trained weights directory.")
+    sm.add_argument("--experiment", required=True, choices=["patchts", "ae_ridge"])
+    sm.add_argument("--total-chunks", type=int, default=10)
+    sm.add_argument("--result-dir", default=None)
+    sm.add_argument("--batch-size", type=int, default=None)
+    sm.add_argument("--epochs", type=int, default=None)
+    sm.add_argument("--learning-rate", type=float, default=None)
+    sm.add_argument("--train-window", type=int, default=None)
+    sm.add_argument("--input-path", type=str, default=None)
+    sm.add_argument("--weights-dir", type=str, default=None)
     sm.add_argument("--backend", type=str, default="slurm", help="HPC backend (slurm, sge, sge-remote).")
 
     return parser

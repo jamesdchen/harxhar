@@ -1,12 +1,4 @@
-"""CPU backtesting engine for walk-forward evaluation.
-
-- run_backtest_agnostic — model-agnostic walk-forward loop: burn-in
-  initialization, then predict → update for each test step.
-- apply_duan_smearing — converts adjusted-space forecasts to raw space:
-  pred_raw = (forecast² + smear) × baseline.
-- get_chunk_indices_strided — splits test indices into N chunks for HPC.
-- save_chunk_results / build_results_dataframe — persist per-chunk CSVs.
-"""
+"""CPU backtesting engine."""
 
 __all__ = [
     "apply_duan_smearing",

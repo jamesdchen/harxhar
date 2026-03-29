@@ -1,14 +1,3 @@
-"""CPU backtesting engine: walk-forward loop, Duan smearing, chunk splitting, and result I/O.
-
-Functions:
-    run_backtest_agnostic — walk-forward: initialize with burn-in history,
-        then predict → update for each test index.
-    apply_duan_smearing — adjusted-space → raw-space forecast conversion.
-    get_chunk_indices_strided — split test indices into N chunks for HPC array jobs.
-    save_chunk_results — persist a chunk's predictions to CSV.
-    build_results_dataframe — build DataFrame with adjusted and raw-space columns.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
