@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 from core.backends import get_backend
+from core.cli.metadata import build_metadata, save_metadata
 from core.core.log import get_logger
 
 logger = get_logger(__name__)
@@ -180,6 +181,9 @@ def submit_dl_experiment(
     """Submit a DL GPU backtest as a SLURM array job."""
     result_path = Path(result_dir).resolve()
     result_path.mkdir(parents=True, exist_ok=True)
+
+    metadata = build_metadata({"experiment": experiment, "total_chunks": total_chunks, **env_kwargs})
+    save_metadata(result_path, metadata)
 
     job_name = f"dl_{experiment}"
 
