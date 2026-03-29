@@ -91,6 +91,7 @@ python projects/ml/scripts/submit.py subgroup_analysis --models all --features a
 |-----------|-------------|
 | `patchts` | PatchTST transformer backtest |
 | `ae_ridge` | Autoencoder + Ridge GPU backtest |
+| `scaling` | MBB synthetic data scaling law experiment (array job: multiplier × repeat) |
 
 ### DL Submit Commands
 ```bash
@@ -99,6 +100,12 @@ cd $HPC_REPO && python -m projects.dl.cli.submit --experiment patchts --total-ch
 
 # AE+Ridge
 cd $HPC_REPO && python -m projects.dl.cli.submit --experiment ae_ridge --total-chunks 10 --backend sge
+
+# Scaling (auto-computes 18 tasks from 6 multipliers × 3 repeats)
+cd $HPC_REPO && python -m projects.dl.cli.submit --experiment scaling --backend sge
+
+# Scaling with custom params (15 tasks from 3 multipliers × 5 repeats)
+cd $HPC_REPO && python -m projects.dl.cli.submit --experiment scaling --multipliers 0 1 2 --repeats 5 --backend sge
 
 # Via lifecycle manager (tracks job IDs)
 cd $HPC_REPO && python -m projects.dl.cli.lifecycle submit --experiment <name> --total-chunks <n> --backend sge
@@ -204,6 +211,7 @@ Or: `python -c "from core.remote import rsync_pull_results; rsync_pull_results()
 | ML executor | `projects/ml/cli/executor.py` |
 | ML SGE template | `projects/ml/infra/sge/submit_hoffman2.sh` |
 | DL SGE template | `projects/dl/infra/sge/submit_gpu.sh` |
+| DL SGE scaling template | `projects/dl/infra/sge/submit_scaling.sh` |
 | DL lifecycle manager | `projects/dl/cli/lifecycle.py` |
 | DL GPU executor | `projects/dl/cli/gpu_executor.py` |
 | Feature definitions | `core/features/feature_groups.py` |
