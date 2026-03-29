@@ -4,6 +4,9 @@ Usage:
     python -m scripts.run_scaling_experiment
     python -m scripts.run_scaling_experiment --multipliers 0 1 2 5 10 50
     python -m scripts.run_scaling_experiment --results-dir results_scaling_laws --repeats 5
+
+SGE array job usage:
+    qsub -t 1-18 ... -- python -m scripts.run_scaling_experiment --task-id \$SGE_TASK_ID --total-tasks 18
 """
 
 from __future__ import annotations
@@ -62,6 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=None, help="Windows per batch.")
     parser.add_argument("--epochs", type=int, default=None, help="Training epochs.")
     parser.add_argument("--learning-rate", type=float, default=None, help="Learning rate.")
+    parser.add_argument(
+        "--task-id",
+        type=int,
+        default=None,
+        help="SGE array task ID (0-based). Maps to (multiplier, repeat) pair via divmod.",
+    )
+    parser.add_argument(
+        "--total-tasks",
+        type=int,
+        default=None,
+        help="Total number of SGE array tasks (len(multipliers) * repeats).",
+    )
     return parser
 
 
@@ -113,6 +128,49 @@ def main() -> None:
 
     # Run experiments with incremental saving for fault tolerance
     os.makedirs(args.results_dir, exist_ok=True)
+
+    # SGE array job mode: run a single (multiplier, repeat) pair
+    if args.task_id is not None:
+        n_multipliers = len(args.multipliers)
+        expected_tasks = n_multipliers * args.repeats
+        if args.total_tasks is not None and args.total_tasks != expected_tasks:
+            logger.warning(
+                "--total-tasks=%d does not match len(multipliers)*repeats=%d",
+                args.total_tasks,
+                expected_tasks,
+            )
+        if args.task_id < 0 or args.task_id >= expected_tasks:
+            raise ValueError(
+                f"task_id={args.task_id} out of range [0, {expected_tasks})"
+            )
+
+        mult_idx, rep = divmod(args.task_id, args.repeats)
+        mult = args.multipliers[mult_idx]
+        seed = mult * 1000 + rep
+
+        logger.info("SGE array task %d: multiplier=%d, repeat=%d, seed=%d", args.task_id, mult, rep, seed)
+
+        result = run_scaling_experiment(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            baselines_test=baselines_test,
+            model_config=config["model"],
+            train_config=config["train"],
+            multiplier=mult,
+            block_size=args.block_size,
+            seed=seed,
+            device=device,
+        )
+        result["repeat"] = rep
+
+        csv_path = os.path.join(args.results_dir, f"scaling_result_{args.task_id}.csv")
+        pd.DataFrame([result]).drop(columns=["epoch_losses"], errors="ignore").to_csv(csv_path, index=False)
+        logger.info("Task %d result saved to %s (QLIKE=%.6f)", args.task_id, csv_path, result["qlike"])
+        return
+
+    # Sequential mode: run all multiplier x repeat combinations
     csv_path = os.path.join(args.results_dir, "scaling_results.csv")
 
     all_results: list[dict] = []
