@@ -1,19 +1,31 @@
-"""SSH and rsync utilities for remote HPC operations.
+"""Backward-compatible remote utilities delegating to the hpc package.
 
-Provides thin wrappers around ssh/rsync so cluster commands can be
-executed from a local machine without paramiko or other dependencies.
-
-Configuration via environment variables:
-    HPC_HOST  — cluster hostname  (default: hoffman2.idre.ucla.edu)
-    HPC_USER  — cluster username  (default: jamesdc1)
-    HPC_REPO  — repo path on cluster (default: /u/project/project-cucuringu/harxhar)
+Preserves the harxhar-specific defaults (Hoffman2, jamesdc1) and module-level
+config variables so existing callers don't need to change.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import subprocess
+
+__all__ = [
+    "REMOTE_HOST",
+    "REMOTE_USER",
+    "REMOTE_REPO",
+    "ssh_run",
+    "rsync_push",
+    "rsync_pull_results",
+]
+
 import os
-import subprocess
 from pathlib import Path
+
+from hpc.remote import rsync_pull
+from hpc.remote import rsync_push as _rsync_push
+from hpc.remote import ssh_run as _ssh_run
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -32,50 +44,19 @@ RSYNC_EXCLUDES = [
 ]
 
 
-def _target() -> str:
-    return f"{REMOTE_USER}@{REMOTE_HOST}"
-
-
 def ssh_run(cmd: str, *, capture: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run *cmd* on the cluster via SSH.
-
-    Parameters
-    ----------
-    cmd:
-        Shell command string to execute remotely.
-    capture:
-        If True (default), capture stdout/stderr and return them.
-        If False, inherit the parent process's stdout/stderr (useful for
-        streaming long-running output).
-
-    Returns
-    -------
-    subprocess.CompletedProcess with returncode, stdout, stderr.
-    """
-    return subprocess.run(
-        ["ssh", _target(), cmd],
-        capture_output=capture,
-        text=True,
-    )
+    """Run *cmd* on the cluster via SSH."""
+    return _ssh_run(cmd, host=REMOTE_HOST, user=REMOTE_USER, capture=capture)
 
 
 def rsync_push() -> subprocess.CompletedProcess[str]:
-    """Sync local code to the cluster using rsync.
-
-    Uses ``--delete`` so removed local files are also removed remotely.
-    Excludes large/generated directories listed in ``RSYNC_EXCLUDES``.
-    """
-    exclude_flags: list[str] = []
-    for pattern in RSYNC_EXCLUDES:
-        exclude_flags += ["--exclude", pattern]
-
-    src = str(PROJECT_ROOT).rstrip("/\\") + "/"
-    dst = f"{_target()}:{REMOTE_REPO}/"
-
-    return subprocess.run(
-        ["rsync", "-az", "--delete", *exclude_flags, src, dst],
-        capture_output=True,
-        text=True,
+    """Sync local code to the cluster."""
+    return _rsync_push(
+        host=REMOTE_HOST,
+        user=REMOTE_USER,
+        remote_path=REMOTE_REPO,
+        local_path=PROJECT_ROOT,
+        exclude=RSYNC_EXCLUDES,
     )
 
 
@@ -83,29 +64,18 @@ def rsync_pull_results(
     remote_dir: str = "results/",
     local_dir: str = "results/",
 ) -> subprocess.CompletedProcess[str]:
-    """Pull summary CSVs and metadata from the cluster.
-
-    Only downloads summary files, metadata, and lifecycle logs — not the
-    per-chunk result CSVs (which can be hundreds of files).
-    """
-    src = f"{_target()}:{REMOTE_REPO}/{remote_dir.rstrip('/')}/"
+    """Pull summary CSVs and metadata from the cluster."""
     dst_path = PROJECT_ROOT / local_dir.rstrip("/\\")
-    dst_path.mkdir(parents=True, exist_ok=True)
-    dst = str(dst_path).rstrip("/\\") + "/"
-
-    return subprocess.run(
-        [
-            "rsync",
-            "-az",
-            "--include=*/",
-            "--include=*_summary*.csv",
-            "--include=metadata.json",
-            "--include=config.txt",
-            "--include=lifecycle.jsonl",
-            "--exclude=*",
-            src,
-            dst,
+    return rsync_pull(
+        host=REMOTE_HOST,
+        user=REMOTE_USER,
+        remote_path=REMOTE_REPO,
+        remote_subdir=remote_dir,
+        local_dir=dst_path,
+        include=[
+            "*_summary*.csv",
+            "metadata.json",
+            "config.txt",
+            "lifecycle.jsonl",
         ],
-        capture_output=True,
-        text=True,
     )

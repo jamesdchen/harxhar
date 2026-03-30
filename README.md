@@ -14,7 +14,8 @@ core/                              # Shared foundation (no ML/DL deps)
 ├── models/                        # BaseModel ABC, RollingRegressionModel, NaiveBaseline
 ├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
 ├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
-├── backends/                      # SLURM/SGE job submission
+├── backends/                      # HPC backend shim (delegates to claude-hpc)
+├── remote.py                      # SSH/rsync shim (delegates to claude-hpc)
 └── tests/                         # Core unit tests
 
 projects/
@@ -254,7 +255,7 @@ Or install all packages at once:
 pip install -e .
 ```
 
-Requires Python 3.10+. Key dependencies: numpy, pandas, scikit-learn, xgboost, lightgbm, statsmodels, torch (>=2.0), transformers (>=4.30), numba, pyarrow.
+Requires Python 3.10+. Key dependencies: numpy, pandas, scikit-learn, xgboost, lightgbm, statsmodels, torch (>=2.0), transformers (>=4.30), numba, pyarrow, [claude-hpc](https://github.com/jamesdchen/claude-hpc).
 
 ## Quick Start
 
@@ -363,13 +364,15 @@ python projects/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (m
 
 ### HPC Backends
 
-Pluggable backend system via registry pattern in `core/backends/`:
+Job submission uses the [`claude-hpc`](https://github.com/jamesdchen/claude-hpc) package. `core/backends/` is a thin re-export shim that delegates to `hpc.backends`, automatically injecting harxhar's SSH config for the `sge-remote` backend.
 
-- **SLURM** — Submits array jobs via `sbatch` using `projects/ml/infra/slurm/submit_carc.slurm` (16GB, 1hr, main partition). Configurable account and log directory via `SLURM_ACCOUNT` and `SLURM_LOG_DIR` environment variables.
-- **SGE** — Submits task arrays via `qsub` using `projects/ml/infra/sge/submit_hoffman2.sh` for UCLA Hoffman2.
-- **Dry-run** — Prints submission details without executing.
+Available backends: **SLURM**, **SGE**, **SGE-remote** (via SSH), **Dry-run**.
 
-Additional SLURM templates in `projects/dl/infra/slurm/` for GPU jobs: `patchts_backtest.slurm`, `ae_ridge_backtest.slurm`, `submit_gpu.slurm`.
+```bash
+pip install -e /path/to/claude-hpc  # required dependency
+```
+
+SLURM templates in `projects/ml/infra/slurm/` and `projects/dl/infra/slurm/` for CPU and GPU jobs respectively.
 
 ## Notebooks
 
