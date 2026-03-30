@@ -2,6 +2,11 @@ project: harxhar
 cluster: hoffman2
 remote_path: /u/home/j/jamesdc1/project-cucuringu/harxhar
 rsync_exclude: [.git/, results/, __pycache__, "*.pyc", .mypy_cache/, all30min/, .claude/]
+experiment_paths: ["projects/ml/experiments/*.yaml"]
+registries:
+  models: "projects.ml.models.registry:ALL_MODELS"
+  features: "projects.ml.features.feature_groups:FEATURE_TYPES"
+  subgroups: "projects.ml.features.feature_groups:SUBGROUPS"
 
 # Per-cluster conda/module overrides (keyed by cluster name from clusters.yaml)
 cluster_envs:
