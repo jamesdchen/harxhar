@@ -19,10 +19,10 @@ core/                              # Shared foundation (no ML/DL deps)
 projects/
 ├── ml/                            # Traditional ML
 │   ├── models/                    # Ridge, XGBoost, LightGBM, RF, SARIMAX, registry
-│   ├── cli/                       # Executor, job submission, experiment config
+│   ├── cli/                       # Executor, experiment config
 │   ├── features/                  # Feature group definitions and subgroup registry
 │   ├── evaluation/                # ML-specific aggregation utilities
-│   ├── scripts/                   # submit.py, aggregate.py, compare.py
+│   ├── scripts/                   # aggregate.py, compare.py
 │   ├── experiments/               # YAML experiment configs
 │   └── tests/                     # ML model and integration tests
 │
@@ -32,7 +32,7 @@ projects/
     ├── features/                  # AE transform (DL-specific)
     ├── data/                      # Synthetic data (MovingBlockBootstrap)
     ├── visualization/             # Forecast, scatter, residual, loss plots
-    ├── cli/                       # GPU executor, lifecycle manager, submission
+    ├── cli/                       # GPU executor
     ├── scripts/                   # DL runner template, aggregate, scaling experiments
     └── notebooks/                 # Colab training and visualization notebooks
 
@@ -267,13 +267,6 @@ python -m projects.ml.cli.executor \
     --total-chunks 100
 ```
 
-Or using env vars (compatible with claude-hpc templates):
-
-```bash
-export CHUNK_ID=0 TOTAL_CHUNKS=100 RESULT_DIR=results/
-python -m projects.ml.cli.executor --model ridge --features har
-```
-
 Key CLI options:
 - `--model`: ridge, xgboost, lightgbm, random_forest, sarimax, naive
 - `--features`: har (rolling means), pca (compressed), ae (autoencoder-compressed)
@@ -311,48 +304,25 @@ cd projects/ml && pytest
 
 ## HPC Workflow
 
-### Submission
+All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdchen/claude-hpc). No project-specific submission code — just `hpc.yaml`.
 
-Submit experiment batches via `projects/ml/scripts/submit.py`, which supports six modes:
+### Configuration (`hpc.yaml`)
 
-```bash
-# Compare models on baseline HAR features
-python projects/ml/scripts/submit.py model_comparison --models ridge xgboost lightgbm
+The experiment manifest defines parameter grids, resources, and chunking:
 
-# Compare feature engineering methods
-python projects/ml/scripts/submit.py feature_transforms --model ridge --features har pca ae
+| Profile | Grid | Chunks/Point | Template | Resources |
+|---------|------|-------------|----------|-----------|
+| `ml` | model(4) × features(3) = 12 | 100 | cpu_array | 1 CPU, 16G, 4h |
+| `dl` | experiment(2) | 10 | gpu_array | 4 CPU, 2×A100, 16G, 6h |
 
-# Feature ablation: one job per feature in a subgroup
-python projects/ml/scripts/submit.py individual_features --model ridge --subgroup moments
+claude-hpc expands the grid, generates a dispatch manifest, and submits array jobs automatically.
 
-# Cartesian product: subgroups × models × features
-python projects/ml/scripts/submit.py subgroup_analysis --models all --features all --subgroups all
+### Submission and Monitoring
 
-# Naive baseline (cached and symlinked to other experiments)
-python projects/ml/scripts/submit.py naive
-
-# From a declarative YAML config
-python projects/ml/scripts/submit.py from-config projects/ml/experiments/example_model_comparison.yaml
 ```
-
-Common options: `--result-dir`, `--total-chunks` (default 100), `--backend` (slurm, sge, dry-run), `--no-naive`.
-
-Each submission creates an experiment directory with `config.txt` (human-readable), `metadata.json` (git hash, branch, dirty status, Python version, timestamp), and a `.needs_aggregation` marker.
-
-### YAML Experiment Configs
-
-Declarative experiment definitions in `projects/ml/experiments/`:
-
-```yaml
-name: ridge_vs_trees
-mode: model_comparison
-models: [ridge, xgboost, lightgbm]
-features: [har]
-train_window: 500
-horizon: 1
-total_chunks: 100
-backend: slurm
-notes: "Baseline model comparison using HAR features"
+/submit ml    → syncs code, submits 1,200 tasks (12 grid points × 100 chunks)
+/monitor ml   → tracks per-grid-point completion, auto-resubmits failures
+/aggregate ml → runs aggregation on cluster, downloads summaries
 ```
 
 ### Aggregation and Comparison
@@ -364,24 +334,6 @@ python projects/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (m
 ```
 
 `aggregate.py` auto-discovers `.needs_aggregation` markers, stitches chunk CSVs, computes MSE/MAE/QLIKE/R², and calculates improvements over naive baseline.
-
-### HPC Backends
-
-Job submission uses the [`claude-hpc`](https://github.com/jamesdchen/claude-hpc) package for all HPC infrastructure. There are no project-specific job templates — harxhar uses claude-hpc's generic `cpu_array` and `gpu_array` templates, configured via environment variables.
-
-**Architecture:**
-- `project.yaml` — defines stages (ml_backtest, dl_backtest, scaling) with executor commands, template names, and per-cluster conda/module settings
-- `config/clusters.yaml` (in claude-hpc) — cluster connection details (host, user, scheduler, conda_source, GPU types)
-- `hpc.backends` — pluggable backends (SLURM, SGE, SGE-remote, Dry-run) from claude-hpc
-- `hpc.remote` — SSH/rsync utilities from claude-hpc (explicit host/user from config)
-
-**Available backends:** SLURM, SGE, SGE-remote (via SSH), Dry-run.
-
-**Template convention:** Executors read `CHUNK_ID`, `TOTAL_CHUNKS`, and `RESULT_DIR` from environment variables when CLI args aren't provided. The generic templates set these automatically.
-
-```bash
-pip install -e /path/to/claude-hpc  # required dependency
-```
 
 ## Notebooks
 
