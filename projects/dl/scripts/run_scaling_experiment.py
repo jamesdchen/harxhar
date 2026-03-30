@@ -6,7 +6,7 @@ Usage:
     python -m scripts.run_scaling_experiment --results-dir results_scaling_laws --repeats 5
 
 SGE array job usage:
-    qsub -t 1-54 ... -- python -m scripts.run_scaling_experiment --task-id \$SGE_TASK_ID --total-tasks 54
+    qsub -t 1-54 ... -- python -m scripts.run_scaling_experiment --task-id $SGE_TASK_ID --total-tasks 54
 """
 
 from __future__ import annotations
