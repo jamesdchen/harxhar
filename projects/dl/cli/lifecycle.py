@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from hpc import load_clusters_config, load_project_config
+from hpc.backends import get_backend
 from hpc.lifecycle import (
     check_results,
     detect_scheduler,
@@ -33,8 +34,9 @@ from hpc.lifecycle import (
     report_status as _hpc_report_status,
 )
 
-from core.backends import PROJECT_ROOT, get_backend
 from projects.dl.cli.submit import DL_SGE_PASS_ENV_KEYS, _resolve_dl_template, build_job_env
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 logger = logging.getLogger(__name__)
 

@@ -14,8 +14,6 @@ core/                              # Shared foundation (no ML/DL deps)
 ├── models/                        # BaseModel ABC, RollingRegressionModel, NaiveBaseline
 ├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
 ├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
-├── backends/                      # HPC backend shim (delegates to claude-hpc)
-├── remote.py                      # SSH/rsync (config-driven via claude-hpc)
 └── tests/                         # Core unit tests
 
 projects/
@@ -374,8 +372,8 @@ Job submission uses the [`claude-hpc`](https://github.com/jamesdchen/claude-hpc)
 **Architecture:**
 - `project.yaml` — defines stages (ml_backtest, dl_backtest, scaling) with executor commands, template names, and per-cluster conda/module settings
 - `config/clusters.yaml` (in claude-hpc) — cluster connection details (host, user, scheduler, conda_source, GPU types)
-- `core/backends/` — thin shim over `hpc.backends` with `resolve_template()` and `build_stage_env()` helpers
-- `core/remote.py` — config-driven SSH/rsync (loads from `clusters.yaml` + `project.yaml`, overridable via `HPC_HOST`/`HPC_USER`/`HPC_REPO` env vars)
+- `hpc.backends` — pluggable backends (SLURM, SGE, SGE-remote, Dry-run) from claude-hpc
+- `hpc.remote` — SSH/rsync utilities from claude-hpc (explicit host/user from config)
 
 **Available backends:** SLURM, SGE, SGE-remote (via SSH), Dry-run.
 

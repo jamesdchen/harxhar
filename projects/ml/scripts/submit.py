@@ -18,9 +18,9 @@ sys.path.insert(0, str(_repo_root))
 
 import argparse  # noqa: E402
 
-from hpc import load_clusters_config, load_project_config  # noqa: E402
+from hpc import get_template_path, load_clusters_config, load_project_config  # noqa: E402
+from hpc.backends import get_backend  # noqa: E402
 
-from core.backends import get_backend, resolve_template  # noqa: E402
 from core.core.config import DEFAULT_RESULTS_DIR  # noqa: E402
 from projects.ml.cli.experiment_config import load_experiment_config  # noqa: E402
 from projects.ml.cli.submit import (  # noqa: E402
@@ -360,10 +360,20 @@ def main():
         backend_kwargs["script"] = "templates/sge/cpu_array.sh"
         backend_kwargs["pass_env_keys"] = pass_env_keys
     else:
-        template = resolve_template(scheduler, "cpu_array")
+        template = str(get_template_path(scheduler, "cpu_array"))
         backend_kwargs["script"] = template
         if backend_name in ("sge",):
             backend_kwargs["pass_env_keys"] = pass_env_keys
+    if backend_name == "sge-remote":
+        from hpc.remote import ssh_run as _ssh_run
+
+        _cluster = clusters[cluster_name]
+        _host, _user = _cluster["host"], _cluster["user"]
+        backend_kwargs.setdefault(
+            "ssh_run",
+            lambda cmd, capture=True: _ssh_run(cmd, host=_host, user=_user, capture=capture),
+        )
+        backend_kwargs.setdefault("remote_repo", project_cfg["remote_path"])
     backend = get_backend(backend_name, **backend_kwargs)
     submit_experiment_batch(
         specs=specs,

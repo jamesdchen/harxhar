@@ -3,7 +3,7 @@ Shared experiment submission utilities.
 
 Handles config.txt creation, env var construction, and array job submission.
 All submission scripts delegate mechanical work here.  The actual scheduler
-interaction is handled by pluggable backends (see core.backends).
+interaction is handled by pluggable backends (see hpc.backends).
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ import dataclasses
 import os
 from pathlib import Path
 
-from hpc import load_clusters_config, load_project_config
+from hpc import get_template_path, load_clusters_config, load_project_config
+from hpc.backends import HPCBackend, get_backend
 
-from core.backends import HPCBackend, build_stage_env, get_backend, resolve_template
 from core.core.config import DEFAULT_RESULTS_DIR
 from core.core.log import get_logger
 from projects.ml.cli._feature_args import add_feature_args
@@ -133,7 +133,7 @@ def submit_experiment(
         cluster_name = project_cfg.get("cluster", "hoffman2")
         clusters = load_clusters_config()
         scheduler = clusters[cluster_name]["scheduler"]
-        template = resolve_template(scheduler, "cpu_array")
+        template = str(get_template_path(scheduler, "cpu_array"))
         backend = get_backend(scheduler, script=template)
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
@@ -141,7 +141,20 @@ def submit_experiment(
     # Merge stage env vars (CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, etc.)
     project_cfg = load_project_config()
     cluster_name = project_cfg.get("cluster", "hoffman2")
-    stage_env = build_stage_env(cluster_name, "ml_backtest")
+    clusters = load_clusters_config()
+    cluster = clusters[cluster_name]
+    stage = project_cfg["stages"]["ml_backtest"]
+    env_group = stage["env_group"]
+    env_cfg = project_cfg["cluster_envs"][cluster_name][env_group]
+    stage_env: dict[str, str] = {
+        "MODULES": env_cfg.get("modules", ""),
+        "REPO_DIR": project_cfg["remote_path"],
+        "EXECUTOR": stage["executor"],
+    }
+    conda_env = env_cfg.get("conda_env")
+    if conda_env is not None:
+        stage_env["CONDA_SOURCE"] = cluster["conda_source"]
+        stage_env["CONDA_ENV"] = conda_env
     job_env.update(stage_env)
 
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)

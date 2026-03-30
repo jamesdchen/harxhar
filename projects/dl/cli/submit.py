@@ -15,9 +15,9 @@ import math
 import os
 from pathlib import Path
 
-from hpc import load_clusters_config, load_project_config
+from hpc import get_template_path, load_clusters_config, load_project_config
+from hpc.backends import get_backend
 
-from core.backends import build_stage_env, get_backend, resolve_template
 from core.core.log import get_logger
 
 logger = get_logger(__name__)
@@ -57,9 +57,9 @@ def _resolve_dl_template(backend_name: str) -> str:
     if backend_name == "sge-remote":
         # On the remote host, the template is resolved relative to the claude-hpc
         # install on the cluster.  The generic gpu_array template works for DL.
-        return resolve_template(scheduler, "gpu_array")
+        return str(get_template_path(scheduler, "gpu_array"))
 
-    return resolve_template(scheduler, "gpu_array")
+    return str(get_template_path(scheduler, "gpu_array"))
 
 
 def build_job_env(
@@ -81,7 +81,7 @@ def build_job_env(
 ) -> dict[str, str]:
     """Build the env dict for the gpu_array template.
 
-    Merges stage env from ``build_stage_env`` with DL-specific variables.
+    Merges config-driven stage env with DL-specific variables.
     """
     env = os.environ.copy()
 
@@ -89,7 +89,22 @@ def build_job_env(
     if cluster_name is None:
         project_cfg = load_project_config()
         cluster_name = project_cfg.get("cluster", "hoffman2")
-    stage_env = build_stage_env(cluster_name, "dl_backtest")
+    else:
+        project_cfg = load_project_config()
+    clusters = load_clusters_config()
+    cluster = clusters[cluster_name]
+    stage = project_cfg["stages"]["dl_backtest"]
+    env_group = stage["env_group"]
+    env_cfg = project_cfg["cluster_envs"][cluster_name][env_group]
+    stage_env: dict[str, str] = {
+        "MODULES": env_cfg.get("modules", ""),
+        "REPO_DIR": project_cfg["remote_path"],
+        "EXECUTOR": stage["executor"],
+    }
+    conda_env = env_cfg.get("conda_env")
+    if conda_env is not None:
+        stage_env["CONDA_SOURCE"] = cluster["conda_source"]
+        stage_env["CONDA_ENV"] = conda_env
     env.update(stage_env)
 
     # DL-specific variables
@@ -215,7 +230,26 @@ def submit_dl_experiment(
     )
 
     script = _resolve_dl_template(backend_name)
-    if backend_name in ("sge", "sge-remote"):
+    if backend_name == "sge-remote":
+        from hpc.remote import ssh_run as _ssh_run
+
+        _clusters = load_clusters_config()
+        _project = load_project_config()
+        _cluster = _clusters[_project.get("cluster", "hoffman2")]
+        _host, _user = _cluster["host"], _cluster["user"]
+        backend = get_backend(
+            backend_name,
+            script=script,
+            pass_env_keys=DL_SGE_PASS_ENV_KEYS,
+            ssh_run=lambda cmd, capture=True: _ssh_run(
+                cmd,
+                host=_host,
+                user=_user,
+                capture=capture,
+            ),
+            remote_repo=_project["remote_path"],
+        )
+    elif backend_name == "sge":
         backend = get_backend(backend_name, script=script, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
     else:
         backend = get_backend(backend_name, script=script)

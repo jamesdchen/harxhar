@@ -7,7 +7,7 @@ ML (Ridge/XGBoost/LightGBM/RandomForest) and DL (PatchTST/AE+Ridge) backtesting 
 `projects/ml` and `projects/dl` are independent of each other. Both depend on `core` only.
 
 ```
-core/           Shared foundation (data, features, models, backtest, evaluation, backends)
+core/           Shared foundation (data, features, models, backtest, evaluation)
 projects/ml/    Traditional ML models and HPC submission
 projects/dl/    Deep learning models and GPU backtest engines
 ```
@@ -58,15 +58,16 @@ All HPC infrastructure is provided by the `claude-hpc` package. No project-speci
 
 - **Config files:** `project.yaml` (stages, cluster envs), `clusters.yaml` (in claude-hpc)
 - **Templates:** Generic `cpu_array` / `gpu_array` from claude-hpc (`hpc.get_template_path()`)
-- **Backends:** `core.backends.get_backend()` → SLURM, SGE, SGE-remote, Dry-run
-- **Remote:** `core.remote` loads host/user/repo from config (override via `HPC_HOST`/`HPC_USER`/`HPC_REPO`)
+- **Backends:** `hpc.backends.get_backend()` → SLURM, SGE, SGE-remote, Dry-run
+- **Remote:** `hpc.remote.ssh_run()` / `rsync_push()` with host/user from config
 - **Results:** `results/`
 
 ### Key APIs
 ```python
-from core.backends import resolve_template, build_stage_env, get_backend
-resolve_template("sge", "cpu_array")           # → path to claude-hpc template
-build_stage_env("hoffman2", "ml_backtest")     # → {CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, EXECUTOR}
+from hpc import get_template_path, load_clusters_config, load_project_config
+from hpc.backends import get_backend
+get_template_path("sge", "cpu_array")          # → path to claude-hpc template
+get_backend("slurm", script=str(template))     # → HPCBackend instance
 ```
 
 ### SGE Commands
