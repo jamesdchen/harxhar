@@ -12,7 +12,7 @@ import dataclasses
 import os
 from pathlib import Path
 
-from hpc import get_template_path, load_clusters_config, load_project_config
+from hpc import build_stage_env, get_template_path, load_clusters_config, load_project_config
 from hpc.backends import HPCBackend, get_backend
 
 from core.core.config import DEFAULT_RESULTS_DIR
@@ -141,21 +141,7 @@ def submit_experiment(
     # Merge stage env vars (CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, etc.)
     project_cfg = load_project_config()
     cluster_name = project_cfg.get("cluster", "hoffman2")
-    clusters = load_clusters_config()
-    cluster = clusters[cluster_name]
-    stage = project_cfg["stages"]["ml_backtest"]
-    env_group = stage["env_group"]
-    env_cfg = project_cfg["cluster_envs"][cluster_name][env_group]
-    stage_env: dict[str, str] = {
-        "MODULES": env_cfg.get("modules", ""),
-        "REPO_DIR": project_cfg["remote_path"],
-        "EXECUTOR": stage["executor"],
-    }
-    conda_env = env_cfg.get("conda_env")
-    if conda_env is not None:
-        stage_env["CONDA_SOURCE"] = cluster["conda_source"]
-        stage_env["CONDA_ENV"] = conda_env
-    job_env.update(stage_env)
+    job_env.update(build_stage_env(cluster_name, "ml_backtest"))
 
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
     submitted_marker.touch()
