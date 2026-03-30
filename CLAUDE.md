@@ -8,7 +8,7 @@ ML (Ridge/XGBoost/LightGBM/RandomForest) and DL (PatchTST/AE+Ridge) backtesting 
 
 ```
 core/           Shared foundation (data, features, models, backtest, evaluation)
-projects/ml/    Traditional ML models and HPC submission
+projects/ml/    Traditional ML models and backtest executors
 projects/dl/    Deep learning models and GPU backtest engines
 ```
 
@@ -24,14 +24,8 @@ projects/dl/    Deep learning models and GPU backtest engines
 # ML single-chunk backtest
 python -m projects.ml.cli.executor --help
 
-# ML batch submission (modes: model_comparison, feature_transforms, individual_features, subgroup_analysis, naive, from-config)
-python projects/ml/scripts/submit.py <mode> --help
-
 # DL GPU backtest
 python -m projects.dl.cli.gpu_executor --help
-
-# DL lifecycle (submit + status)
-python -m projects.dl.cli.lifecycle --help
 
 # ML aggregation
 python projects/ml/scripts/aggregate.py --help
@@ -54,26 +48,16 @@ pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short
 
 ## HPC Configuration
 
-All HPC infrastructure is provided by the `claude-hpc` package. No project-specific job templates.
+All HPC infrastructure is provided by the `claude-hpc` package via the experiment manifest system.
 
-- **Config files:** `project.yaml` (stages, cluster envs), `clusters.yaml` (in claude-hpc)
-- **Templates:** Generic `cpu_array` / `gpu_array` from claude-hpc (`hpc.get_template_path()`)
-- **Backends:** `hpc.backends.get_backend()` → SLURM, SGE, SGE-remote, Dry-run
-- **Remote:** `hpc.remote.ssh_run()` / `rsync_push()` with host/user from config
-- **Results:** `results/`
+- **Manifest:** `hpc.yaml` defines profiles (ml, dl), parameter grids, resources, and chunking
+- **Submission:** `claude-hpc` reads `hpc.yaml`, expands the grid, and dispatches via `/submit`
+- **Monitoring:** `/monitor` tracks per-grid-point completion
+- **No project-specific submission code** — claude-hpc handles everything
 
-### Key APIs
-```python
-from hpc import get_template_path, load_clusters_config, load_project_config
-from hpc.backends import get_backend
-get_template_path("sge", "cpu_array")          # → path to claude-hpc template
-get_backend("slurm", script=str(template))     # → HPCBackend instance
-```
+### hpc.yaml Profiles
 
-### SGE Commands
-| Action | Command |
-|--------|---------|
-| Check queue | `qstat -u jamesdc1` |
-| Job accounting | `qacct -j <JOBID>` |
-| Clear error state | `qmod -cj <JOBID>` |
-| Submit | `qsub -t <range> -N <name> -o logs -j y -v <vars> <template>` |
+| Profile | Grid | Chunks | Resources |
+|---------|------|--------|-----------|
+| `ml` | model × features (4×3=12) | 100 per point | 1 CPU, 16G, 4h |
+| `dl` | experiment (2) | 10 per point | 4 CPU, 2 GPU, 16G, 6h |

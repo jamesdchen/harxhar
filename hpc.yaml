@@ -1,0 +1,60 @@
+project: harxhar
+cluster: hoffman2
+remote_path: /u/home/j/jamesdc1/project-cucuringu/harxhar
+
+profiles:
+  ml:
+    run: "python3 -m projects.ml.cli.executor"
+    grid:
+      model: [ridge, xgboost, lightgbm, random_forest]
+      features: [har, pca, ae]
+    chunking:
+      total: 100
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env:
+      modules: "python gcc"
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+      aggregate_cmd: "python projects/ml/scripts/aggregate.py"
+      summary_pattern: "*_summary*.csv"
+
+  dl:
+    run: "python3 -m projects.dl.cli.gpu_executor"
+    grid:
+      experiment: [patchts, ae_ridge]
+    chunking:
+      total: 10
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env:
+      modules: "conda cuda/12.3"
+      conda_env: harxhar-dl
+    resources:
+      cpus: 4
+      mem: "16G"
+      walltime: "6:00:00"
+      gpus: 2
+      gpu_type: a100
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+      aggregate_cmd: "python -m projects.dl.scripts.aggregate"
+      summary_pattern: "*_summary*.csv"
+    gpu_fallback: [a100, h200, a6000, h100, v100, rtx2080ti]
+    max_retries: 3
+
+rsync_exclude:
+  - .git/
+  - results/
+  - results_scaling_laws/
+  - __pycache__/
+  - "*.pyc"
+  - .mypy_cache/
+  - all30min/
+  - .claude/
