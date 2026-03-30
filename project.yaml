@@ -1,0 +1,55 @@
+project: harxhar
+cluster: hoffman2
+remote_path: /u/home/j/jamesdc1/project-cucuringu/harxhar
+rsync_exclude: [.git/, results/, __pycache__, "*.pyc", .mypy_cache/, all30min/, .claude/]
+
+# Per-cluster conda/module overrides (keyed by cluster name from clusters.yaml)
+cluster_envs:
+  hoffman2:
+    ml:
+      modules: "python gcc"
+      conda_env: null
+    dl:
+      modules: "conda cuda/12.3"
+      conda_env: harxhar-dl
+  discovery:
+    ml:
+      modules: "python"
+      conda_env: null
+    dl:
+      modules: ""
+      conda_env: project-cucuringu
+
+stages:
+  ml_backtest:
+    type: array
+    executor: "python3 -m projects.ml.cli.executor --chunk-id $CHUNK_ID --total-chunks $TOTAL_CHUNKS --output $RESULT_DIR/results_chunk_$((CHUNK_ID+1)).csv"
+    template: cpu_array
+    env_group: ml
+    resources: {cpus: 1, mem: "16G", walltime: "4:00:00"}
+    chunks: 100
+    result_pattern: "results/{exp_id}/results_chunk_*.csv"
+    aggregate_cmd: "python projects/ml/scripts/aggregate.py"
+    summary_pattern: "*_summary*.csv"
+
+  dl_backtest:
+    type: array
+    executor: "python3 -m projects.dl.cli.gpu_executor --chunk-id $CHUNK_ID --total-chunks $TOTAL_CHUNKS --gpu-count $GPU_COUNT --output $RESULT_DIR/results_chunk_$((CHUNK_ID+1)).csv"
+    template: gpu_array
+    env_group: dl
+    resources: {cpus: 4, mem: "16G", walltime: "6:00:00", gpus: 2, gpu_type: a100}
+    chunks: 10
+    result_pattern: "results/{exp_id}/results_chunk_*.csv"
+    aggregate_cmd: "python -m projects.dl.scripts.aggregate"
+    summary_pattern: "*_summary*.csv"
+    gpu_fallback: [a100, h200, a6000, h100, v100, rtx2080ti]
+    max_retries: 3
+
+  scaling:
+    type: array
+    executor: "python3 -m projects.dl.scripts.run_scaling_experiment --chunk-id $CHUNK_ID --total-chunks $TOTAL_CHUNKS --gpu-count $GPU_COUNT --output $RESULT_DIR/scaling_result_$((CHUNK_ID+1)).csv"
+    template: gpu_array
+    env_group: dl
+    resources: {cpus: 4, mem: "16G", walltime: "4:00:00", gpus: 1, gpu_type: a100}
+    chunks: 54
+    result_pattern: "results_scaling_laws/scaling_result_*.csv"
