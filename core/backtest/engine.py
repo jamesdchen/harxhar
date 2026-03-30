@@ -63,19 +63,6 @@ def run_backtest_agnostic(
     return preds, coef_history
 
 
-def get_chunk_indices_strided(X_np: np.ndarray, train_window_size: int, chunk_id: int, total_chunks: int) -> np.ndarray:
-    """Calculates indices for chunked evaluation."""
-    num_samples = X_np.shape[0]
-    valid_test_start = train_window_size
-    if valid_test_start >= num_samples:
-        return np.array([])
-    test_indices = np.arange(valid_test_start, num_samples)
-    chunk_indices_list = np.array_split(test_indices, total_chunks)
-    if chunk_id >= len(chunk_indices_list):
-        return np.array([])
-    return chunk_indices_list[chunk_id]
-
-
 def apply_duan_smearing(
     forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:

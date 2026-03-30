@@ -48,12 +48,12 @@ pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short
 
 ## HPC Configuration
 
-All HPC infrastructure is provided by the `claude-hpc` package via the experiment manifest system.
+All HPC infrastructure is provided by the `claude-hpc` package.
 
-- **Manifest:** `hpc.yaml` defines profiles (ml, dl), parameter grids, resources, and chunking
-- **Submission:** `claude-hpc` reads `hpc.yaml`, expands the grid, and dispatches via `/submit`
-- **Monitoring:** `/monitor` tracks per-grid-point completion
-- **No project-specific submission code** — claude-hpc handles everything
+- **Config:** `hpc.yaml` defines profiles, parameter grids, resources, and chunk counts
+- **Chunking:** Executors call `chunk_context()` from `hpc.chunking` — a no-op locally (processes everything), active on HPC (processes assigned subset)
+- **Submission/monitoring:** `claude-hpc` handles `/submit`, `/monitor`, `/aggregate`
+- **Metadata:** `project.yaml` holds cluster envs, registries, and rsync excludes (no stages)
 
 ### hpc.yaml Profiles
 

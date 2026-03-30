@@ -4,7 +4,6 @@ __all__ = [
     "apply_duan_smearing",
     "build_results_dataframe",
     "extract_subset",
-    "get_chunk_indices_strided",
     "run_backtest_agnostic",
     "save_chunk_results",
 ]
@@ -12,6 +11,5 @@ __all__ = [
 from core.backtest.engine import apply_duan_smearing as apply_duan_smearing
 from core.backtest.engine import build_results_dataframe as build_results_dataframe
 from core.backtest.engine import extract_subset as extract_subset
-from core.backtest.engine import get_chunk_indices_strided as get_chunk_indices_strided
 from core.backtest.engine import run_backtest_agnostic as run_backtest_agnostic
 from core.backtest.engine import save_chunk_results as save_chunk_results

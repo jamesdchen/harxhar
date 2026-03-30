@@ -1,39 +1,40 @@
 """Tests for core/backtest/engine.py functions."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
+from hpc.chunking import ChunkContext
 
 from core.backtest import (
     apply_duan_smearing,
     build_results_dataframe,
     extract_subset,
-    get_chunk_indices_strided,
 )
 
 
-class TestGetChunkIndicesStrided:
-    def test_chunk_id_ge_total_chunks_returns_empty(self):
-        X = np.zeros((100, 5))
-        result = get_chunk_indices_strided(X, train_window_size=10, chunk_id=4, total_chunks=4)
-        assert len(result) == 0
+class TestChunkContextIntegration:
+    """Test chunking protocol (hpc.chunking) for backtest index splitting."""
 
-    def test_train_window_ge_num_samples_returns_empty(self):
-        X = np.zeros((10, 5))
-        result = get_chunk_indices_strided(X, train_window_size=10, chunk_id=0, total_chunks=1)
-        assert len(result) == 0
+    def test_single_chunk_covers_all_test_indices(self):
+        ctx = ChunkContext(chunk_id=0, total_chunks=1, result_dir=Path("."))
+        r = ctx.split(range(20, 100))
+        assert r == range(20, 100)
 
-    def test_normal_first_index_equals_train_window(self):
-        X = np.zeros((100, 5))
-        result = get_chunk_indices_strided(X, train_window_size=20, chunk_id=0, total_chunks=2)
-        assert result[0] == 20
+    def test_first_chunk_starts_at_train_window(self):
+        ctx = ChunkContext(chunk_id=0, total_chunks=2, result_dir=Path("."))
+        r = ctx.split(range(20, 100))
+        assert r.start == 20
 
     def test_chunks_cover_all_test_indices(self):
-        X = np.zeros((50, 3))
         tw = 10
         total = 4
-        all_idx = np.concatenate([get_chunk_indices_strided(X, tw, c, total) for c in range(total)])
-        np.testing.assert_array_equal(all_idx, np.arange(tw, 50))
+        all_idx = []
+        for c in range(total):
+            ctx = ChunkContext(chunk_id=c, total_chunks=total, result_dir=Path("."))
+            all_idx.extend(ctx.split(range(tw, 50)))
+        assert sorted(all_idx) == list(range(tw, 50))
 
 
 class TestApplyDuanSmearing:

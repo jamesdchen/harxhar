@@ -77,10 +77,6 @@ def _run_patchts(args: argparse.Namespace) -> None:
         config["loss_log_path"] = args.loss_log_path
     if args.progress_path:
         config["progress_path"] = args.progress_path
-    if args.chunk_id is not None and args.total_chunks is not None:
-        config["chunk_id"] = args.chunk_id
-        config["total_chunks"] = args.total_chunks
-
     hparams = {
         "exog_cols": "none",
         "use_transform_exog": False,
@@ -136,10 +132,6 @@ def _run_ae_ridge(args: argparse.Namespace) -> None:
         config["loss_log_path"] = args.loss_log_path
     if args.progress_path:
         config["progress_path"] = args.progress_path
-    if args.chunk_id is not None and args.total_chunks is not None:
-        config["chunk_id"] = args.chunk_id
-        config["total_chunks"] = args.total_chunks
-
     hparams = {
         "exog_cols": "none",
         "use_transform_exog": False,
@@ -193,8 +185,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--context-len", type=int, default=None, help="Context length (number of past observations).")
     parser.add_argument("--patch-len", type=int, default=None, help="Patch length for PatchTST.")
     parser.add_argument("--stride", type=int, default=None, help="Stride between patches for PatchTST.")
-    parser.add_argument("--chunk-id", type=int, default=None, help="0-based chunk index for SLURM array chunking.")
-    parser.add_argument("--total-chunks", type=int, default=None, help="Total number of SLURM array chunks.")
     parser.add_argument("--timeout-hours", type=float, default=0, help="Max runtime in hours (0=no limit).")
     parser.add_argument("--write-status", action="store_true", help="Write Drive status JSON for MCP monitoring.")
     return parser
@@ -212,19 +202,11 @@ def main() -> None:
         def write_status(status: str, **kw: Any) -> dict:
             return {}  # no-op when status tracking is disabled
 
-    # Env var fallbacks for claude-hpc template compatibility
-    if args.chunk_id is None:
-        chunk_id_env = os.environ.get("CHUNK_ID")
-        if chunk_id_env is not None:
-            args.chunk_id = int(chunk_id_env)
-    if args.total_chunks is None:
-        total_env = os.environ.get("TOTAL_CHUNKS")
-        if total_env is not None:
-            args.total_chunks = int(total_env)
+    # Default output path from hpc.chunking (reads CHUNK_ID, RESULT_DIR from env)
     if args.output is None:
-        result_dir = os.environ.get("RESULT_DIR")
-        if result_dir is not None and args.chunk_id is not None:
-            args.output = os.path.join(result_dir, f"results_chunk_{args.chunk_id + 1}.csv")
+        from hpc.chunking import chunk_context
+
+        args.output = str(chunk_context().output_path())
 
     _setup_cuda_env()
 

@@ -13,6 +13,7 @@ import time
 import numpy as np
 import torch
 import torch.multiprocessing as mp
+from hpc.chunking import chunk_context
 
 from core.backtest.engine import build_results_dataframe, extract_subset, save_chunk_results
 from core.core.log import get_logger
@@ -569,25 +570,23 @@ def run_backtest(
 
     all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(X_tensor, y_tensor, config)
 
-    # SLURM array chunking: slice windows to only process this chunk's subset
-    slurm_chunk_id = config.get("chunk_id")
-    slurm_total_chunks = config.get("total_chunks")
-    if slurm_chunk_id is not None and slurm_total_chunks is not None:
-        window_splits = np.array_split(np.arange(num_windows), slurm_total_chunks)
-        if slurm_chunk_id >= len(window_splits) or len(window_splits[slurm_chunk_id]) == 0:
-            logger.warning("Chunk %d has no windows to process. Exiting.", slurm_chunk_id)
+    # HPC chunking: slice windows to process only this chunk's subset
+    ctx = chunk_context()
+    if ctx.total_chunks > 1:
+        window_range = ctx.split(num_windows)
+        if len(window_range) == 0:
+            logger.warning("Chunk %d has no windows to process. Exiting.", ctx.chunk_id)
             return None
-        chunk_window_indices = window_splits[slurm_chunk_id]
-        w_start = chunk_window_indices[0]
-        w_end = chunk_window_indices[-1] + 1
+        w_start = window_range.start
+        w_end = window_range.stop
         all_train_X = all_train_X[w_start:w_end]
         all_train_y = all_train_y[w_start:w_end]
         all_test_X = all_test_X[w_start:w_end]
         num_windows = w_end - w_start
         logger.info(
-            "SLURM chunk %d/%d: processing windows %d-%d (%d windows)",
-            slurm_chunk_id,
-            slurm_total_chunks,
+            "HPC chunk %d/%d: processing windows %d-%d (%d windows)",
+            ctx.chunk_id,
+            ctx.total_chunks,
             w_start,
             w_end - 1,
             num_windows,
@@ -613,7 +612,7 @@ def run_backtest(
     preds = aggregate_predictions(results_nested, num_windows)
 
     train_window = config["train_window"]
-    if slurm_chunk_id is not None and slurm_total_chunks is not None:
+    if ctx.total_chunks > 1:
         # Offset test_indices by the chunk's starting window
         test_indices = np.arange(train_window + w_start, train_window + w_end)
     else:

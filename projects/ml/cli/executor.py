@@ -4,8 +4,9 @@ import argparse
 import os
 
 import numpy as np
+from hpc.chunking import chunk_context
 
-from core.backtest import get_chunk_indices_strided, run_backtest_agnostic, save_chunk_results
+from core.backtest import run_backtest_agnostic, save_chunk_results
 from core.core.log import get_logger
 from core.data import apply_horizon_shift, load_and_prep_data_strided
 from core.features import BaseFeatureTransform, create_feature_transform
@@ -38,8 +39,6 @@ def get_common_parser(description: str) -> argparse.ArgumentParser:
     )
     parser.add_argument("--input-path", type=str, default="all30min")
     parser.add_argument("--output-file", type=str, default=None)
-    parser.add_argument("--chunk-id", type=int, default=None)
-    parser.add_argument("--total-chunks", type=int, default=None)
     parser.add_argument("--exog-cols", type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument(
         "--lag-scope",
@@ -119,7 +118,9 @@ def execute_chunk_backtest(
     horizon=1,
 ) -> bool:
     """Handles model init, backtest execution, and result saving for a single horizon."""
-    chunk_idxs = get_chunk_indices_strided(X_np, train_win_periods, args.chunk_id, args.total_chunks)
+    ctx = chunk_context()
+    chunk_range = ctx.split(range(train_win_periods, len(X_np)))
+    chunk_idxs = np.arange(chunk_range.start, chunk_range.stop)
 
     if chunk_idxs.size == 0:
         return False
@@ -183,14 +184,8 @@ def execute_chunk_backtest(
 
 
 def main(args: argparse.Namespace) -> None:
-    # Env var fallbacks for claude-hpc template compatibility
-    if args.chunk_id is None:
-        args.chunk_id = int(os.environ.get("CHUNK_ID", "0"))
-    if args.total_chunks is None:
-        args.total_chunks = int(os.environ.get("TOTAL_CHUNKS", "1"))
     if args.output_file is None:
-        result_dir = os.environ.get("RESULT_DIR", ".")
-        args.output_file = os.path.join(result_dir, f"results_chunk_{args.chunk_id + 1}.csv")
+        args.output_file = str(chunk_context().output_path())
 
     hparams = get_common_hparams(args)
 
@@ -248,7 +243,7 @@ def _run_global(args: argparse.Namespace, hparams: dict) -> None:
         )
 
         if not success:
-            logger.info("Chunk %d is empty for horizon %d. Skipping.", args.chunk_id, h)
+            logger.info("Chunk is empty for horizon %d. Skipping.", h)
 
     logger.info("Run complete!")
 
@@ -320,7 +315,7 @@ def _run_segmented(args: argparse.Namespace, hparams: dict) -> None:
             )
 
             if not success:
-                logger.info("[Skipping] Chunk %d empty for segment %s, horizon %d.", args.chunk_id, seg_name, h)
+                logger.info("[Skipping] Chunk empty for segment %s, horizon %d.", seg_name, h)
 
     logger.info("All segments processed.")
 

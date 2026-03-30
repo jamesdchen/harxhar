@@ -121,18 +121,22 @@ class TestEndToEnd:
         assert len(df) == n
         assert set(df.columns) == {"date", "horizon", "true_adj", "pred_adj", "true_raw", "pred_raw"}
 
-    def test_get_chunk_indices(self):
-        from core.backtest import get_chunk_indices_strided
+    def test_chunk_context_splitting(self):
+        from pathlib import Path
 
-        X = np.zeros((1000, 5))
-        indices = get_chunk_indices_strided(X, train_window_size=200, chunk_id=0, total_chunks=4)
-        assert len(indices) > 0
-        assert indices[0] == 200
+        from hpc.chunking import ChunkContext
+
+        # First chunk starts at train window
+        ctx = ChunkContext(chunk_id=0, total_chunks=4, result_dir=Path("."))
+        r = ctx.split(range(200, 1000))
+        assert len(r) > 0
+        assert r.start == 200
 
         # All chunks together should cover all test indices
         all_idx = []
         for i in range(4):
-            all_idx.extend(get_chunk_indices_strided(X, 200, i, 4).tolist())
+            ctx = ChunkContext(chunk_id=i, total_chunks=4, result_dir=Path("."))
+            all_idx.extend(ctx.split(range(200, 1000)))
         assert sorted(all_idx) == list(range(200, 1000))
 
     def test_hparams_wiring(self):

@@ -60,7 +60,7 @@ generate_lag_features()           ← HAR rolling means or raw lags at geometric
 apply_horizon_shift()             ← Align features at t with targets at t+h
     │
     ▼
-get_chunk_indices_strided()       ← Split into N chunks for distributed execution
+chunk_context().split()           ← hpc.chunking: full range locally, subset on HPC
     │
     ▼
 create_model() + feature_transform  ← Ridge/XGB/LGBM/RF/SARIMAX + optional PCA/AE
@@ -191,7 +191,7 @@ Wraps statsmodels SARIMAX with order `(2,0,1)`, seasonal `(1,0,0,48)`. Uses chro
 
 `apply_duan_smearing()` converts adjusted-space forecasts to raw space: `pred_raw = (forecast² + smear_factor) × baseline`. Essential for evaluating volatility forecasts in original units.
 
-`get_chunk_indices_strided()` splits test indices into N chunks for distributed HPC execution.
+`get_chunk_indices_strided()` splits test indices into N chunks (legacy helper; executors now use `hpc.chunking.chunk_context().split()`).
 
 ### GPU Engine (`projects/dl/backtest/gpu_engine.py`)
 
@@ -304,26 +304,16 @@ cd projects/ml && pytest
 
 ## HPC Workflow
 
-All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdchen/claude-hpc). No project-specific submission code — just `hpc.yaml`.
+All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdchen/claude-hpc).
 
-### Configuration (`hpc.yaml`)
+- **Chunking:** Executors call `chunk_context()` from `hpc.chunking` — a no-op locally (processes everything), active on HPC (processes assigned subset)
+- **Config:** `hpc.yaml` defines profiles, grids, resources, and chunk counts
+- **Commands:** `/submit`, `/monitor`, `/aggregate` — see claude-hpc docs for details
 
-The experiment manifest defines parameter grids, resources, and chunking:
-
-| Profile | Grid | Chunks/Point | Template | Resources |
-|---------|------|-------------|----------|-----------|
-| `ml` | model(4) × features(3) = 12 | 100 | cpu_array | 1 CPU, 16G, 4h |
-| `dl` | experiment(2) | 10 | gpu_array | 4 CPU, 2×A100, 16G, 6h |
-
-claude-hpc expands the grid, generates a dispatch manifest, and submits array jobs automatically.
-
-### Submission and Monitoring
-
-```
-/submit ml    → syncs code, submits 1,200 tasks (12 grid points × 100 chunks)
-/monitor ml   → tracks per-grid-point completion, auto-resubmits failures
-/aggregate ml → runs aggregation on cluster, downloads summaries
-```
+| Profile | Grid | Chunks/Point | Resources |
+|---------|------|-------------|-----------|
+| `ml` | model(4) × features(3) = 12 | 100 | 1 CPU, 16G, 4h |
+| `dl` | experiment(2) | 10 | 4 CPU, 2×A100, 16G, 6h |
 
 ### Aggregation and Comparison
 
@@ -355,7 +345,7 @@ See `projects/dl/COWORK_DL_INSTRUCTIONS.md` for detailed deep learning workflow 
 - **Dual-buffer RollingRobustScaler** with Numba JIT enables O(W) online updates without full re-sorting
 - **SARIMAX uses chronologically-ordered views** while other models use circular buffers — respecting the parametric model's stationarity assumptions
 - **AE as feature transform, not standalone predictor** — the encoder compresses features for Ridge, combining nonlinear representation learning with linear prediction stability
-- **Chunk-based parallelism** (default 100 chunks) maps naturally to HPC array jobs, with each chunk independently processable
+- **Chunk-based parallelism** via `hpc.chunking.chunk_context()` — transparent no-op locally, automatic subset selection on HPC
 - **QLIKE loss for deep learning** rather than MSE — better suited for volatility's asymmetric error structure
 - **vmap + functional_call** for GPU training avoids Python loops over batch elements, maximizing GPU utilization
 
