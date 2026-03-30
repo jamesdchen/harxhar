@@ -54,13 +54,20 @@ pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short
 
 ## HPC Configuration
 
-- **Cluster:** Hoffman2 (UCLA IDRE), SGE scheduler
-- **Username:** `jamesdc1`
-- **SSH target:** `jamesdc1@hoffman2.idre.ucla.edu`
-- **Remote repo:** `$HPC_REPO` (default `/u/home/j/jamesdc1/project-cucuringu/harxhar`)
-- **ML SGE logs:** `$HPC_REPO/logs/`
-- **DL SGE logs:** `/u/scratch/j/jamesdc1/` (`$SCRATCH`)
+All HPC infrastructure is provided by the `claude-hpc` package. No project-specific job templates.
+
+- **Config files:** `project.yaml` (stages, cluster envs), `clusters.yaml` (in claude-hpc)
+- **Templates:** Generic `cpu_array` / `gpu_array` from claude-hpc (`hpc.get_template_path()`)
+- **Backends:** `core.backends.get_backend()` → SLURM, SGE, SGE-remote, Dry-run
+- **Remote:** `core.remote` loads host/user/repo from config (override via `HPC_HOST`/`HPC_USER`/`HPC_REPO`)
 - **Results:** `results/`
+
+### Key APIs
+```python
+from core.backends import resolve_template, build_stage_env, get_backend
+resolve_template("sge", "cpu_array")           # → path to claude-hpc template
+build_stage_env("hoffman2", "ml_backtest")     # → {CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, EXECUTOR}
+```
 
 ### SGE Commands
 | Action | Command |
@@ -69,14 +76,3 @@ pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short
 | Job accounting | `qacct -j <JOBID>` |
 | Clear error state | `qmod -cj <JOBID>` |
 | Submit | `qsub -t <range> -N <name> -o logs -j y -v <vars> <template>` |
-
-### Rsync
-Exclude list: `.git/ results/ __pycache__/ *.pyc .mypy_cache/ all30min/ .claude/`
-
-Pull summaries:
-```bash
-rsync -az \
-    --include='*/' --include='*_summary*.csv' --include='metadata.json' \
-    --include='config.txt' --include='lifecycle.jsonl' --exclude='*' \
-    jamesdc1@hoffman2.idre.ucla.edu:$HPC_REPO/results/ ./results/
-```

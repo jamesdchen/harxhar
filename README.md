@@ -15,7 +15,7 @@ core/                              # Shared foundation (no ML/DL deps)
 ├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
 ├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
 ├── backends/                      # HPC backend shim (delegates to claude-hpc)
-├── remote.py                      # SSH/rsync shim (delegates to claude-hpc)
+├── remote.py                      # SSH/rsync (config-driven via claude-hpc)
 └── tests/                         # Core unit tests
 
 projects/
@@ -26,7 +26,6 @@ projects/
 │   ├── evaluation/                # ML-specific aggregation utilities
 │   ├── scripts/                   # submit.py, aggregate.py, compare.py
 │   ├── experiments/               # YAML experiment configs
-│   ├── infra/                     # SLURM/SGE job templates
 │   └── tests/                     # ML model and integration tests
 │
 └── dl/                            # Deep learning
@@ -37,8 +36,7 @@ projects/
     ├── visualization/             # Forecast, scatter, residual, loss plots
     ├── cli/                       # GPU executor, lifecycle manager, submission
     ├── scripts/                   # DL runner template, aggregate, scaling experiments
-    ├── notebooks/                 # Colab training and visualization notebooks
-    └── infra/                     # GPU SLURM templates
+    └── notebooks/                 # Colab training and visualization notebooks
 
 writeup/                           # LaTeX paper
 ├── main.tex                       # Main document
@@ -259,7 +257,7 @@ Requires Python 3.10+. Key dependencies: numpy, pandas, scikit-learn, xgboost, l
 
 ## Quick Start
 
-Run a single-chunk backtest:
+Run a single-chunk backtest (explicit CLI args):
 
 ```bash
 python -m projects.ml.cli.executor \
@@ -271,11 +269,18 @@ python -m projects.ml.cli.executor \
     --total-chunks 100
 ```
 
+Or using env vars (compatible with claude-hpc templates):
+
+```bash
+export CHUNK_ID=0 TOTAL_CHUNKS=100 RESULT_DIR=results/
+python -m projects.ml.cli.executor --model ridge --features har
+```
+
 Key CLI options:
 - `--model`: ridge, xgboost, lightgbm, random_forest, sarimax, naive
 - `--features`: har (rolling means), pca (compressed), ae (autoencoder-compressed)
 - `--train-window`: Rolling window size in days (default varies by model)
-- `--horizon`: Forecast horizon, 1–48 steps ahead
+- `--horizon`: Forecast horizon, 1-48 steps ahead
 - `--segment`: morning, midday, closing, overnight, or all
 - `--n-components`, `--ae-alpha`, `--ae-epochs`: Feature transform configuration
 - `--save-coefs`: Save model coefficients to `.npz`
@@ -286,7 +291,7 @@ Run a GPU deep learning backtest:
 python -m projects.dl.cli.gpu_executor \
     --experiment patchts \
     --input-path all30min \
-    --output-file results/results_dl.csv \
+    --output results/results_dl.csv \
     --gpu-count 2 \
     --epochs 50 \
     --batch-size 32
@@ -364,15 +369,21 @@ python projects/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (m
 
 ### HPC Backends
 
-Job submission uses the [`claude-hpc`](https://github.com/jamesdchen/claude-hpc) package. `core/backends/` is a thin re-export shim that delegates to `hpc.backends`, automatically injecting harxhar's SSH config for the `sge-remote` backend.
+Job submission uses the [`claude-hpc`](https://github.com/jamesdchen/claude-hpc) package for all HPC infrastructure. There are no project-specific job templates — harxhar uses claude-hpc's generic `cpu_array` and `gpu_array` templates, configured via environment variables.
 
-Available backends: **SLURM**, **SGE**, **SGE-remote** (via SSH), **Dry-run**.
+**Architecture:**
+- `project.yaml` — defines stages (ml_backtest, dl_backtest, scaling) with executor commands, template names, and per-cluster conda/module settings
+- `config/clusters.yaml` (in claude-hpc) — cluster connection details (host, user, scheduler, conda_source, GPU types)
+- `core/backends/` — thin shim over `hpc.backends` with `resolve_template()` and `build_stage_env()` helpers
+- `core/remote.py` — config-driven SSH/rsync (loads from `clusters.yaml` + `project.yaml`, overridable via `HPC_HOST`/`HPC_USER`/`HPC_REPO` env vars)
+
+**Available backends:** SLURM, SGE, SGE-remote (via SSH), Dry-run.
+
+**Template convention:** Executors read `CHUNK_ID`, `TOTAL_CHUNKS`, and `RESULT_DIR` from environment variables when CLI args aren't provided. The generic templates set these automatically.
 
 ```bash
 pip install -e /path/to/claude-hpc  # required dependency
 ```
-
-SLURM templates in `projects/ml/infra/slurm/` and `projects/dl/infra/slurm/` for CPU and GPU jobs respectively.
 
 ## Notebooks
 

@@ -15,20 +15,51 @@ import math
 import os
 from pathlib import Path
 
-from core.backends import get_backend
+from hpc import load_clusters_config, load_project_config
+
+from core.backends import build_stage_env, get_backend, resolve_template
 from core.core.log import get_logger
 
 logger = get_logger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DEFAULT_TASKS_PER_ARRAY = 100
-DL_SLURM_SCRIPT = str(PROJECT_ROOT / "projects" / "dl" / "infra" / "slurm" / "submit_gpu.slurm")
-DL_SGE_SCRIPT = str(PROJECT_ROOT / "projects" / "dl" / "infra" / "sge" / "submit_gpu.sh")
 DL_SGE_PASS_ENV_KEYS = (
-    "EXPERIMENT", "RESULT_DIR", "TOTAL_CHUNKS", "INPUT_PATH", "GPU_COUNT",
-    "BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "TRAIN_WINDOW",
-    "CONTEXT_LEN", "PATCH_LEN", "STRIDE", "WEIGHTS_DIR",
+    "EXPERIMENT",
+    "RESULT_DIR",
+    "TOTAL_CHUNKS",
+    "INPUT_PATH",
+    "GPU_COUNT",
+    "BATCH_SIZE",
+    "EPOCHS",
+    "LEARNING_RATE",
+    "TRAIN_WINDOW",
+    "CONTEXT_LEN",
+    "PATCH_LEN",
+    "STRIDE",
+    "WEIGHTS_DIR",
+    "EXECUTOR",
+    "EXTRA_ARGS",
+    "CONDA_SOURCE",
+    "CONDA_ENV",
+    "MODULES",
+    "REPO_DIR",
 )
+
+
+def _resolve_dl_template(backend_name: str) -> str:
+    """Resolve the GPU array template for the given backend."""
+    project_cfg = load_project_config()
+    cluster_name = project_cfg.get("cluster", "hoffman2")
+    clusters = load_clusters_config()
+    scheduler = clusters[cluster_name]["scheduler"]
+
+    if backend_name == "sge-remote":
+        # On the remote host, the template is resolved relative to the claude-hpc
+        # install on the cluster.  The generic gpu_array template works for DL.
+        return resolve_template(scheduler, "gpu_array")
+
+    return resolve_template(scheduler, "gpu_array")
 
 
 def build_job_env(
@@ -46,31 +77,62 @@ def build_job_env(
     patch_len: int | None = None,
     stride: int | None = None,
     weights_dir: str | None = None,
+    cluster_name: str | None = None,
 ) -> dict[str, str]:
-    """Build the env dict that submit_gpu.slurm expects."""
+    """Build the env dict for the gpu_array template.
+
+    Merges stage env from ``build_stage_env`` with DL-specific variables.
+    """
     env = os.environ.copy()
+
+    # Merge config-driven stage env (CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, EXECUTOR)
+    if cluster_name is None:
+        project_cfg = load_project_config()
+        cluster_name = project_cfg.get("cluster", "hoffman2")
+    stage_env = build_stage_env(cluster_name, "dl_backtest")
+    env.update(stage_env)
+
+    # DL-specific variables
     env["EXPERIMENT"] = experiment
     env["RESULT_DIR"] = result_dir
     env["TOTAL_CHUNKS"] = str(total_chunks)
     env["INPUT_PATH"] = input_path
+
+    # Build EXECUTOR and EXTRA_ARGS for the generic gpu_array template
+    env["EXECUTOR"] = "python3 -m projects.dl.cli.gpu_executor"
+    extra_parts = [
+        f"--experiment {experiment}",
+        f"--input-path {input_path}",
+        f"--gpu-count {gpu_count or 2}",
+    ]
     if gpu_count is not None:
         env["GPU_COUNT"] = str(gpu_count)
     if batch_size is not None:
         env["BATCH_SIZE"] = str(batch_size)
+        extra_parts.append(f"--batch-size {batch_size}")
     if epochs is not None:
         env["EPOCHS"] = str(epochs)
+        extra_parts.append(f"--epochs {epochs}")
     if learning_rate is not None:
         env["LEARNING_RATE"] = str(learning_rate)
+        extra_parts.append(f"--learning-rate {learning_rate}")
     if train_window is not None:
         env["TRAIN_WINDOW"] = str(train_window)
+        extra_parts.append(f"--train-window {train_window}")
     if context_len is not None:
         env["CONTEXT_LEN"] = str(context_len)
+        extra_parts.append(f"--context-len {context_len}")
     if patch_len is not None:
         env["PATCH_LEN"] = str(patch_len)
+        extra_parts.append(f"--patch-len {patch_len}")
     if stride is not None:
         env["STRIDE"] = str(stride)
+        extra_parts.append(f"--stride {stride}")
     if weights_dir is not None:
         env["WEIGHTS_DIR"] = weights_dir
+        extra_parts.append(f"--weights-dir {weights_dir}")
+    env["EXTRA_ARGS"] = " ".join(extra_parts)
+
     return env
 
 
@@ -138,7 +200,7 @@ def submit_dl_experiment(
     backend_name: str = "slurm",
     **env_kwargs,
 ) -> str:
-    """Submit a DL GPU backtest as a SLURM array job."""
+    """Submit a DL GPU backtest as an array job via config-driven templates."""
     result_path = Path(result_dir).resolve()
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -152,10 +214,11 @@ def submit_dl_experiment(
         result_path,
     )
 
+    script = _resolve_dl_template(backend_name)
     if backend_name in ("sge", "sge-remote"):
-        backend = get_backend(backend_name, script=DL_SGE_SCRIPT, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
+        backend = get_backend(backend_name, script=script, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
     else:
-        backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
+        backend = get_backend(backend_name, script=script)
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
 
     logger.info("Submitted %s (%d array tasks).", experiment, total_chunks)

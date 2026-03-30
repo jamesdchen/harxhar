@@ -37,9 +37,9 @@ def get_common_parser(description: str) -> argparse.ArgumentParser:
         "--ae-loss-path", type=str, default=None, help="File path to save AE training loss log CSV (--features ae)"
     )
     parser.add_argument("--input-path", type=str, default="all30min")
-    parser.add_argument("--output-file", type=str, required=True)
-    parser.add_argument("--chunk-id", type=int, required=True)
-    parser.add_argument("--total-chunks", type=int, required=True)
+    parser.add_argument("--output-file", type=str, default=None)
+    parser.add_argument("--chunk-id", type=int, default=None)
+    parser.add_argument("--total-chunks", type=int, default=None)
     parser.add_argument("--exog-cols", type=str, default=None, help="Pipe-separated list of columns")
     parser.add_argument(
         "--lag-scope",
@@ -183,6 +183,15 @@ def execute_chunk_backtest(
 
 
 def main(args: argparse.Namespace) -> None:
+    # Env var fallbacks for claude-hpc template compatibility
+    if args.chunk_id is None:
+        args.chunk_id = int(os.environ.get("CHUNK_ID", "0"))
+    if args.total_chunks is None:
+        args.total_chunks = int(os.environ.get("TOTAL_CHUNKS", "1"))
+    if args.output_file is None:
+        result_dir = os.environ.get("RESULT_DIR", ".")
+        args.output_file = os.path.join(result_dir, f"results_chunk_{args.chunk_id + 1}.csv")
+
     hparams = get_common_hparams(args)
 
     logger.info("Loading data from '%s'", args.input_path)

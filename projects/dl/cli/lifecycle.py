@@ -23,6 +23,7 @@ import os
 import sys
 from pathlib import Path
 
+from hpc import load_clusters_config, load_project_config
 from hpc.lifecycle import (
     check_results,
     detect_scheduler,
@@ -33,12 +34,20 @@ from hpc.lifecycle import (
 )
 
 from core.backends import PROJECT_ROOT, get_backend
-from projects.dl.cli.submit import DL_SGE_PASS_ENV_KEYS, DL_SGE_SCRIPT, DL_SLURM_SCRIPT, build_job_env
+from projects.dl.cli.submit import DL_SGE_PASS_ENV_KEYS, _resolve_dl_template, build_job_env
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LOG_DIR = "/scratch1/jc_905/logs"
-SGE_SCRATCH_DIR = os.environ.get("SCRATCH", "/u/scratch/j/jamesdc1")
+
+def _get_cluster_paths() -> tuple[str, str]:
+    """Return (log_dir, scratch_dir) from cluster config."""
+    project_cfg = load_project_config()
+    cluster_name = project_cfg.get("cluster", "hoffman2")
+    clusters = load_clusters_config()
+    cluster = clusters[cluster_name]
+    scratch = cluster.get("scratch", "")
+    log_dir = f"{scratch}/logs" if cluster.get("scheduler") == "slurm" else ""
+    return log_dir, scratch
 
 
 def check_result_csvs(result_dir: str, total_chunks: int) -> dict[int, dict]:
@@ -56,16 +65,24 @@ def report_status(
     """Assemble full JSON status report with experiment field."""
     if scheduler is None:
         scheduler = detect_scheduler(result_dir)
+
+    log_dir, scratch_dir = _get_cluster_paths()
+
+    project_cfg = load_project_config()
+    cluster_name = project_cfg.get("cluster", "hoffman2")
+    clusters = load_clusters_config()
+    cluster = clusters[cluster_name]
+
     report = _hpc_report_status(
         result_dir,
         job_ids,
         total_chunks,
         scheduler=scheduler,
-        log_dir=DEFAULT_LOG_DIR,
-        scratch_dir=SGE_SCRATCH_DIR,
+        log_dir=log_dir,
+        scratch_dir=scratch_dir,
         job_name=f"dl_{experiment}" if experiment else "",
-        slurm_cluster="discovery",
-        sge_user=os.environ.get("USER", "jamesdc1"),
+        slurm_cluster=cluster_name if cluster.get("scheduler") == "slurm" else "",
+        sge_user=cluster.get("user", os.environ.get("USER", "")),
     )
     report["experiment"] = experiment
     return report
@@ -140,10 +157,11 @@ def main() -> None:
 
         job_env = build_job_env(args.experiment, result_dir, args.total_chunks, **env_kwargs)
         backend_name = args.backend
+        script = _resolve_dl_template(backend_name)
         if backend_name in ("sge", "sge-remote"):
-            backend = get_backend(backend_name, script=DL_SGE_SCRIPT, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
+            backend = get_backend(backend_name, script=script, pass_env_keys=DL_SGE_PASS_ENV_KEYS)
         else:
-            backend = get_backend(backend_name, script=DL_SLURM_SCRIPT)
+            backend = get_backend(backend_name, script=script)
         job_name = f"dl_{args.experiment}"
 
         submissions = backend.submit_array_tracked(job_name, args.total_chunks, args.total_chunks, job_env)

@@ -12,7 +12,9 @@ import dataclasses
 import os
 from pathlib import Path
 
-from core.backends import HPCBackend, get_backend
+from hpc import load_clusters_config, load_project_config
+
+from core.backends import HPCBackend, build_stage_env, get_backend, resolve_template
 from core.core.config import DEFAULT_RESULTS_DIR
 from core.core.log import get_logger
 from projects.ml.cli._feature_args import add_feature_args
@@ -62,13 +64,23 @@ def short_model_name(model_type: str) -> str:
 
 
 def build_job_env(spec: ExperimentSpec, exp_dir: str, total_chunks: int) -> dict[str, str]:
-    """Build the env dict that submit_carc.slurm expects."""
+    """Build the env dict for the job template."""
     env = os.environ.copy()
     env["TOTAL_CHUNKS"] = str(total_chunks)
     env["EXOG_COLS"] = "|".join(spec.variables) if spec.variables else "None"
     env["RESULT_DIR"] = exp_dir
     env["MODEL_TYPE"] = spec.model_type
-    env["EXTRA_ARGS"] = spec.extra_args
+
+    # Executor and extra args for generic templates
+    env["EXECUTOR"] = "python3 -m projects.ml.cli.executor"
+    extra = f"--model {spec.model_type}"
+    if spec.variables:
+        extra += f" --exog-cols {'|'.join(spec.variables)}"
+    else:
+        extra += " --exog-cols None"
+    if spec.extra_args:
+        extra += f" {spec.extra_args}"
+    env["EXTRA_ARGS"] = extra
     return env
 
 
@@ -117,10 +129,21 @@ def submit_experiment(
     )
 
     if backend is None:
-        ml_script = str(PROJECT_ROOT / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm")
-        backend = get_backend("slurm", script=ml_script)
+        project_cfg = load_project_config()
+        cluster_name = project_cfg.get("cluster", "hoffman2")
+        clusters = load_clusters_config()
+        scheduler = clusters[cluster_name]["scheduler"]
+        template = resolve_template(scheduler, "cpu_array")
+        backend = get_backend(scheduler, script=template)
 
     job_env = build_job_env(spec, exp_dir, total_chunks)
+
+    # Merge stage env vars (CONDA_SOURCE, CONDA_ENV, MODULES, REPO_DIR, etc.)
+    project_cfg = load_project_config()
+    cluster_name = project_cfg.get("cluster", "hoffman2")
+    stage_env = build_stage_env(cluster_name, "ml_backtest")
+    job_env.update(stage_env)
+
     backend.submit_array(job_name, total_chunks, tasks_per_array, job_env)
     submitted_marker.touch()
     return exp_dir

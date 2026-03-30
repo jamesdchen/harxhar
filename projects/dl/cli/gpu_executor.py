@@ -212,6 +212,20 @@ def main() -> None:
         def write_status(status: str, **kw: Any) -> dict:
             return {}  # no-op when status tracking is disabled
 
+    # Env var fallbacks for claude-hpc template compatibility
+    if args.chunk_id is None:
+        chunk_id_env = os.environ.get("CHUNK_ID")
+        if chunk_id_env is not None:
+            args.chunk_id = int(chunk_id_env)
+    if args.total_chunks is None:
+        total_env = os.environ.get("TOTAL_CHUNKS")
+        if total_env is not None:
+            args.total_chunks = int(total_env)
+    if args.output is None:
+        result_dir = os.environ.get("RESULT_DIR")
+        if result_dir is not None and args.chunk_id is not None:
+            args.output = os.path.join(result_dir, f"results_chunk_{args.chunk_id + 1}.csv")
+
     _setup_cuda_env()
 
     n_gpus = torch.cuda.device_count()

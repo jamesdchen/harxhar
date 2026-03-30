@@ -18,7 +18,9 @@ sys.path.insert(0, str(_repo_root))
 
 import argparse  # noqa: E402
 
-from core.backends import get_backend  # noqa: E402
+from hpc import load_clusters_config, load_project_config  # noqa: E402
+
+from core.backends import get_backend, resolve_template  # noqa: E402
 from core.core.config import DEFAULT_RESULTS_DIR  # noqa: E402
 from projects.ml.cli.experiment_config import load_experiment_config  # noqa: E402
 from projects.ml.cli.submit import (  # noqa: E402
@@ -332,16 +334,36 @@ def main():
     include_naive = not getattr(args, "no_naive", False) if args.mode != "naive" else True
 
     backend_name = getattr(args, "backend", "slurm")
-    ml_scripts = {
-        "slurm": str(_repo_root / "projects" / "ml" / "infra" / "slurm" / "submit_carc.slurm"),
-        "sge": str(_repo_root / "projects" / "ml" / "infra" / "sge" / "submit_hoffman2.sh"),
-        "sge-remote": "projects/ml/infra/sge/submit_hoffman2.sh",  # relative to remote repo
-    }
+
+    # Resolve template and stage env from cluster config
+    project_cfg = load_project_config()
+    cluster_name = project_cfg.get("cluster", "hoffman2")
+    clusters = load_clusters_config()
+    scheduler = clusters[cluster_name]["scheduler"]
+
+    pass_env_keys = (
+        "TOTAL_CHUNKS",
+        "EXOG_COLS",
+        "RESULT_DIR",
+        "MODEL_TYPE",
+        "EXTRA_ARGS",
+        "EXECUTOR",
+        "CONDA_SOURCE",
+        "CONDA_ENV",
+        "MODULES",
+        "REPO_DIR",
+    )
+
     backend_kwargs: dict[str, object] = {}
-    if backend_name in ml_scripts:
-        backend_kwargs["script"] = ml_scripts[backend_name]
-    if backend_name in ("sge", "sge-remote"):
-        backend_kwargs["pass_env_keys"] = ("TOTAL_CHUNKS", "EXOG_COLS", "RESULT_DIR", "MODEL_TYPE", "EXTRA_ARGS")
+    if backend_name == "sge-remote":
+        # sge-remote needs the path relative to the remote repo
+        backend_kwargs["script"] = "templates/sge/cpu_array.sh"
+        backend_kwargs["pass_env_keys"] = pass_env_keys
+    else:
+        template = resolve_template(scheduler, "cpu_array")
+        backend_kwargs["script"] = template
+        if backend_name in ("sge",):
+            backend_kwargs["pass_env_keys"] = pass_env_keys
     backend = get_backend(backend_name, **backend_kwargs)
     submit_experiment_batch(
         specs=specs,
