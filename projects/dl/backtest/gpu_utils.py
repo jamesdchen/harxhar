@@ -13,8 +13,6 @@ import time
 import numpy as np
 import torch
 import torch.multiprocessing as mp
-from hpc.chunking import chunk_context
-
 from core.backtest.engine import build_results_dataframe, extract_subset, save_chunk_results
 from core.core.log import get_logger
 from projects.dl import config as cfg
@@ -571,6 +569,8 @@ def run_backtest(
     all_train_X, all_train_y, all_test_X, num_windows = make_windows_fn(X_tensor, y_tensor, config)
 
     # HPC chunking: slice windows to process only this chunk's subset
+    from hpc.chunking import chunk_context
+
     ctx = chunk_context()
     if ctx.total_chunks > 1:
         window_range = ctx.split(num_windows)
