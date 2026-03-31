@@ -24,39 +24,42 @@ def load_all_chunks(
     ignore_suffixes: list[str] | None = None,
     require_suffixes: list[str] | None = None,
 ) -> pd.DataFrame:
-    """
-    Stitches chunk CSVs into a DataFrame with flexible filtering.
+    """Stitches chunk CSVs into a DataFrame with optional suffix filtering.
 
-    Returns
-    -------
-    pd.DataFrame
+    Delegates to :func:`hpc.chunking.collect_chunks` for the common case
+    (no filtering).  Suffix filtering is domain-specific (market segments)
+    and handled here.
     """
+    from hpc.chunking import collect_chunks
+
+    # No filtering — delegate entirely to protocol
+    if not ignore_suffixes and not require_suffixes:
+        return collect_chunks(exp_dir)
+
+    # With suffix filtering — filter files, then stitch manually
     all_files = sorted(Path(exp_dir).glob("results_chunk_*.csv"))
+    filtered = []
+    for f in all_files:
+        base = f.stem
+        if ignore_suffixes and any(base.endswith(f"_{s}") for s in ignore_suffixes):
+            continue
+        if require_suffixes and not any(base.endswith(f"_{s}") for s in require_suffixes):
+            continue
+        filtered.append(f)
 
-    if not all_files:
+    if not filtered:
         return pd.DataFrame()
 
     dfs = []
-    for filename in all_files:
-        base_name = filename.stem
-
-        # 1. Check if we should ignore this file
-        if ignore_suffixes and any(base_name.endswith(f"_{seg}") for seg in ignore_suffixes):
-            continue
-
-        # 2. Check if we strictly require a specific suffix
-        if require_suffixes and not any(base_name.endswith(f"_{seg}") for seg in require_suffixes):
-            continue
-
+    for f in filtered:
         try:
-            dfs.append(pd.read_csv(filename))
+            dfs.append(pd.read_csv(f))
         except (OSError, pd.errors.ParserError) as e:
-            logger.warning("Could not read %s: %s", base_name, e)
+            logger.warning("Could not read %s: %s", f.stem, e)
 
     if not dfs:
         return pd.DataFrame()
 
-    # Concat first, then parse dates once on the combined frame
     combined = pd.concat(dfs, ignore_index=True)
     if "date" in combined.columns:
         combined["date"] = pd.to_datetime(combined["date"])
