@@ -1,6 +1,26 @@
+# ML/DL backtesting pipelines for financial volatility forecasting.
+# projects/ml and projects/dl are independent; both depend on core/ only.
+
 project: harxhar
 cluster: hoffman2
 remote_path: /u/home/j/jamesdc1/project-cucuringu/harxhar
+
+experiment_paths:
+  - "projects/ml/experiments/*.yaml"
+  - "projects/dl/experiments/*.yaml"
+
+registries:
+  models: "projects.ml.models.registry:ALL_MODELS"
+  features: "projects.ml.features.feature_groups:FEATURE_TYPES"
+  subgroups: "projects.ml.features.feature_groups:SUBGROUPS"
+
+cluster_envs:
+  hoffman2:
+    ml: { modules: "python gcc", conda_env: null }
+    dl: { modules: "conda cuda/12.3", conda_env: harxhar-dl }
+  discovery:
+    ml: { modules: "python", conda_env: null }
+    dl: { modules: "", conda_env: project-cucuringu }
 
 profiles:
   ml:
@@ -12,8 +32,7 @@ profiles:
       total: 100
       chunk_arg: "--chunk-id"
       total_arg: "--total-chunks"
-    env:
-      modules: "python gcc"
+    env_group: ml
     resources:
       cpus: 1
       mem: "16G"
@@ -32,9 +51,7 @@ profiles:
       total: 10
       chunk_arg: "--chunk-id"
       total_arg: "--total-chunks"
-    env:
-      modules: "conda cuda/12.3"
-      conda_env: harxhar-dl
+    env_group: dl
     resources:
       cpus: 4
       mem: "16G"
