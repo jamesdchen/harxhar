@@ -1,5 +1,5 @@
 # ML/DL backtesting pipelines for financial volatility forecasting.
-# projects/ml and projects/dl are independent; both depend on core/ only.
+# Executors live in colab/src/ — standalone modules with no core/projects dependencies.
 
 project: harxhar
 cluster: hoffman2
@@ -8,11 +8,6 @@ remote_path: /u/home/j/jamesdc1/project-cucuringu/harxhar
 experiment_paths:
   - "projects/ml/experiments/*.yaml"
   - "projects/dl/experiments/*.yaml"
-
-registries:
-  models: "projects.ml.models.registry:ALL_MODELS"
-  features: "projects.ml.features.feature_groups:FEATURE_TYPES"
-  subgroups: "projects.ml.features.feature_groups:SUBGROUPS"
 
 cluster_envs:
   hoffman2:
@@ -23,11 +18,8 @@ cluster_envs:
     dl: { modules: "", conda_env: project-cucuringu }
 
 profiles:
-  ml:
-    run: "python3 -m projects.ml.cli.executor"
-    grid:
-      model: [ridge, xgboost, lightgbm, random_forest]
-      features: [har, pca, ae]
+  ml_ridge:
+    run: "python3 colab/src/ml_ridge.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -40,13 +32,69 @@ profiles:
     results:
       dir: "results/{run_id}"
       pattern: "results_chunk_*.csv"
-      aggregate_cmd: "python projects/ml/scripts/aggregate.py"
-      summary_pattern: "*_summary*.csv"
 
-  dl:
-    run: "python3 -m projects.dl.cli.gpu_executor"
-    grid:
-      experiment: [patchts, ae_ridge]
+  ml_xgboost:
+    run: "python3 colab/src/ml_xgboost.py"
+    chunking:
+      total: 100
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+
+  ml_lightgbm:
+    run: "python3 colab/src/ml_lightgbm.py"
+    chunking:
+      total: 100
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+
+  ml_pcr:
+    run: "python3 colab/src/ml_pcr.py"
+    chunking:
+      total: 100
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+
+  ml_baseline:
+    run: "python3 colab/src/ml_baseline.py"
+    chunking:
+      total: 100
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "8G"
+      walltime: "1:00:00"
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
+
+  dl_patchts:
+    run: "python3 colab/src/dl_patchts.py"
     chunking:
       total: 10
       chunk_arg: "--chunk-id"
@@ -61,8 +109,25 @@ profiles:
     results:
       dir: "results/{run_id}"
       pattern: "results_chunk_*.csv"
-      aggregate_cmd: "python -m projects.dl.scripts.aggregate"
-      summary_pattern: "*_summary*.csv"
+    gpu_fallback: [a100, h200, a6000, h100, v100, rtx2080ti]
+    max_retries: 3
+
+  dl_ae_ridge:
+    run: "python3 colab/src/dl_ae_ridge.py"
+    chunking:
+      total: 10
+      chunk_arg: "--chunk-id"
+      total_arg: "--total-chunks"
+    env_group: dl
+    resources:
+      cpus: 4
+      mem: "16G"
+      walltime: "6:00:00"
+      gpus: 2
+      gpu_type: a100
+    results:
+      dir: "results/{run_id}"
+      pattern: "results_chunk_*.csv"
     gpu_fallback: [a100, h200, a6000, h100, v100, rtx2080ti]
     max_retries: 3
 

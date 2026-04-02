@@ -1,49 +1,40 @@
 # HARXHAR
 
-Realized volatility forecasting system using HAR-family models with exogenous features. Supports rolling-window backtesting across Ridge, XGBoost, LightGBM, Random Forest, SARIMAX, and deep learning (PatchTST, Autoencoder+Ridge) models on intraday 30-minute bar data.
-
-The system takes raw parquet data, engineers lag-based features at multiple time scales (geometric base-5 HAR lags: 1, 5, 25, 125, 625, 3125 half-hour periods), and runs walk-forward backtests with online model updates. It is designed for large-scale distributed execution on HPC clusters (SLURM, SGE) and GPU-accelerated training on Google Colab.
+Realized volatility forecasting system using HAR-family models with exogenous features. Supports rolling-window backtesting across Ridge, XGBoost, LightGBM, PCA+Ridge (PCR), and deep learning (PatchTST, Autoencoder+Ridge) models on intraday 30-minute bar data.
 
 ## Architecture
 
 ```
-core/                              # Shared foundation (no ML/DL deps)
-├── core/                          # Config (lags, windows, segments), logging
-├── data/                          # Loading, transforms, rolling buffers, pipeline
-├── features/                      # HAR/Raw lag features, PCA, factory
-├── models/                        # BaseModel ABC, RollingRegressionModel, NaiveBaseline
-├── backtest/                      # CPU backtest engine, Duan smearing, chunk splitting
-├── evaluation/                    # Metrics (MSE, MAE, QLIKE, R²), aggregation
-└── tests/                         # Core unit tests
-
-projects/
-├── ml/                            # Traditional ML
-│   ├── models/                    # Ridge, XGBoost, LightGBM, RF, SARIMAX, registry
-│   ├── cli/                       # Executor, experiment config
-│   ├── features/                  # Feature group definitions and subgroup registry
-│   ├── evaluation/                # ML-specific aggregation utilities
-│   ├── scripts/                   # aggregate.py, compare.py
-│   ├── experiments/               # YAML experiment configs
-│   └── tests/                     # ML model and integration tests
+colab/
+├── notebooks/
+│   ├── pipeline/                  Shared pipeline stages (run in order)
+│   │   ├── 01_loading.ipynb       Load parquets, grid, filter market hours
+│   │   ├── 02_transforms.ipynb    Diurnal adjust, semantic transform, winsorize
+│   │   └── 03_evaluation.ipynb    Duan smearing, QLIKE/MSE/MAE metrics
+│   ├── ml_ridge.ipynb             Ridge regression (CPU)
+│   ├── ml_xgboost.ipynb           XGBoost (CPU)
+│   ├── ml_lightgbm.ipynb          LightGBM (CPU)
+│   ├── ml_pcr.ipynb               PCA + Ridge (CPU)
+│   ├── ml_baseline.ipynb          Naive baseline (CPU)
+│   ├── dl_patchts.ipynb           PatchTST transformer (GPU)
+│   └── dl_ae_ridge.ipynb          Autoencoder + Ridge (GPU)
 │
-└── dl/                            # Deep learning
-    ├── models/                    # PatchTST, LagAutoEncoder, QLIKE loss
-    ├── backtest/                  # Multi-GPU engine, vmap kernels, scaling experiments
-    ├── features/                  # AE transform (DL-specific)
-    ├── data/                      # Synthetic data (MovingBlockBootstrap)
-    ├── visualization/             # Forecast, scatter, residual, loss plots
-    ├── cli/                       # GPU executor
-    ├── scripts/                   # DL runner template, aggregate, scaling experiments
-    └── notebooks/                 # Colab training and visualization notebooks
+└── src/                           Standalone executors (%%writefile output)
+    ├── loading.py                 Data loading
+    ├── transforms.py              Data transforms
+    ├── evaluation.py              Metrics (login node)
+    ├── chunk_loader.py            Stitch chunk CSVs (login node)
+    ├── ml_ridge.py                Ridge executor
+    ├── ml_xgboost.py              XGBoost executor
+    ├── ml_lightgbm.py             LightGBM executor
+    ├── ml_pcr.py                  PCR executor
+    ├── ml_baseline.py             Baseline executor
+    ├── dl_patchts.py              PatchTST executor
+    └── dl_ae_ridge.py             AE+Ridge executor
 
-writeup/                           # LaTeX paper
-├── main.tex                       # Main document
-├── sections/                      # abstract, intro, methodology, data, results, etc.
-├── references.bib                 # Bibliography
-└── figures/                       # Paper figures
+all30min/                          Input data (6 parquet files, ~66 MB)
+writeup/                           LaTeX paper and figures
 ```
-
-**ml and dl are independent of each other.** Both depend on core only.
 
 ## End-to-End Data Flow
 
@@ -51,327 +42,124 @@ writeup/                           # LaTeX paper
 Raw parquet (30-min bars)
     │
     ▼
-load_and_clean_base_data()        ← Grid, filter market hours, robust_transform
+load_raw_data()                   ← Grid, filter market hours, NaN policy
     │
     ▼
-generate_lag_features()           ← HAR rolling means or raw lags at geometric scales
+robust_transform()                ← Diurnal adjust → semantic transform → winsorize
+    │
+    ▼
+generate_har_features()           ← Rolling means at geometric base-5 lags [1,5,25,125,625,3125]
     │
     ▼
 apply_horizon_shift()             ← Align features at t with targets at t+h
     │
     ▼
-chunk_context().split()           ← hpc.chunking: full range locally, subset on HPC
+chunk index range                 ← --chunk-id / --total-chunks for HPC parallelism
     │
     ▼
-create_model() + feature_transform  ← Ridge/XGB/LGBM/RF/SARIMAX + optional PCA/AE
-    │
-    ▼
-run_backtest_agnostic()           ← Walk-forward: initialize → predict → update loop
+walk-forward backtest             ← initialize → predict → update loop
     │
     ▼
 apply_duan_smearing()             ← Convert adjusted-space → raw-space forecasts
     │
     ▼
-save_chunk_results()              ← Per-chunk CSV with true/pred (adjusted + raw)
+save chunk CSV                    ← Per-chunk results_chunk_*.csv
     │
     ▼
-aggregate.py                      ← Stitch chunks, compute MSE/MAE/QLIKE/R²
+load_and_stitch_chunks()          ← Login node: stitch all chunks
     │
     ▼
-compare.py                        ← Cross-experiment comparison tables
+calculate_metrics()               ← Login node: MSE, MAE, QLIKE
 ```
 
-## Data Pipeline
+## Notebooks
 
-### Loading and Cleaning (`core/data/loading.py`)
+Each notebook walks through the pipeline stage-by-stage with data inspection cells, then `%%writefile`s a standalone Python module to `colab/src/`.
 
-`load_and_clean_base_data()` reads parquet files from `all30min/`, then:
+**Pipeline notebooks** (run in order to understand the data):
+- `01_loading` — raw parquets → merged 30-min grid → market hours filter → NaN handling
+- `02_transforms` — diurnal adjustment → semantic transform (sqrt/log) → winsorization
+- `03_evaluation` — Duan smearing, QLIKE loss, MSE/MAE, chunk loading
 
-1. **Gridding**: Creates a complete 30-min frequency grid from 2005-01-01 to max date, reindexes to fill gaps
-2. **Market hours filtering**: Drops Friday night (>20:00), Saturday, and Sunday morning (<18:30)
-3. **Exogenous variable handling**: Parses from hparams; special overnight NaN-filling for equal/value-weighted stock factors and volatility demand; VIX/VVIX special handling
-4. **Transforms**: Always applies `robust_transform()` to the RV target; conditionally transforms exogenous columns based on hparams flags
+**Experiment notebooks** (each imports from `src/loading` and `src/transforms`):
+- `ml_ridge` — Ridge with HAR features, robust scaling, refit every step
+- `ml_xgboost` — XGBoost with HAR + DOW/hour features, NaN passthrough, refit every 5 steps
+- `ml_lightgbm` — LightGBM, same pattern as XGBoost
+- `ml_pcr` — PCA-compressed log-spaced lags + Ridge, PCA refit every 240 steps
+- `ml_baseline` — Naive lag-1 (har_ma_125) baseline
+- `dl_patchts` — PatchTST transformer with QLIKE loss, GPU multi-worker
+- `dl_ae_ridge` — Hybrid autoencoder + closed-form Ridge, GPU multi-worker
 
-### Transform Pipeline (`core/data/transforms.py`)
+## Executors
 
-`robust_transform()` applies three stages per column:
+Each `colab/src/*.py` executor is a standalone CLI script:
 
-1. **Diurnal adjustment** — Groups by time-of-day slot, divides by rolling mean (non-negative vars) or rolling std (signed vars). Removes intraday seasonality.
-2. **Semantic data transform** — Chooses transform based on column name: `sqrt` for RV/bipow/turnover, `sign(x)·sqrt(|x|)` for autocovariance, `cbrt` for ret3, fourth-root for ret4, `log` as default. Stabilizes variance.
-3. **Rolling winsorization** — Clips to rolling 5th/95th quantiles to limit outlier influence.
+```bash
+# Run a single chunk (compute node)
+python colab/src/ml_ridge.py \
+    --data-path all30min \
+    --horizon 1 \
+    --train-window 500 \
+    --chunk-id 0 \
+    --total-chunks 100 \
+    --output-file results/chunk_0.csv
 
-Each stage is controlled by flags (`use_diurnal`, `use_transform`, `winsor_window`). VIX, sentiment, hour, and DOW skip diurnal adjustment by default.
+# GPU experiment
+python colab/src/dl_patchts.py \
+    --data-path all30min \
+    --horizon 1 \
+    --gpu-count 2 \
+    --chunk-id 0 \
+    --total-chunks 10 \
+    --output-file results/chunk_0.csv
 
-### Rolling Utilities (`core/data/rolling.py`)
+# Evaluate on login node (after all chunks finish)
+python -c "
+from colab.src.chunk_loader import load_and_stitch_chunks
+from colab.src.evaluation import calculate_metrics
+df = load_and_stitch_chunks('results/')
+print(calculate_metrics(df))
+"
+```
 
-Online data structures for streaming walk-forward evaluation:
+Executors have **zero imports from `core/` or `projects/`** — only numpy, pandas, sklearn, torch, etc.
 
-- **`RollingRobustScaler`** — Dual-buffer design: chronological ring buffer + sorted transposed array. Numba JIT kernels provide O(W) updates via binary search + element shift, with O(1) access to (median, IQR) for robust scaling.
-- **`RollingBuffer`** — Stores (X, y) pairs in a ring buffer. `get_ordered_view()` returns chronologically-ordered data, critical for SARIMAX.
-- **`RollingMedian`** — Simple rolling median over a ring buffer.
+## HPC Workflow
 
-### Synthetic Data (`projects/dl/data/synth_data.py`)
+All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdchen/claude-hpc). `hpc.yaml` defines per-experiment profiles:
 
-`MovingBlockBootstrap` generates synthetic time series by randomly sampling contiguous blocks (default 48 = one trading day) from source data. Preserves local temporal dependencies and diurnal patterns while breaking long-range dependence. Used for data augmentation in scaling-law experiments.
+| Profile | Executor | Chunks | Resources |
+|---------|----------|--------|-----------|
+| `ml_ridge` | `colab/src/ml_ridge.py` | 100 | 1 CPU, 16G, 4h |
+| `ml_xgboost` | `colab/src/ml_xgboost.py` | 100 | 1 CPU, 16G, 4h |
+| `ml_lightgbm` | `colab/src/ml_lightgbm.py` | 100 | 1 CPU, 16G, 4h |
+| `ml_pcr` | `colab/src/ml_pcr.py` | 100 | 1 CPU, 16G, 4h |
+| `ml_baseline` | `colab/src/ml_baseline.py` | 100 | 1 CPU, 8G, 1h |
+| `dl_patchts` | `colab/src/dl_patchts.py` | 10 | 4 CPU, 2×A100, 16G, 6h |
+| `dl_ae_ridge` | `colab/src/dl_ae_ridge.py` | 10 | 4 CPU, 2×A100, 16G, 6h |
 
-## Feature Engineering
+## Key Design Decisions
 
-### Lag Features (`core/features/`)
-
-A class hierarchy rooted in `BaseFeatureTransform` with dual interfaces — sklearn-style `fit`/`transform` and pandas-level `generate_pandas`:
-
-- **`HARFeatures`** — Rolling-mean lags at geometric scales (e.g., `rolling(5).mean().shift(1)`). The core HAR representation. Features named `har_ma_{lag}`. (in `core`)
-- **`RawLagFeatures`** — Simple point-shift lags (`shift(lag)`). Features named `{col}_lag_{lag}`. (in `core`)
-- **`PCATransform`** — Wraps sklearn PCA for dimensionality reduction in rolling pipelines. (in `core`)
-- **`AETransform`** — Hybrid autoencoder transform: trains `LagAutoEncoder` with `alpha * MSE(reconstruction) + (1-alpha) * MSE(prediction)`, then uses encoder output as compressed features. Supports weight checkpointing and loss logging. (in `dl`: `projects/dl/features/transforms.py`)
-
-`generate_lag_features()` in `core/features/pipeline.py` is the public API. `resolve_lags()` returns geometric base-5 sequences for HAR or consecutive lags for raw features. For tree models, DOW and hour features are added automatically.
-
-Segmented mode (`generate_lag_features_segmented()`) supports intraday time-slicing with a `lag_scope` parameter: `'global'` computes lags on the full dataset then slices (prevents lookahead bias), `'intra'` computes within each segment independently.
-
-### Feature Groups (`projects/ml/features/feature_groups.py`)
-
-Central registry of ~50 available exogenous features organized into subgroups:
-
-| Subgroup | Examples |
-|----------|----------|
-| `moments` | sumret, sumabsret, sumret3, sumret4, sumpret2, sumbipow, sumautocov |
-| `liquidity` | sumvolume, numobs, turnover, effspread |
-| `market_ew` | Equal-weight cross-sectional factors (returns, volume, spread) |
-| `market_vw` | Value-weight cross-sectional factors |
-| `sentiment` | stocktwits_attention, stocktwits_sentiment, stocktwits_sentcount |
-| `implied_vol` | vix, vvix, vix3m |
-| `vol_demand` | Volatility demand elasticity variants |
-| `all_features` | Complete set |
-
-## Models
-
-### Walk-Forward Interface (`core/models/base.py`)
-
-`BaseModel` (ABC) defines three methods: `initialize(X_init, y_init)`, `predict(x_t)`, `update(x_t, y_t)`.
-
-`RollingRegressionModel` is the workhorse implementation. It wraps any sklearn-like estimator with a `RollingBuffer` for training data, `RollingRobustScaler` for online normalization, and an optional `feature_transform` (PCA or AE). Configurable `refit_frequency` controls how often the model refits (every step for Ridge, every 5 steps for trees).
-
-`NaiveBaseline` returns a specific lag value as the forecast.
-
-### Traditional Models (`projects/ml/models/sklearn_models.py`)
-
-| Model | Underlying | Scaling | Refit Freq | Key Defaults |
-|-------|-----------|---------|------------|--------------|
-| `RidgeModel` | `sklearn.linear_model.Ridge` | Yes | 1 | alpha=1.0 |
-| `XGBoostModel` | `xgboost.XGBRegressor` | No | 5 | n_estimators=100, max_depth=3, lr=0.1 |
-| `LightGBMModel` | `lightgbm.LGBMRegressor` | No | 5 | n_estimators=100, max_depth=3, lr=0.1 |
-| `RandomForestModel` | `sklearn.ensemble.RandomForestRegressor` | No | 5 | n_estimators=100, max_depth=3 |
-
-Linear models use robust scaling; tree models don't (scale-invariant). Trees refit less often due to higher compute cost.
-
-### SARIMAX (`projects/ml/models/sarimax.py`)
-
-Wraps statsmodels SARIMAX with order `(2,0,1)`, seasonal `(1,0,0,48)`. Uses chronologically-ordered views (via `get_ordered_view()`) rather than circular buffers — essential for AR/MA components. Smaller fit window (480 = 10 trading days) since parametric models need less data. Gracefully degrades to naive baseline after 5 consecutive fit failures.
-
-### Deep Learning (`projects/dl/models/deep_learning.py`)
-
-**PatchTST**: Hugging Face transformer-based patch time series backbone with a linear prediction head. Configured with context_len=241, patch_len=47, stride=31.
-
-**LagAutoEncoder**: Hybrid supervised/unsupervised architecture with shared encoder (n_features → hidden_dim → n_components), decoder (reconstruction), and prediction head (→ 1 scalar). The encoder output feeds into Ridge regression — combining nonlinear representation learning with linear prediction stability. Not used as a standalone predictor.
-
-### Loss Functions (`projects/dl/models/losses.py`)
-
-`functional_qlike_loss`: QLIKE (Quasi-Maximum Likelihood Error) in log-space — `L = σ²_true · exp(-h) + h`. Numerically stable via clamping. Preferred for volatility forecasting due to its asymmetric penalty structure.
-
-### Model Registry (`projects/ml/models/registry.py`)
-
-`MODEL_REGISTRY` maps model names to `{class, defaults}`. The `create_model()` factory handles special cases: naive baseline (no buffers), SARIMAX (no feature_transform, uses horizon), and standard models (accept feature_transform and refit_frequency).
-
-## Backtesting
-
-### CPU Engine (`core/backtest/engine.py`)
-
-`run_backtest_agnostic()` implements the walk-forward loop: initialize model with burn-in history → for each test step: predict → update with realized value. Returns predictions and optional coefficient history.
-
-`apply_duan_smearing()` converts adjusted-space forecasts to raw space: `pred_raw = (forecast² + smear_factor) × baseline`. Essential for evaluating volatility forecasts in original units.
-
-`get_chunk_indices_strided()` splits test indices into N chunks (legacy helper; executors now use `hpc.chunking.chunk_context().split()`).
-
-### GPU Engine (`projects/dl/backtest/gpu_engine.py`)
-
-Two strategies with unified architecture:
-
-**PatchTST** (`run_multigpu_backtest()`): Creates 3D strided windows via `torch.as_strided` (zero-copy). Per-GPU worker runs instance normalization → compiled training kernel → predict. Predictions converted from log-space to sqrt-space via `exp(h_pred / 2.0)`.
-
-**AE+Ridge** (`run_ae_multigpu_backtest()`): Creates 2D strided windows. Per-GPU worker runs normalize → train AE → encode training data → solve Ridge via closed-form `(X'X + αI)⁻¹X'y` → predict.
-
-### GPU Kernels (`projects/dl/backtest/gpu_kernels.py`)
-
-PyTorch-compiled training loops using `torch.func.vmap` + `torch.func.grad` for vectorized batch training. AdamW optimizer with gradient clipping. Two kernel factories:
-
-- `make_train_kernel()` — PatchTST with QLIKE loss
-- `make_ae_train_kernel()` — AE with hybrid reconstruction + prediction loss
-
-### GPU Utilities (`projects/dl/backtest/gpu_utils.py`)
-
-Shared infrastructure: chunk normalization, batched parameter allocation with fan-in initialization, Adam state management, checkpointing for fault tolerance, and multiprocessing distribution across GPUs via `torch.multiprocessing.Pool`.
-
-### Scaling Experiments (`projects/dl/backtest/gpu_engine_scaling.py`)
-
-`run_scaling_experiment()` studies how synthetic data augmentation affects deep learning performance: augment training data via `MovingBlockBootstrap` at various multipliers → train PatchTST → evaluate on chronological holdout → report QLIKE, MSE, MAE.
-
-## Evaluation
-
-### Metrics (`core/evaluation/metrics.py`)
-
-`calculate_global_metrics()` computes:
-- **Adjusted scale**: MSE, MAE, and winsorized variants
-- **Raw scale**: QLIKE = `(true/pred) - log(true/pred) - 1`, and winsorized variant
-
-`calculate_baseline_deltas()` computes improvements over naive baseline: delta metrics and out-of-sample R² = `1 - mse/baseline_mse`. Supports grouping by (segment, horizon) for multi-horizon experiments.
-
-### Aggregation (`core/evaluation/aggregation.py`)
-
-`load_all_chunks()` stitches per-chunk CSVs. `process_single_experiment()` loads chunks → filters by time-of-day (optional) → computes per-horizon metrics → adds cross-horizon aggregates. Supports three evaluation modes: global, pre-segmented results, and time-of-day filtering.
-
-### Visualization (`projects/dl/visualization/plots.py`)
-
-- `plot_timeseries_forecast()` — True vs predicted RV time series
-- `plot_diagnostic_scatter()` — Log-log scatter with 45° reference line
-- `plot_residual_histogram()` — Distribution of prediction errors
-- `plot_training_losses()` — Dual-panel: individual chunk loss curves + mean ± std aggregate
+- **Geometric lag scales** (1, 5, 25, 125, 625, 3125) capture multi-horizon temporal patterns — the core HAR insight
+- **Diurnal adjustment before lag construction** removes intraday seasonality
+- **Numba JIT `RollingRobustScaler`** enables O(W) online median/IQR scaling via sorted-array maintenance
+- **QLIKE loss for deep learning** — asymmetric penalty suited for volatility forecasting
+- **`vmap` + `functional_call`** for GPU training avoids Python loops, maximizing GPU utilization
+- **Notebooks → `%%writefile` → `src/`** — human-readable pipeline inspection that produces machine-executable code
+- **Executors don't evaluate** — chunk CSVs are stitched and evaluated separately on the login node via `chunk_loader` + `evaluation`
 
 ## Setup
 
 ```bash
-pip install -e core
-pip install -e projects/ml
-pip install -e projects/dl
+pip install numpy pandas scikit-learn pyarrow numba tqdm xgboost lightgbm  # ML
+pip install torch transformers                                              # DL
 ```
 
-Or install all packages at once:
-
-```bash
-pip install -e .
-```
-
-Requires Python 3.10+. Key dependencies: numpy, pandas, scikit-learn, xgboost, lightgbm, statsmodels, torch (>=2.0), transformers (>=4.30), numba, pyarrow, [claude-hpc](https://github.com/jamesdchen/claude-hpc).
-
-## Quick Start
-
-Run a single-chunk backtest (explicit CLI args):
-
-```bash
-python -m projects.ml.cli.executor \
-    --model ridge \
-    --features har \
-    --input-path all30min \
-    --output-file results/results_chunk_1.csv \
-    --chunk-id 1 \
-    --total-chunks 100
-```
-
-Key CLI options:
-- `--model`: ridge, xgboost, lightgbm, random_forest, sarimax, naive
-- `--features`: har (rolling means), pca (compressed), ae (autoencoder-compressed)
-- `--train-window`: Rolling window size in days (default varies by model)
-- `--horizon`: Forecast horizon, 1-48 steps ahead
-- `--segment`: morning, midday, closing, overnight, or all
-- `--n-components`, `--ae-alpha`, `--ae-epochs`: Feature transform configuration
-- `--save-coefs`: Save model coefficients to `.npz`
-
-Run a GPU deep learning backtest:
-
-```bash
-python -m projects.dl.cli.gpu_executor \
-    --experiment patchts \
-    --input-path all30min \
-    --output results/results_dl.csv \
-    --gpu-count 2 \
-    --epochs 50 \
-    --batch-size 32
-```
-
-## Running Tests
-
-```bash
-# All tests
-pytest core/tests/ projects/ml/tests/
-
-# Skip slow/GPU tests
-pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu"
-
-# Per-package (run from package directory)
-cd core && pytest
-cd projects/ml && pytest
-```
-
-## HPC Workflow
-
-All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdchen/claude-hpc).
-
-- **Chunking:** Executors call `chunk_context()` from `hpc.chunking` — a no-op locally (processes everything), active on HPC (processes assigned subset)
-- **Config:** `hpc.yaml` defines profiles, grids, resources, and chunk counts
-- **Commands:** `/submit`, `/monitor`, `/aggregate` — see claude-hpc docs for details
-
-| Profile | Grid | Chunks/Point | Resources |
-|---------|------|-------------|-----------|
-| `ml` | model(4) × features(3) = 12 | 100 | 1 CPU, 16G, 4h |
-| `dl` | experiment(2) | 10 | 4 CPU, 2×A100, 16G, 6h |
-
-### Aggregation and Comparison
-
-```bash
-python projects/ml/scripts/aggregate.py              # stitch chunks, compute metrics, calculate baseline deltas
-python projects/ml/scripts/compare.py results/model_comparison --metric qlike --sort asc
-python projects/dl/scripts/run_scaling_experiment.py  # GPU scaling-law sweep (multipliers: 0, 1, 2, 5, 10, 50)
-```
-
-`aggregate.py` auto-discovers `.needs_aggregation` markers, stitches chunk CSVs, computes MSE/MAE/QLIKE/R², and calculates improvements over naive baseline.
-
-## Notebooks
-
-Jupyter/Colab notebooks for deep learning model training and visualization are in `projects/dl/notebooks/`:
-
-- `patchts_colab.ipynb` / `patchts_viz.ipynb` — PatchTST training and results visualization
-- `ae_ridge_colab.ipynb` / `ae_ridge_viz.ipynb` — Autoencoder+Ridge training and results visualization
-- `scaling_law_colab.ipynb` / `scaling_law_viz.ipynb` — Scaling-law experiments and visualization
-- `dl_runner.ipynb` — General deep learning runner with Drive-persisted status tracking
-
-`projects/dl/notebook_utils.py` provides shared utilities: CUDA configuration (TF32), GPU monitoring via nvidia-smi, Drive-persisted status management with atomic writes, and results download helpers.
-
-See `projects/dl/COWORK_DL_INSTRUCTIONS.md` for detailed deep learning workflow guidance.
-
-## Key Design Decisions
-
-- **Geometric lag scales** (1, 5, 25, 125, 625, 3125) capture multi-horizon temporal patterns efficiently — the core HAR insight
-- **Diurnal adjustment before lag construction** removes intraday seasonality that would otherwise contaminate lag features
-- **Dual-buffer RollingRobustScaler** with Numba JIT enables O(W) online updates without full re-sorting
-- **SARIMAX uses chronologically-ordered views** while other models use circular buffers — respecting the parametric model's stationarity assumptions
-- **AE as feature transform, not standalone predictor** — the encoder compresses features for Ridge, combining nonlinear representation learning with linear prediction stability
-- **Chunk-based parallelism** via `hpc.chunking.chunk_context()` — transparent no-op locally, automatic subset selection on HPC
-- **QLIKE loss for deep learning** rather than MSE — better suited for volatility's asymmetric error structure
-- **vmap + functional_call** for GPU training avoids Python loops over batch elements, maximizing GPU utilization
+Requires Python 3.10+.
 
 ## Development
 
-This project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting, and [pre-commit](https://pre-commit.com/) for git hooks:
-
 ```bash
-pip install ruff pre-commit
-pre-commit install
-
-ruff check .          # lint
-ruff format .         # format
+ruff check colab/src/     # lint
+ruff format colab/src/    # format
 ```
-
-Type checking with mypy:
-
-```bash
-pip install mypy
-mypy core/ projects/ml/ projects/dl/ --ignore-missing-imports
-```
-
-### CI Pipeline
-
-GitHub Actions runs three jobs on push/PR:
-
-1. **lint** — `ruff check .` + `ruff format --check .`
-2. **typecheck** — `mypy core/ projects/ml/ projects/dl/ --ignore-missing-imports`
-3. **test** — `pytest core/tests/ projects/ml/tests/ -m "not slow and not gpu" --tb=short`
