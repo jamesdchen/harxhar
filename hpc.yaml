@@ -1,5 +1,5 @@
 # ML/DL backtesting pipelines for financial volatility forecasting.
-# Executors live in colab/src/ — standalone modules with no core/projects dependencies.
+# Executors live in src/ — standalone modules with no core/projects dependencies.
 
 project: harxhar
 cluster: hoffman2
@@ -19,7 +19,7 @@ cluster_envs:
 
 profiles:
   ml_ridge:
-    run: "python3 colab/src/ml_ridge.py"
+    run: "python3 src/ml_ridge.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -34,7 +34,7 @@ profiles:
       pattern: "results_chunk_*.csv"
 
   ml_xgboost:
-    run: "python3 colab/src/ml_xgboost.py"
+    run: "python3 src/ml_xgboost.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -49,7 +49,7 @@ profiles:
       pattern: "results_chunk_*.csv"
 
   ml_lightgbm:
-    run: "python3 colab/src/ml_lightgbm.py"
+    run: "python3 src/ml_lightgbm.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -64,7 +64,7 @@ profiles:
       pattern: "results_chunk_*.csv"
 
   ml_pcr:
-    run: "python3 colab/src/ml_pcr.py"
+    run: "python3 src/ml_pcr.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -79,7 +79,7 @@ profiles:
       pattern: "results_chunk_*.csv"
 
   ml_baseline:
-    run: "python3 colab/src/ml_baseline.py"
+    run: "python3 src/ml_baseline.py"
     chunking:
       total: 100
       chunk_arg: "--chunk-id"
@@ -94,7 +94,7 @@ profiles:
       pattern: "results_chunk_*.csv"
 
   dl_patchts:
-    run: "python3 colab/src/dl_patchts.py"
+    run: "python3 src/dl_patchts.py"
     chunking:
       total: 10
       chunk_arg: "--chunk-id"
@@ -113,7 +113,7 @@ profiles:
     max_retries: 3
 
   dl_ae_ridge:
-    run: "python3 colab/src/dl_ae_ridge.py"
+    run: "python3 src/dl_ae_ridge.py"
     chunking:
       total: 10
       chunk_arg: "--chunk-id"
