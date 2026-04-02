@@ -5,22 +5,19 @@ No imports from core/ or projects/.
 """
 
 import argparse
-import csv
 import gc
 import json
 import logging
-import math
 import os
-import tempfile
 import time
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.multiprocessing as mp
-from torch.func import vmap, functional_call
+import torch.nn as nn
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -137,7 +134,7 @@ def train_ae_window(model, X_train, y_train, cfg, device):
 
     n_samples = X_train.shape[0]
 
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         perm = torch.randperm(n_samples, device=device)
         for i in range(0, n_samples, batch_size):
             idx = perm[i : i + batch_size]
@@ -241,7 +238,6 @@ def _gpu_worker(gpu_id, window_indices, X_all, y_all, config, result_dict):
     torch.cuda.set_device(device)
 
     train_window = config["train_window"]
-    n_features = X_all.shape[1]
 
     X_device = torch.tensor(X_all, dtype=torch.float32, device=device)
     y_device = torch.tensor(y_all, dtype=torch.float32, device=device)
@@ -292,25 +288,26 @@ def run_ae_ridge_backtest(X, y, config):
 
     train_window = config["train_window"]
     num_windows = len(X) - train_window
-    logger.info(
-        f"Using {gpu_count} GPU(s) for AE+Ridge backtest, {num_windows} windows"
-    )
+    logger.info(f"Using {gpu_count} GPU(s) for AE+Ridge backtest, {num_windows} windows")
 
     if gpu_count == 1:
-        result_dict = {}
+        result_dict: dict[int, dict[int, float]] = {}
         _gpu_worker(
-            0, list(range(num_windows)), X, y, config, result_dict,
+            0,
+            list(range(num_windows)),
+            X,
+            y,
+            config,
+            result_dict,
         )
-        predictions = np.array(
-            [result_dict[0][i] for i in range(num_windows)]
-        )
+        predictions = np.array([result_dict[0][i] for i in range(num_windows)])
     else:
         ctx = mp.get_context("spawn")
         manager = ctx.Manager()
         result_dict = manager.dict()
 
         # Distribute windows across GPUs
-        window_splits = [[] for _ in range(gpu_count)]
+        window_splits: list[list[int]] = [[] for _ in range(gpu_count)]
         for i in range(num_windows):
             window_splits[i % gpu_count].append(i)
 
@@ -373,9 +370,7 @@ def apply_horizon_shift(X, y, dates, baselines, horizon):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="AE+Ridge GPU walk-forward backtest"
-    )
+    parser = argparse.ArgumentParser(description="AE+Ridge GPU walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--gpu-count", type=int, default=1)
@@ -405,7 +400,11 @@ def main():
 
     # 2. Robust transform on RV
     adj_rv, baseline = robust_transform(
-        df, "RV", use_diurnal=True, winsor_window=240, is_target=True,
+        df,
+        "RV",
+        use_diurnal=True,
+        winsor_window=240,
+        is_target=True,
     )
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
@@ -428,9 +427,7 @@ def main():
     logger.info(f"Feature matrix shape: {X.shape}")
 
     # 5. Horizon shift
-    X, y, dates, baselines = apply_horizon_shift(
-        X, y, dates, baselines, args.horizon
-    )
+    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
 
     # 6. Chunk split
     n = len(X)
@@ -445,9 +442,7 @@ def main():
 
     train_window = config["train_window"]
     if train_window >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_window}) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_window}) >= chunk size ({len(X_chunk)})")
 
     # 7. Run AE+Ridge backtest
     logger.info(f"Running AE+Ridge backtest on chunk {args.chunk_id}")
@@ -475,8 +470,14 @@ def main():
         }
     )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     logger.info(f"Saved {len(results)} rows -> {args.output_file}")
 
 

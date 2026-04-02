@@ -5,6 +5,7 @@ HAR lag features, and Duan smearing.  No imports from core/ or projects/.
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -13,6 +14,7 @@ from numba import njit
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -22,6 +24,7 @@ PERIODS_PER_DAY = 48
 
 # ── HAR lag features ─────────────────────────────────────────────────────
 
+
 def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     seq, v = [], 1
     while v <= max_lag:
@@ -30,23 +33,20 @@ def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     return seq
 
 
-def generate_har_features(
-    df: pd.DataFrame, target_col: str = "adj_RV"
-) -> tuple[pd.DataFrame, list[str]]:
+def generate_har_features(df: pd.DataFrame, target_col: str = "adj_RV") -> tuple[pd.DataFrame, list[str]]:
     lags = resolve_har_lags()
     features: dict[str, pd.Series] = {}
     feature_names: list[str] = []
     for lag in lags:
         name = f"har_ma_{lag}"
-        features[name] = (
-            df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
-        )
+        features[name] = df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
         feature_names.append(name)
     feat_df = pd.DataFrame(features, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names
 
 
 # ── Horizon shift ─────────────────────────────────────────────────────────
+
 
 def apply_horizon_shift(
     X: np.ndarray,
@@ -68,10 +68,9 @@ def apply_horizon_shift(
 
 # ── Numba kernels for rolling robust scaling ──────────────────────────────
 
+
 @njit(cache=True)
-def _update_sorted_matrix(
-    sorted_mat: np.ndarray, x_old: np.ndarray, x_new: np.ndarray
-) -> None:
+def _update_sorted_matrix(sorted_mat: np.ndarray, x_old: np.ndarray, x_new: np.ndarray) -> None:
     n_features, w = sorted_mat.shape
     for i in range(n_features):
         v_old = x_old[i]
@@ -102,18 +101,9 @@ def _get_robust_stats(
     i50_floor, rem_50 = int(idx_50), idx_50 - int(idx_50)
     i75_floor, rem_75 = int(idx_75), idx_75 - int(idx_75)
     for i in range(n_features):
-        q25 = (
-            sorted_mat[i, i25_floor] * (1.0 - rem_25)
-            + sorted_mat[i, min(i25_floor + 1, w - 1)] * rem_25
-        )
-        med = (
-            sorted_mat[i, i50_floor] * (1.0 - rem_50)
-            + sorted_mat[i, min(i50_floor + 1, w - 1)] * rem_50
-        )
-        q75 = (
-            sorted_mat[i, i75_floor] * (1.0 - rem_75)
-            + sorted_mat[i, min(i75_floor + 1, w - 1)] * rem_75
-        )
+        q25 = sorted_mat[i, i25_floor] * (1.0 - rem_25) + sorted_mat[i, min(i25_floor + 1, w - 1)] * rem_25
+        med = sorted_mat[i, i50_floor] * (1.0 - rem_50) + sorted_mat[i, min(i50_floor + 1, w - 1)] * rem_50
+        q75 = sorted_mat[i, i75_floor] * (1.0 - rem_75) + sorted_mat[i, min(i75_floor + 1, w - 1)] * rem_75
         median[i] = med
         iq = q75 - q25
         iqr[i] = iq if iq >= 1e-12 else 1.0
@@ -121,6 +111,7 @@ def _get_robust_stats(
 
 
 # ── RollingRobustScaler ──────────────────────────────────────────────────
+
 
 class RollingRobustScaler:
     """Maintains a sorted buffer per feature for O(W) median/IQR scaling."""
@@ -154,12 +145,11 @@ class RollingRobustScaler:
 
 # ── RollingBuffer ─────────────────────────────────────────────────────────
 
+
 class RollingBuffer:
     """Ring buffer for (X, y) pairs."""
 
-    def __init__(
-        self, window_size: int, n_features: int, n_targets: int = 1
-    ) -> None:
+    def __init__(self, window_size: int, n_features: int, n_targets: int = 1) -> None:
         self.window_size = window_size
         self.X = np.zeros((window_size, n_features), dtype=np.float64)
         self.y = np.zeros((window_size, n_targets), dtype=np.float64)
@@ -181,6 +171,7 @@ class RollingBuffer:
 
 # ── Duan smearing (inline) ───────────────────────────────────────────────
 
+
 def apply_duan_smearing(
     forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -191,6 +182,7 @@ def apply_duan_smearing(
 
 
 # ── Walk-forward backtest ─────────────────────────────────────────────────
+
 
 def run_backtest(
     model_fn,
@@ -226,6 +218,7 @@ def run_backtest(
     y_init = y[:train_win].copy()
 
     if use_scaling:
+        assert scaler is not None
         scaler.initialize(X_init)
         med, iqr = scaler.get_scaler()
         X_scaled_init = (X_init - med) / iqr
@@ -246,6 +239,7 @@ def run_backtest(
 
         # a. Scale
         if use_scaling:
+            assert scaler is not None
             med, iqr = scaler.get_scaler()
             x_t_scaled = (x_t_raw - med) / iqr
         else:
@@ -256,6 +250,7 @@ def run_backtest(
 
         # c. Update scaler with raw observation
         if use_scaling:
+            assert scaler is not None
             scaler.update(x_t_raw)
 
         # d. Add scaled observation to buffer
@@ -272,13 +267,12 @@ def run_backtest(
 
 # ── CLI ───────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ridge walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument(
-        "--train-window", type=int, default=500, help="training window in days"
-    )
+    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
     parser.add_argument("--chunk-id", type=int, default=0)
     parser.add_argument("--total-chunks", type=int, default=1)
     parser.add_argument("--output-file", required=True)
@@ -323,12 +317,12 @@ def main() -> None:
 
     # Ensure train window fits in chunk
     if train_win_periods >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
 
     # 8. Walk-forward backtest
-    model_fn = lambda: Ridge(alpha=1.0)
+    def model_fn() -> Ridge:
+        return Ridge(alpha=1.0)
+
     preds = run_backtest(
         model_fn,
         X_chunk,
@@ -357,8 +351,14 @@ def main() -> None:
         }
     )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     print(f"Saved {len(results)} rows → {args.output_file}")
 
 

@@ -5,6 +5,7 @@ Uses: numpy, pandas, argparse, os, tqdm, sklearn, numba.
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -14,6 +15,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -68,9 +70,7 @@ class PCATransform:
 
 
 @njit(cache=True)
-def _update_sorted_matrix(
-    sorted_mat: np.ndarray, x_old: np.ndarray, x_new: np.ndarray
-) -> None:
+def _update_sorted_matrix(sorted_mat: np.ndarray, x_old: np.ndarray, x_new: np.ndarray) -> None:
     """Replace *x_old* with *x_new* in each feature's sorted window."""
     n_features, w = sorted_mat.shape
     for i in range(n_features):
@@ -285,7 +285,8 @@ def main() -> None:
 
     # ── Run backtest ──────────────────────────────────────────────────
     forecasts = run_pcr_backtest(
-        X, y,
+        X,
+        y,
         train_window=train_window,
         n_components=args.n_components,
         refit_frequency=240,
@@ -297,20 +298,28 @@ def main() -> None:
     baselines_test = baselines[train_window:]
 
     smear = np.mean((y_test - forecasts) ** 2)
-    pred_raw = (forecasts ** 2 + smear) * baselines_test
-    true_raw = (y_test ** 2) * baselines_test
+    pred_raw = (forecasts**2 + smear) * baselines_test
+    true_raw = (y_test**2) * baselines_test
 
-    results = pd.DataFrame({
-        "date": dates_test,
-        "horizon": args.horizon,
-        "true_adj": y_test,
-        "pred_adj": forecasts,
-        "true_raw": true_raw,
-        "pred_raw": pred_raw,
-    })
+    results = pd.DataFrame(
+        {
+            "date": dates_test,
+            "horizon": args.horizon,
+            "true_adj": y_test,
+            "pred_adj": forecasts,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     print(f"Saved {len(results)} rows to {args.output_file}")
 
 

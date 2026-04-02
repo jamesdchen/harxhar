@@ -6,6 +6,7 @@ Tree-based model: no scaling, handles NaN natively.
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -13,6 +14,7 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 from tqdm import tqdm
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -22,6 +24,7 @@ PERIODS_PER_DAY = 48
 
 # ── HAR lag features ─────────────────────────────────────────────────────
 
+
 def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     seq, v = [], 1
     while v <= max_lag:
@@ -30,23 +33,20 @@ def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     return seq
 
 
-def generate_har_features(
-    df: pd.DataFrame, target_col: str = "adj_RV"
-) -> tuple[pd.DataFrame, list[str]]:
+def generate_har_features(df: pd.DataFrame, target_col: str = "adj_RV") -> tuple[pd.DataFrame, list[str]]:
     lags = resolve_har_lags()
     features: dict[str, pd.Series] = {}
     feature_names: list[str] = []
     for lag in lags:
         name = f"har_ma_{lag}"
-        features[name] = (
-            df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
-        )
+        features[name] = df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
         feature_names.append(name)
     feat_df = pd.DataFrame(features, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names
 
 
 # ── DOW + hour features ─────────────────────────────────────────────────
+
 
 def add_calendar_features(df: pd.DataFrame) -> list[str]:
     """Add day-of-week (0-6) and hour features. Returns new column names."""
@@ -56,6 +56,7 @@ def add_calendar_features(df: pd.DataFrame) -> list[str]:
 
 
 # ── Horizon shift ─────────────────────────────────────────────────────────
+
 
 def apply_horizon_shift(
     X: np.ndarray,
@@ -76,6 +77,7 @@ def apply_horizon_shift(
 
 
 # ── RollingBuffer ─────────────────────────────────────────────────────────
+
 
 class RollingBuffer:
     """Ring buffer for (X, y) pairs."""
@@ -100,6 +102,7 @@ class RollingBuffer:
 
 # ── Duan smearing (inline) ───────────────────────────────────────────────
 
+
 def apply_duan_smearing(
     forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -110,6 +113,7 @@ def apply_duan_smearing(
 
 
 # ── Walk-forward backtest ─────────────────────────────────────────────────
+
 
 def run_backtest(
     model_fn,
@@ -166,13 +170,12 @@ def run_backtest(
 
 # ── CLI ───────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="LightGBM walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument(
-        "--train-window", type=int, default=500, help="training window in days"
-    )
+    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
     parser.add_argument("--chunk-id", type=int, default=0)
     parser.add_argument("--total-chunks", type=int, default=1)
     parser.add_argument("--output-file", required=True)
@@ -184,9 +187,7 @@ def main() -> None:
     df = load_raw_data(args.data_path, allow_missing=True)
 
     # 2. Robust transform on RV (full transform for target)
-    adj_rv, baseline = robust_transform(
-        df, "RV", is_target=True, use_diurnal=True, winsor_window=240
-    )
+    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
 
@@ -224,18 +225,18 @@ def main() -> None:
 
     # Ensure train window fits in chunk
     if train_win_periods >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
 
     # 9. Walk-forward backtest
-    model_fn = lambda: LGBMRegressor(
-        n_estimators=500,
-        max_depth=5,
-        learning_rate=0.1,
-        n_jobs=-1,
-        verbose=-1,
-    )
+    def model_fn() -> LGBMRegressor:
+        return LGBMRegressor(
+            n_estimators=500,
+            max_depth=5,
+            learning_rate=0.1,
+            n_jobs=-1,
+            verbose=-1,
+        )
+
     preds = run_backtest(
         model_fn,
         X_chunk,
@@ -263,8 +264,14 @@ def main() -> None:
         }
     )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     print(f"Saved {len(results)} rows -> {args.output_file}")
 
 

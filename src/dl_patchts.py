@@ -5,23 +5,20 @@ No imports from core/ or projects/.
 """
 
 import argparse
-import csv
 import gc
 import json
 import logging
-import math
 import os
-import tempfile
 import time
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.multiprocessing as mp
-from torch.func import vmap, functional_call
+import torch.nn as nn
 from transformers import PatchTSTConfig, PatchTSTModel, PreTrainedModel
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -67,9 +64,7 @@ class PatchTSTForecaster(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.backbone = PatchTSTModel(config)
-        dummy_input = torch.zeros(
-            1, config.context_length, config.num_input_channels
-        )
+        dummy_input = torch.zeros(1, config.context_length, config.num_input_channels)
         with torch.no_grad():
             dummy_out = self.backbone(past_values=dummy_input).last_hidden_state
         self.num_patches = dummy_out.shape[2]
@@ -80,9 +75,7 @@ class PatchTSTForecaster(PreTrainedModel):
         self.post_init()
 
     def forward(self, past_values, future_values=None, output_attentions=False):
-        outputs = self.backbone(
-            past_values=past_values, output_attentions=output_attentions
-        )
+        outputs = self.backbone(past_values=past_values, output_attentions=output_attentions)
         last_hidden_state = outputs.last_hidden_state
         batch_size, num_channels, _, _ = last_hidden_state.shape
         flattened = last_hidden_state.view(batch_size, num_channels, -1)
@@ -141,9 +134,7 @@ def make_patchts_windows(X_tensor, y_tensor, config):
         X_tensor.stride(0) * context_len,
         X_tensor.stride(0),
     )
-    all_train_X = torch.as_strided(
-        X_tensor, size=window_shape_X, stride=strides_X
-    )
+    all_train_X = torch.as_strided(X_tensor, size=window_shape_X, stride=strides_X)
 
     # Targets aligned with patches
     y_offset = y_tensor[context_len:]
@@ -153,9 +144,7 @@ def make_patchts_windows(X_tensor, y_tensor, config):
         y_offset.stride(0) * context_len,
         y_offset.stride(0),
     )
-    all_train_y = torch.as_strided(
-        y_offset, size=window_shape_y, stride=strides_y
-    )
+    all_train_y = torch.as_strided(y_offset, size=window_shape_y, stride=strides_y)
 
     # Test windows
     X_test_start = X_tensor[train_window - context_len :]
@@ -165,9 +154,7 @@ def make_patchts_windows(X_tensor, y_tensor, config):
         X_test_start.stride(0),
         X_test_start.stride(0),
     )
-    all_test_X = torch.as_strided(
-        X_test_start, size=window_shape_test, stride=strides_test
-    )
+    all_test_X = torch.as_strided(X_test_start, size=window_shape_test, stride=strides_test)
 
     return all_train_X, all_train_y, all_test_X, num_windows
 
@@ -196,7 +183,12 @@ def qlike_loss(pred, target, clamp_val=30.0):
 
 
 def _train_single_window(
-    model, train_X, train_y, test_X, cfg, device,
+    model,
+    train_X,
+    train_y,
+    test_X,
+    cfg,
+    device,
 ):
     """Train PatchTST on one walk-forward window and return prediction.
 
@@ -216,8 +208,6 @@ def _train_single_window(
     num_epochs = cfg["train"]["num_epochs"]
     lr = cfg["train"]["learning_rate"]
     batch_size = cfg["train"]["batch_size"]
-    context_len = cfg["model"]["context_len"]
-
     # Instance normalization on training data
     train_flat = train_X.reshape(-1)
     t_mean = train_flat.mean()
@@ -234,7 +224,7 @@ def _train_single_window(
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         perm = torch.randperm(n_samples, device=device)
         for i in range(0, n_samples, batch_size):
             idx = perm[i : i + batch_size]
@@ -274,8 +264,6 @@ def _gpu_worker(gpu_id, window_indices, shared_data, config, result_dict):
     all_train_y = shared_data["all_train_y"].to(device)
     all_test_X = shared_data["all_test_X"].to(device)
 
-    model = get_model(config["model"]).to(device)
-
     predictions = {}
     for w_idx in window_indices:
         train_X = all_train_X[w_idx]
@@ -286,7 +274,12 @@ def _gpu_worker(gpu_id, window_indices, shared_data, config, result_dict):
         model_fresh = get_model(config["model"]).to(device)
 
         pred = _train_single_window(
-            model_fresh, train_X, train_y, test_X, config, device,
+            model_fresh,
+            train_X,
+            train_y,
+            test_X,
+            config,
+            device,
         )
         predictions[w_idx] = pred
 
@@ -317,9 +310,7 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
 
     logger.info(f"Using {gpu_count} GPU(s) for PatchTST backtest")
 
-    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(
-        X_tensor, y_tensor, config
-    )
+    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(X_tensor, y_tensor, config)
     logger.info(f"Created {num_windows} walk-forward windows")
 
     shared_data = {
@@ -330,11 +321,9 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
 
     if gpu_count == 1:
         # Single GPU — run directly without multiprocessing
-        result_dict = {}
+        result_dict: dict[int, dict[int, float]] = {}
         _gpu_worker(0, list(range(num_windows)), shared_data, config, result_dict)
-        predictions = np.array(
-            [result_dict[0][i] for i in range(num_windows)]
-        )
+        predictions = np.array([result_dict[0][i] for i in range(num_windows)])
     else:
         # Multi-GPU with torch.multiprocessing
         ctx = mp.get_context("spawn")
@@ -342,7 +331,7 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
         result_dict = manager.dict()
 
         # Distribute windows across GPUs
-        window_splits = [[] for _ in range(gpu_count)]
+        window_splits: list[list[int]] = [[] for _ in range(gpu_count)]
         for i in range(num_windows):
             window_splits[i % gpu_count].append(i)
 
@@ -405,9 +394,7 @@ def apply_horizon_shift(X, y, dates, baselines, horizon):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="PatchTST GPU walk-forward backtest"
-    )
+    parser = argparse.ArgumentParser(description="PatchTST GPU walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--gpu-count", type=int, default=1)
@@ -434,7 +421,11 @@ def main():
 
     # 2. Robust transform on RV
     adj_rv, baseline = robust_transform(
-        df, "RV", use_diurnal=True, use_winsor=True, winsor_window=240,
+        df,
+        "RV",
+        use_diurnal=True,
+        use_winsor=True,
+        winsor_window=240,
         is_target=True,
     )
     df["adj_RV"] = adj_rv
@@ -469,9 +460,7 @@ def main():
 
     train_window = config["train_window"]
     if train_window >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_window}) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_window}) >= chunk size ({len(X_chunk)})")
 
     # 6. Convert to tensors
     X_tensor = torch.tensor(X_chunk, dtype=torch.float32)
@@ -503,8 +492,14 @@ def main():
         }
     )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     logger.info(f"Saved {len(results)} rows -> {args.output_file}")
 
 

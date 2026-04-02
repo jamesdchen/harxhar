@@ -5,11 +5,13 @@ Same CLI interface as ml_ridge.py.  No imports from core/ or projects/.
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
 import pandas as pd
 
+from evaluation import calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -19,6 +21,7 @@ PERIODS_PER_DAY = 48
 
 # ── HAR lag features (same as ml_ridge) ───────────────────────────────────
 
+
 def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     seq, v = [], 1
     while v <= max_lag:
@@ -27,23 +30,20 @@ def resolve_har_lags(max_lag: int = 3125) -> list[int]:
     return seq
 
 
-def generate_har_features(
-    df: pd.DataFrame, target_col: str = "adj_RV"
-) -> tuple[pd.DataFrame, list[str]]:
+def generate_har_features(df: pd.DataFrame, target_col: str = "adj_RV") -> tuple[pd.DataFrame, list[str]]:
     lags = resolve_har_lags()
     features: dict[str, pd.Series] = {}
     feature_names: list[str] = []
     for lag in lags:
         name = f"har_ma_{lag}"
-        features[name] = (
-            df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
-        )
+        features[name] = df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
         feature_names.append(name)
     feat_df = pd.DataFrame(features, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names
 
 
 # ── Horizon shift ─────────────────────────────────────────────────────────
+
 
 def apply_horizon_shift(
     X: np.ndarray,
@@ -65,6 +65,7 @@ def apply_horizon_shift(
 
 # ── Duan smearing (inline) ───────────────────────────────────────────────
 
+
 def apply_duan_smearing(
     forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -76,13 +77,12 @@ def apply_duan_smearing(
 
 # ── CLI ───────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Naive baseline backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument(
-        "--train-window", type=int, default=500, help="training window in days (burn-in)"
-    )
+    parser.add_argument("--train-window", type=int, default=500, help="training window in days (burn-in)")
     parser.add_argument("--chunk-id", type=int, default=0)
     parser.add_argument("--total-chunks", type=int, default=1)
     parser.add_argument("--output-file", required=True)
@@ -126,9 +126,7 @@ def main() -> None:
     baselines_chunk = baselines[start:end]
 
     if train_win_periods >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
 
     # 8. Naive prediction: y_pred[t] = har_ma_125[t]
     lag_125_index = feature_names.index("har_ma_125")
@@ -155,8 +153,14 @@ def main() -> None:
         }
     )
 
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
+    out_dir = os.path.dirname(args.output_file) or "."
+    os.makedirs(out_dir, exist_ok=True)
     results.to_csv(args.output_file, index=False)
+
+    metrics = calculate_metrics(results)
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f)
     print(f"Saved {len(results)} rows → {args.output_file}")
 
 

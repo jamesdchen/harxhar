@@ -90,6 +90,19 @@ Each notebook walks through the pipeline stage-by-stage with data inspection cel
 - `dl_patchts` — PatchTST transformer with QLIKE loss, GPU multi-worker
 - `dl_ae_ridge` — Hybrid autoencoder + closed-form Ridge, GPU multi-worker
 
+## Runtime Requirements
+
+| Notebook | Runtime | Estimated Time |
+|----------|---------|---------------|
+| Pipeline (01-03) | CPU | < 5 min |
+| ml_ridge | CPU | ~10 min |
+| ml_xgboost | CPU | ~15 min |
+| ml_lightgbm | CPU | ~15 min |
+| ml_pcr | CPU | ~20 min |
+| ml_baseline | CPU | < 5 min |
+| dl_patchts | GPU (T4+) | ~30 min |
+| dl_ae_ridge | GPU (T4+) | ~45 min |
+
 ## Executors
 
 Each `colab/src/*.py` executor is a standalone CLI script:
