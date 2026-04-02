@@ -1,0 +1,68 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Ridge--HAR Subgroup Analysis}
+\label{sec:results_ridge_har}
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample performance of Ridge--HAR across exogenous variable subgroups. $\Delta$QLIKE denotes the change relative to the MA baseline (negative $=$ improvement). OOS~$R^2$ is relative to the MA baseline. $N$ denotes the number of out-of-sample observations. Implied volatility and the combined feature set are excluded due to substantial missingness in VIX-derived variables, arising from both limited historical availability and intraday gaps in VIX quotation.}
+\label{tab:ridge_har_subgroup}
+\begin{tabular}{lrccccr}
+\toprule
+Subgroup & $N$ & MSE & MAE & QLIKE & $\Delta$QLIKE & OOS $R^2$ (\%) \\
+\midrule
+MA Baseline      & 221{,}915 & 0.2248 & 0.3431 & 0.3518 & ---       & 0.0 \\
+HAR Baseline     & 222{,}058 & 0.0629 & 0.1870 & 0.1380 & $-$0.2138 & 72.0 \\
+Moments          & 217{,}214 & 0.0617 & 0.1851 & 0.1322 & $-$0.2196 & 72.6 \\
+Liquidity        & 203{,}433 & 0.0620 & 0.1856 & 0.1317 & $-$0.2201 & 72.4 \\
+Market (EW)      & 200{,}687 & 0.0622 & 0.1861 & 0.1338 & $-$0.2180 & 72.3 \\
+Market (VW)      & 200{,}687 & 0.0621 & 0.1859 & 0.1335 & $-$0.2183 & 72.4 \\
+Sentiment        & 138{,}279 & 0.0652 & 0.1881 & 0.1397 & $-$0.2121 & 71.0 \\
+Vol Demand       & 136{,}849 & 0.0649 & 0.1877 & 0.1405 & $-$0.2113 & 71.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{HAR Model Comparison}
+\label{sec:results_model_comparison}
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample performance of five models on HAR baseline features (no exogenous variables). $\Delta$QLIKE and OOS~$R^2$ are computed relative to the MA baseline. $N$ denotes the number of out-of-sample observations.}
+\label{tab:model_comparison}
+\begin{tabular}{lrccccr}
+\toprule
+Model & $N$ & MSE & MAE & QLIKE & $\Delta$QLIKE & OOS $R^2$ (\%) \\
+\midrule
+MA Baseline     & 221{,}915 & 0.2248 & 0.3431 & 0.3518 & ---       & 0.0 \\
+Ridge           & 222{,}058 & 0.0629 & 0.1870 & 0.1380 & $-$0.2138 & 72.0 \\
+LightGBM        & 218{,}934 & 0.1550 & 0.2215 & 0.2401 & $-$0.1117 & 31.1 \\
+XGBoost         & 218{,}934 & 0.1577 & 0.2222 & 0.2407 & $-$0.1111 & 29.9 \\
+Random Forest   & 217{,}483 & 0.1740 & 0.2362 & 0.2730 & $-$0.0788 & 22.6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ridge--PCA Subgroup Analysis}
+\label{sec:results_ridge_pca}
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample performance of Ridge--PCA across exogenous variable subgroups. $\Delta$QLIKE denotes the change relative to the MA baseline (negative $=$ improvement). OOS~$R^2$ is relative to the MA baseline. $N$ denotes the number of out-of-sample observations. Implied volatility and the combined feature set are excluded due to substantial missingness in VIX-derived variables, arising from both limited historical availability and intraday gaps in VIX quotation.}
+\label{tab:ridge_pca_subgroup}
+\begin{tabular}{lrccccr}
+\toprule
+Subgroup & $N$ & MSE & MAE & QLIKE & $\Delta$QLIKE & OOS $R^2$ (\%) \\
+\midrule
+MA Baseline      & 221{,}915 & 0.2248 & 0.3431 & 0.3518 & ---       & 0.0 \\
+PCA Baseline     & 218{,}934 & 0.1337 & 0.2644 & 0.2621 & $-$0.0897 & 40.5 \\
+Moments          & 214{,}090 & 0.0722 & 0.2001 & 0.1497 & $-$0.2021 & 67.9 \\
+Liquidity        & 200{,}309 & 0.1300 & 0.2588 & 0.2509 & $-$0.1008 & 42.2 \\
+Market (EW)      & 196{,}753 & 0.1132 & 0.2456 & 0.2212 & $-$0.1306 & 49.7 \\
+Market (VW)      & 196{,}753 & 0.1082 & 0.2408 & 0.2130 & $-$0.1388 & 51.9 \\
+Sentiment        & 135{,}155 & 0.0839 & 0.2149 & 0.1692 & $-$0.1826 & 62.7 \\
+Vol Demand       & 131{,}172 & 0.0827 & 0.2128 & 0.1687 & $-$0.1831 & 63.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
