@@ -23,7 +23,6 @@ colab/
     ├── loading.py                 Data loading
     ├── transforms.py              Data transforms
     ├── evaluation.py              Metrics (login node)
-    ├── chunk_loader.py            Stitch chunk CSVs (login node)
     ├── ml_ridge.py                Ridge executor
     ├── ml_xgboost.py              XGBoost executor
     ├── ml_lightgbm.py             LightGBM executor
@@ -66,10 +65,7 @@ apply_duan_smearing()             ← Convert adjusted-space → raw-space forec
 save chunk CSV                    ← Per-chunk results_chunk_*.csv
     │
     ▼
-load_and_stitch_chunks()          ← Login node: stitch all chunks
-    │
-    ▼
-calculate_metrics()               ← Login node: MSE, MAE, QLIKE
+calculate_metrics()               ← Login node: MSE, MAE, QLIKE (claude-hpc handles chunk stitching)
 ```
 
 ## Notebooks
@@ -79,7 +75,7 @@ Each notebook walks through the pipeline stage-by-stage with data inspection cel
 **Pipeline notebooks** (run in order to understand the data):
 - `01_loading` — raw parquets → merged 30-min grid → market hours filter → NaN handling
 - `02_transforms` — diurnal adjustment → semantic transform (sqrt/log) → winsorization
-- `03_evaluation` — Duan smearing, QLIKE loss, MSE/MAE, chunk loading
+- `03_evaluation` — Duan smearing, QLIKE loss, MSE/MAE
 
 **Experiment notebooks** (each imports from `src/loading` and `src/transforms`):
 - `ml_ridge` — Ridge with HAR features, robust scaling, refit every step
@@ -126,11 +122,11 @@ python colab/src/dl_patchts.py \
     --total-chunks 10 \
     --output-file results/chunk_0.csv
 
-# Evaluate on login node (after all chunks finish)
+# Evaluate on login node (after claude-hpc stitches chunks)
 python -c "
-from colab.src.chunk_loader import load_and_stitch_chunks
 from colab.src.evaluation import calculate_metrics
-df = load_and_stitch_chunks('results/')
+import pandas as pd
+df = pd.read_csv('results/stitched.csv')
 print(calculate_metrics(df))
 "
 ```
@@ -159,7 +155,7 @@ All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdche
 - **QLIKE loss for deep learning** — asymmetric penalty suited for volatility forecasting
 - **`vmap` + `functional_call`** for GPU training avoids Python loops, maximizing GPU utilization
 - **Notebooks → `%%writefile` → `src/`** — human-readable pipeline inspection that produces machine-executable code
-- **Executors don't evaluate** — chunk CSVs are stitched and evaluated separately on the login node via `chunk_loader` + `evaluation`
+- **Executors don't evaluate** — chunk CSVs are stitched by `claude-hpc` and evaluated separately on the login node via `evaluation`
 
 ## Setup
 
