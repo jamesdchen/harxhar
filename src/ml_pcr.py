@@ -241,8 +241,8 @@ def main() -> None:
     parser.add_argument("--data-path", type=str, required=True, help="Path to parquet data")
     parser.add_argument("--horizon", type=int, default=1, help="Forecast horizon in periods")
     parser.add_argument("--train-window", type=int, default=500, help="Training window in days")
-    parser.add_argument("--chunk-id", type=int, default=0, help="Chunk index for parallel runs")
-    parser.add_argument("--total-chunks", type=int, default=1, help="Total number of chunks")
+    parser.add_argument("--start", type=int, default=0, help="Start index for slicing")
+    parser.add_argument("--end", type=int, default=-1, help="End index for slicing (-1 means all)")
     parser.add_argument("--output-file", type=str, default="results_pcr.csv", help="Output CSV path")
     parser.add_argument("--n-components", type=int, default=5, help="Number of PCA components")
     args = parser.parse_args()
@@ -268,14 +268,10 @@ def main() -> None:
     df = df.iloc[max_lag:].reset_index(drop=True)
     df = df.dropna(subset=["target"] + feature_names).reset_index(drop=True)
 
-    # ── Chunk selection ───────────────────────────────────────────────
-    n_total = len(df) - train_window
-    chunk_size = n_total // args.total_chunks
-    start = args.chunk_id * chunk_size
-    end = n_total if args.chunk_id == args.total_chunks - 1 else (args.chunk_id + 1) * chunk_size
-
-    # Slice so that train window precedes the chunk's test range
-    df_chunk = df.iloc[start : train_window + end].reset_index(drop=True)
+    # ── Slice selection ─────────────────────────────────────────────────
+    start = args.start
+    end = len(df) if args.end == -1 else args.end
+    df_chunk = df.iloc[start:end].reset_index(drop=True)
 
     # ── Prepare arrays ────────────────────────────────────────────────
     X = df_chunk[feature_names].values.astype(np.float64)
@@ -317,7 +313,7 @@ def main() -> None:
     results.to_csv(args.output_file, index=False)
 
     metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    metrics_path = os.path.join(out_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f)
     print(f"Saved {len(results)} rows to {args.output_file}")

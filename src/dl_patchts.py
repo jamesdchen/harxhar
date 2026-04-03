@@ -401,8 +401,8 @@ def main():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
-    parser.add_argument("--chunk-id", type=int, default=0)
-    parser.add_argument("--total-chunks", type=int, default=1)
+    parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
     args = parser.parse_args()
 
@@ -447,11 +447,9 @@ def main():
         adj_rv_arr_X = adj_rv_arr
         adj_rv_arr_y = adj_rv_arr
 
-    # 5. Chunk split
-    n = len(adj_rv_arr_X)
-    chunk_size = n // args.total_chunks
-    start = args.chunk_id * chunk_size
-    end = n if args.chunk_id == args.total_chunks - 1 else start + chunk_size
+    # 5. Slice
+    start = args.start
+    end = len(adj_rv_arr_X) if args.end == -1 else args.end
 
     X_chunk = adj_rv_arr_X[start:end]
     y_chunk = adj_rv_arr_y[start:end]
@@ -467,7 +465,7 @@ def main():
     y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
 
     # 7. Run PatchTST backtest
-    logger.info(f"Running PatchTST backtest on chunk {args.chunk_id}")
+    logger.info("Running PatchTST backtest")
     t0 = time.time()
     preds = run_patchts_backtest(X_tensor, y_tensor, config)
     elapsed = time.time() - t0
@@ -497,7 +495,7 @@ def main():
     results.to_csv(args.output_file, index=False)
 
     metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    metrics_path = os.path.join(out_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f)
     logger.info(f"Saved {len(results)} rows -> {args.output_file}")
