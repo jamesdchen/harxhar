@@ -377,8 +377,8 @@ def main():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
-    parser.add_argument("--chunk-id", type=int, default=0)
-    parser.add_argument("--total-chunks", type=int, default=1)
+    parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
     parser.add_argument("--n-components", type=int, default=None)
     args = parser.parse_args()
@@ -429,11 +429,9 @@ def main():
     # 5. Horizon shift
     X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
 
-    # 6. Chunk split
-    n = len(X)
-    chunk_size = n // args.total_chunks
-    start = args.chunk_id * chunk_size
-    end = n if args.chunk_id == args.total_chunks - 1 else start + chunk_size
+    # 6. Slice
+    start = args.start
+    end = len(X) if args.end == -1 else args.end
 
     X_chunk = X[start:end]
     y_chunk = y[start:end]
@@ -445,7 +443,7 @@ def main():
         raise ValueError(f"train_window ({train_window}) >= chunk size ({len(X_chunk)})")
 
     # 7. Run AE+Ridge backtest
-    logger.info(f"Running AE+Ridge backtest on chunk {args.chunk_id}")
+    logger.info("Running AE+Ridge backtest")
     t0 = time.time()
     preds = run_ae_ridge_backtest(X_chunk, y_chunk, config)
     elapsed = time.time() - t0
@@ -475,7 +473,7 @@ def main():
     results.to_csv(args.output_file, index=False)
 
     metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    metrics_path = os.path.join(out_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f)
     logger.info(f"Saved {len(results)} rows -> {args.output_file}")

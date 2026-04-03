@@ -176,8 +176,8 @@ def main() -> None:
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--train-window", type=int, default=500, help="training window in days")
-    parser.add_argument("--chunk-id", type=int, default=0)
-    parser.add_argument("--total-chunks", type=int, default=1)
+    parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
     args = parser.parse_args()
 
@@ -212,11 +212,9 @@ def main() -> None:
     # 7. Horizon shift
     X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
 
-    # 8. Chunk split
-    n = len(X)
-    chunk_size = n // args.total_chunks
-    start = args.chunk_id * chunk_size
-    end = n if args.chunk_id == args.total_chunks - 1 else start + chunk_size
+    # 8. Slice
+    start = args.start
+    end = len(X) if args.end == -1 else args.end
 
     X_chunk = X[start:end]
     y_chunk = y[start:end]
@@ -269,7 +267,7 @@ def main() -> None:
     results.to_csv(args.output_file, index=False)
 
     metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
+    metrics_path = os.path.join(out_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f)
     print(f"Saved {len(results)} rows -> {args.output_file}")

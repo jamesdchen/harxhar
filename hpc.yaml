@@ -20,10 +20,9 @@ cluster_envs:
 profiles:
   ml_ridge:
     run: "python3 src/ml_ridge.py"
-    chunking:
-      total: 100
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: ml
     resources:
       cpus: 1
@@ -35,10 +34,9 @@ profiles:
 
   ml_xgboost:
     run: "python3 src/ml_xgboost.py"
-    chunking:
-      total: 100
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: ml
     resources:
       cpus: 1
@@ -50,10 +48,9 @@ profiles:
 
   ml_lightgbm:
     run: "python3 src/ml_lightgbm.py"
-    chunking:
-      total: 100
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: ml
     resources:
       cpus: 1
@@ -65,10 +62,9 @@ profiles:
 
   ml_pcr:
     run: "python3 src/ml_pcr.py"
-    chunking:
-      total: 100
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: ml
     resources:
       cpus: 1
@@ -80,10 +76,9 @@ profiles:
 
   ml_baseline:
     run: "python3 src/ml_baseline.py"
-    chunking:
-      total: 100
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: ml
     resources:
       cpus: 1
@@ -95,10 +90,9 @@ profiles:
 
   dl_patchts:
     run: "python3 src/dl_patchts.py"
-    chunking:
-      total: 10
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: dl
     resources:
       cpus: 4
@@ -114,10 +108,9 @@ profiles:
 
   dl_ae_ridge:
     run: "python3 src/dl_ae_ridge.py"
-    chunking:
-      total: 10
-      chunk_arg: "--chunk-id"
-      total_arg: "--total-chunks"
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
     env_group: dl
     resources:
       cpus: 4
