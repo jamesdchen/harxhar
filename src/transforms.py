@@ -51,18 +51,12 @@ def diurnal_adjust(
     df = pd.DataFrame({"val": series, "slot": time_of_day_series})
 
     if has_negatives:
-        baseline = (
-            df.groupby("slot")["val"]
-            .transform(
-                lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
-            )
+        baseline = df.groupby("slot")["val"].transform(
+            lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
         )
     else:
-        baseline = (
-            df.groupby("slot")["val"]
-            .transform(
-                lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
-            )
+        baseline = df.groupby("slot")["val"].transform(
+            lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
         )
 
     baseline = baseline.fillna(1.0)
@@ -193,20 +187,14 @@ def robust_transform(
     # --- diurnal ---
     baseline = pd.Series(1.0, index=df.index)
     if use_diurnal and col_name not in DIURNAL_EXCLUDED and time_col in df.columns:
-        series, baseline = diurnal_adjust(
-            series, df[time_col], has_negatives
-        )
+        series, baseline = diurnal_adjust(series, df[time_col], has_negatives)
 
     # --- semantic transform ---
     if use_transform:
-        series = apply_semantic_transform(
-            series, col_name, has_negatives, allow_missing=allow_missing
-        )
+        series = apply_semantic_transform(series, col_name, has_negatives, allow_missing=allow_missing)
 
     # --- winsorize ---
     ww = winsor_window if winsor_window is not None else 240
-    series = rolling_winsorize(
-        series, window=ww, allow_missing=allow_missing, is_target=is_target
-    )
+    series = rolling_winsorize(series, window=ww, allow_missing=allow_missing, is_target=is_target)
 
     return series, baseline

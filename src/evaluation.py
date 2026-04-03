@@ -42,8 +42,8 @@ def apply_duan_smearing(
     baselines = np.asarray(baselines, dtype=np.float64)
 
     smear = np.mean((y_true - forecasts) ** 2)
-    pred_raw = (forecasts ** 2 + smear) * baselines
-    true_raw = (y_true ** 2) * baselines
+    pred_raw = (forecasts**2 + smear) * baselines
+    true_raw = (y_true**2) * baselines
     return pred_raw, true_raw
 
 
@@ -80,14 +80,16 @@ def build_results_dataframe(
 
     pred_raw, true_raw = apply_duan_smearing(forecasts, y_subset, baselines_subset)
 
-    return pd.DataFrame({
-        "date": dates_subset,
-        "horizon": horizon,
-        "true_adj": y_subset,
-        "pred_adj": forecasts,
-        "true_raw": true_raw,
-        "pred_raw": pred_raw,
-    })
+    return pd.DataFrame(
+        {
+            "date": dates_subset,
+            "horizon": horizon,
+            "true_adj": y_subset,
+            "pred_adj": forecasts,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
 
 def calculate_metrics(df: pd.DataFrame) -> dict:
@@ -110,12 +112,12 @@ def calculate_metrics(df: pd.DataFrame) -> dict:
 
     # --- Adjusted-scale errors ---
     errors = true_adj - pred_adj
-    mse = float(np.mean(errors ** 2))
+    mse = float(np.mean(errors**2))
     mae = float(np.mean(np.abs(errors)))
 
     # Winsorized variants
     w_errors = winsorize_array(errors)
-    w_mse = float(np.mean(w_errors ** 2))
+    w_mse = float(np.mean(w_errors**2))
     w_mae = float(np.mean(np.abs(w_errors)))
 
     # --- QLIKE (raw scale) ---
