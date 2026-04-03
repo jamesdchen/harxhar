@@ -424,7 +424,6 @@ def main():
         df,
         "RV",
         use_diurnal=True,
-        use_winsor=True,
         winsor_window=240,
         is_target=True,
     )

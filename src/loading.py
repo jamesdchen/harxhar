@@ -9,7 +9,6 @@ No imports from core/ or projects/ — only numpy, pandas, os, functools.
 import os
 from functools import reduce
 
-import numpy as np
 import pandas as pd
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -41,14 +40,10 @@ def load_raw_data(data_path: str, allow_missing: bool = False) -> pd.DataFrame:
     if os.path.isfile(data_path):
         frames = [pd.read_parquet(data_path)]
     else:
-        parquet_files = sorted(
-            f for f in os.listdir(data_path) if f.endswith(".parquet")
-        )
+        parquet_files = sorted(f for f in os.listdir(data_path) if f.endswith(".parquet"))
         if not parquet_files:
             raise FileNotFoundError(f"No .parquet files found in {data_path}")
-        frames = [
-            pd.read_parquet(os.path.join(data_path, f)) for f in parquet_files
-        ]
+        frames = [pd.read_parquet(os.path.join(data_path, f)) for f in parquet_files]
 
     # ── 2. Merge on endbartime (outer join) ────────────────────────────
     if len(frames) == 1:
