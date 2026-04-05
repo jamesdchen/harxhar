@@ -14,7 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 from xgboost import XGBRegressor
 
-from evaluation import calculate_metrics
+from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -100,18 +100,6 @@ class RollingBuffer:
         return self.X_buffer, self.y_buffer
 
 
-# ── Duan smearing (inline) ───────────────────────────────────────────────
-
-
-def apply_duan_smearing(
-    forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    smear = np.mean((y_true - forecasts) ** 2)
-    pred_raw = (forecasts**2 + smear) * baselines
-    true_raw = (y_true**2) * baselines
-    return pred_raw, true_raw
-
-
 # ── Walk-forward backtest ─────────────────────────────────────────────────
 
 
@@ -179,7 +167,13 @@ def main() -> None:
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
+    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
     args = parser.parse_args()
+
+    tuned_params: dict = {}
+    if args.params_file:
+        with open(args.params_file) as f:
+            tuned_params = json.load(f)
 
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
@@ -227,13 +221,9 @@ def main() -> None:
 
     # 9. Walk-forward backtest
     def model_fn() -> XGBRegressor:
-        return XGBRegressor(
-            n_estimators=500,
-            max_depth=5,
-            learning_rate=0.1,
-            tree_method="hist",
-            n_jobs=-1,
-        )
+        defaults = dict(n_estimators=500, max_depth=5, learning_rate=0.1, tree_method="hist", n_jobs=-1)
+        defaults.update(tuned_params)
+        return XGBRegressor(**defaults)
 
     preds = run_backtest(
         model_fn,
