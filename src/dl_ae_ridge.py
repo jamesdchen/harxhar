@@ -17,7 +17,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
-from evaluation import calculate_metrics
+from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -337,17 +337,6 @@ def run_ae_ridge_backtest(X, y, config):
         predictions = np.array([all_preds[i] for i in range(num_windows)])
 
     return predictions
-
-
-# ── Duan smearing ────────────────────────────────────────────────────────
-
-
-def apply_duan_smearing(forecasts, y_true, baselines):
-    """Convert sqrt-space predictions to raw RV space via Duan smearing."""
-    smear = np.mean((y_true - forecasts) ** 2)
-    pred_raw = (forecasts**2 + smear) * baselines
-    true_raw = (y_true**2) * baselines
-    return pred_raw, true_raw
 
 
 # ── Horizon shift ────────────────────────────────────────────────────────

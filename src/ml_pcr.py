@@ -1,7 +1,7 @@
 """PCA + Ridge (PCR) walk-forward backtest for volatility forecasting.
 
 Standalone module — no imports from core/ or projects/.
-Uses: numpy, pandas, argparse, os, tqdm, sklearn, numba.
+Uses: numpy, pandas, argparse, os, tqdm, sklearn.
 """
 
 import argparse
@@ -10,13 +10,13 @@ import os
 
 import numpy as np
 import pandas as pd
-from numba import njit
 from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from evaluation import calculate_metrics
+from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
+from src.scaling import RollingRobustScaler
 from src.transforms import robust_transform
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -66,92 +66,6 @@ class PCATransform:
         return self.pca.transform(X)
 
 
-# ── Numba-accelerated rolling robust scaler ──────────────────────────
-
-
-@njit(cache=True)
-def _update_sorted_matrix(sorted_mat: np.ndarray, x_old: np.ndarray, x_new: np.ndarray) -> None:
-    """Replace *x_old* with *x_new* in each feature's sorted window."""
-    n_features, w = sorted_mat.shape
-    for i in range(n_features):
-        v_old = x_old[i]
-        v_new = x_new[i]
-        idx_old = np.searchsorted(sorted_mat[i], v_old)
-        idx_new = np.searchsorted(sorted_mat[i], v_new)
-        if idx_old < idx_new:
-            idx_new -= 1
-            for j in range(idx_old, idx_new):
-                sorted_mat[i, j] = sorted_mat[i, j + 1]
-        elif idx_old > idx_new:
-            for j in range(idx_old, idx_new, -1):
-                sorted_mat[i, j] = sorted_mat[i, j - 1]
-        sorted_mat[i, idx_new] = v_new
-
-
-@njit(cache=True)
-def _get_robust_stats(sorted_mat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute median and IQR from pre-sorted rolling window."""
-    n_features, w = sorted_mat.shape
-    median = np.empty(n_features, dtype=np.float64)
-    iqr = np.empty(n_features, dtype=np.float64)
-    idx_25 = (w - 1) * 0.25
-    idx_50 = (w - 1) * 0.50
-    idx_75 = (w - 1) * 0.75
-    i25_floor, rem_25 = int(idx_25), idx_25 - int(idx_25)
-    i50_floor, rem_50 = int(idx_50), idx_50 - int(idx_50)
-    i75_floor, rem_75 = int(idx_75), idx_75 - int(idx_75)
-    for i in range(n_features):
-        q25 = sorted_mat[i, i25_floor] * (1.0 - rem_25) + sorted_mat[i, min(i25_floor + 1, w - 1)] * rem_25
-        med = sorted_mat[i, i50_floor] * (1.0 - rem_50) + sorted_mat[i, min(i50_floor + 1, w - 1)] * rem_50
-        q75 = sorted_mat[i, i75_floor] * (1.0 - rem_75) + sorted_mat[i, min(i75_floor + 1, w - 1)] * rem_75
-        median[i] = med
-        iq = q75 - q25
-        iqr[i] = iq if iq >= 1e-12 else 1.0
-    return median, iqr
-
-
-class RollingRobustScaler:
-    """Online robust scaler backed by sorted-matrix quantile tracking."""
-
-    def __init__(self, window: int):
-        self.window = window
-        self.sorted_mat: np.ndarray | None = None
-        self.buffer: np.ndarray | None = None
-        self.pos: int = 0
-        self.full: bool = False
-
-    def initialize(self, X_init: np.ndarray) -> None:
-        """Warm-start with an (n_samples, n_features) array."""
-        n, p = X_init.shape
-        self.window = n
-        self.buffer = X_init.copy()
-        self.sorted_mat = np.empty((p, n), dtype=np.float64)
-        for j in range(p):
-            self.sorted_mat[j] = np.sort(X_init[:, j])
-        self.pos = 0
-        self.full = True
-
-    def update(self, x_new: np.ndarray) -> None:
-        """Slide in a new observation, evicting the oldest."""
-        assert self.buffer is not None and self.sorted_mat is not None
-        x_old = self.buffer[self.pos].copy()
-        self.buffer[self.pos] = x_new
-        _update_sorted_matrix(self.sorted_mat, x_old, x_new)
-        self.pos = (self.pos + 1) % self.window
-
-    def transform_single(self, x: np.ndarray) -> np.ndarray:
-        """Scale a single observation using current median/IQR."""
-        assert self.sorted_mat is not None
-        median, iqr = _get_robust_stats(self.sorted_mat)
-        return (x - median) / iqr
-
-    def transform_buffer(self) -> np.ndarray:
-        """Scale the entire current buffer."""
-        assert self.buffer is not None and self.sorted_mat is not None
-        median, iqr = _get_robust_stats(self.sorted_mat)
-        return (self.buffer - median) / iqr
-
-
 # ── Walk-forward PCR backtest ─────────────────────────────────────────
 
 
@@ -187,7 +101,7 @@ def run_pcr_backtest(
     forecasts = np.empty(n_test, dtype=np.float64)
 
     # ── Initialise scaler on first window ──
-    scaler = RollingRobustScaler(window=train_window)
+    scaler = RollingRobustScaler(train_window)
     scaler.initialize(X[:train_window])
 
     # ── Fit PCA on scaled buffer ──
@@ -293,9 +207,7 @@ def main() -> None:
     dates_test = dates[train_window:]
     baselines_test = baselines[train_window:]
 
-    smear = np.mean((y_test - forecasts) ** 2)
-    pred_raw = (forecasts**2 + smear) * baselines_test
-    true_raw = (y_test**2) * baselines_test
+    pred_raw, true_raw = apply_duan_smearing(forecasts, y_test, baselines_test)
 
     results = pd.DataFrame(
         {

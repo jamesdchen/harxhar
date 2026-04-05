@@ -1,7 +1,8 @@
-"""Ridge regression volatility backtest executor.
+"""Random Forest volatility backtest executor.
 
-Self-contained walk-forward backtest with rolling robust scaling,
-HAR lag features, and Duan smearing.  No imports from core/ or projects/.
+Self-contained walk-forward backtest with HAR lag features, DOW/hour
+features, and Duan smearing.  No imports from core/ or projects/.
+Tree-based model: no scaling, handles NaN natively (via surrogate splits).
 """
 
 import argparse
@@ -10,12 +11,11 @@ import os
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor
 from tqdm import tqdm
 
 from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
-from src.scaling import RollingRobustScaler
 from src.transforms import robust_transform
 
 # ── Constants ─────────────────────────────────────────────────────────────
@@ -45,6 +45,16 @@ def generate_har_features(df: pd.DataFrame, target_col: str = "adj_RV") -> tuple
     return pd.concat([df, feat_df], axis=1), feature_names
 
 
+# ── DOW + hour features ─────────────────────────────────────────────────
+
+
+def add_calendar_features(df: pd.DataFrame) -> list[str]:
+    """Add day-of-week (0-6) and hour features. Returns new column names."""
+    df["DOW"] = df["t"].dt.dayofweek
+    df["hour"] = df["t"].dt.hour
+    return ["DOW", "hour"]
+
+
 # ── Horizon shift ─────────────────────────────────────────────────────────
 
 
@@ -72,24 +82,22 @@ def apply_horizon_shift(
 class RollingBuffer:
     """Ring buffer for (X, y) pairs."""
 
-    def __init__(self, window_size: int, n_features: int, n_targets: int = 1) -> None:
+    def __init__(self, window_size: int, n_features: int) -> None:
         self.window_size = window_size
-        self.X = np.zeros((window_size, n_features), dtype=np.float64)
-        self.y = np.zeros((window_size, n_targets), dtype=np.float64)
-        self.pos = 0
+        self.ptr = 0
         self.count = 0
+        self.X_buffer = np.zeros((window_size, n_features))
+        self.y_buffer = np.zeros((window_size, 1))
 
     def add(self, x_new: np.ndarray, y_new: np.ndarray) -> None:
-        self.X[self.pos] = x_new
-        self.y[self.pos] = y_new
-        self.pos = (self.pos + 1) % self.window_size
-        self.count = min(self.count + 1, self.window_size)
+        self.X_buffer[self.ptr] = x_new
+        self.y_buffer[self.ptr] = y_new
+        self.ptr = (self.ptr + 1) % self.window_size
+        if self.count < self.window_size:
+            self.count += 1
 
     def get_view(self) -> tuple[np.ndarray, np.ndarray]:
-        if self.count < self.window_size:
-            return self.X[: self.count], self.y[: self.count]
-        idx = np.roll(np.arange(self.window_size), -self.pos)
-        return self.X[idx], self.y[idx]
+        return self.X_buffer, self.y_buffer
 
 
 # ── Walk-forward backtest ─────────────────────────────────────────────────
@@ -100,44 +108,29 @@ def run_backtest(
     X: np.ndarray,
     y: np.ndarray,
     train_win: int,
-    refit_frequency: int = 1,
-    use_scaling: bool = True,
+    refit_frequency: int = 5,
 ) -> np.ndarray:
     """Walk-forward backtest returning an array of predictions.
 
     Parameters
     ----------
     model_fn : callable
-        Returns a *new* sklearn estimator (unfitted).
+        Returns a *new* RandomForestRegressor (unfitted).
     X, y : np.ndarray
         Full feature / target arrays.
     train_win : int
         Number of initial rows used for the first fit.
     refit_frequency : int
         Re-estimate the model every *refit_frequency* steps.
-    use_scaling : bool
-        If True, apply rolling robust scaling to X.
     """
     n_samples, n_features = X.shape
     predictions = np.full(n_samples - train_win, np.nan)
 
-    # 1. Initialise scaler + buffer
-    scaler = RollingRobustScaler(train_win, n_features) if use_scaling else None
-    buf = RollingBuffer(train_win, n_features, n_targets=1)
-
-    X_init = X[:train_win].copy()
-    y_init = y[:train_win].copy()
-
-    if use_scaling:
-        assert scaler is not None
-        scaler.initialize(X_init)
-        med, iqr = scaler.get_scaler()
-        X_scaled_init = (X_init - med) / iqr
-    else:
-        X_scaled_init = X_init
+    # 1. Initialise buffer
+    buf = RollingBuffer(train_win, n_features)
 
     for i in range(train_win):
-        buf.add(X_scaled_init[i], y_init[i : i + 1])
+        buf.add(X[i], y[i : i + 1])
 
     # 2. Fit initial model
     X_buf, y_buf = buf.get_view()
@@ -146,28 +139,15 @@ def run_backtest(
 
     # 3. Walk forward
     for t in tqdm(range(train_win, n_samples), desc="backtest"):
-        x_t_raw = X[t]
+        x_t = X[t]
 
-        # a. Scale
-        if use_scaling:
-            assert scaler is not None
-            med, iqr = scaler.get_scaler()
-            x_t_scaled = (x_t_raw - med) / iqr
-        else:
-            x_t_scaled = x_t_raw
+        # a. Predict (no scaling)
+        predictions[t - train_win] = model.predict(x_t.reshape(1, -1))[0]
 
-        # b. Predict
-        predictions[t - train_win] = model.predict(x_t_scaled.reshape(1, -1))[0]
+        # b. Add observation to buffer
+        buf.add(x_t, y[t : t + 1])
 
-        # c. Update scaler with raw observation
-        if use_scaling:
-            assert scaler is not None
-            scaler.update(x_t_raw)
-
-        # d. Add scaled observation to buffer
-        buf.add(x_t_scaled, y[t : t + 1])
-
-        # e. Refit
+        # c. Refit every refit_frequency steps
         if (t - train_win + 1) % refit_frequency == 0:
             X_buf, y_buf = buf.get_view()
             model = model_fn()
@@ -180,44 +160,57 @@ def run_backtest(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ridge walk-forward backtest")
+    parser = argparse.ArgumentParser(description="Random Forest walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--train-window", type=int, default=500, help="training window in days")
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
+    parser.add_argument("--chunk-id", type=int, default=0)
+    parser.add_argument("--total-chunks", type=int, default=1)
     parser.add_argument("--output-file", required=True)
+    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
     args = parser.parse_args()
+
+    tuned_params: dict = {}
+    if args.params_file:
+        with open(args.params_file) as f:
+            tuned_params = json.load(f)
 
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
-    # 1. Load data
-    df = load_raw_data(args.data_path)
+    # 1. Load data (allow_missing=True for tree models)
+    df = load_raw_data(args.data_path, allow_missing=True)
 
-    # 2. Robust transform on RV
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True)
+    # 2. Robust transform on RV (full transform for target)
+    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
 
-    # 3. HAR features
-    df, feature_names = generate_har_features(df, target_col="adj_RV")
+    # 3. HAR features (no transform/diurnal on exog)
+    df, har_names = generate_har_features(df, target_col="adj_RV")
 
-    # 4. Drop initial NaN rows
+    # 4. DOW + hour features
+    cal_names = add_calendar_features(df)
+
+    feature_names = har_names + cal_names
+
+    # 5. Drop initial NaN rows from HAR lag computation
     max_lag = resolve_har_lags()[-1]
     df = df.iloc[max_lag:].reset_index(drop=True)
 
-    # 5. Extract numpy arrays
+    # 6. Extract numpy arrays
     X = df[feature_names].values.astype(np.float64)
     y = df["adj_RV"].values.astype(np.float64)
     dates = df["t"]
     baselines = df["baseline"].values.astype(np.float64)
 
-    # 6. Horizon shift
+    # 7. Horizon shift
     X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
 
-    # 7. Slice
-    start = args.start
-    end = len(X) if args.end == -1 else args.end
+    # 8. Chunk split
+    n = len(X)
+    chunk_size = n // args.total_chunks
+    start = args.chunk_id * chunk_size
+    end = n if args.chunk_id == args.total_chunks - 1 else start + chunk_size
 
     X_chunk = X[start:end]
     y_chunk = y[start:end]
@@ -228,20 +221,21 @@ def main() -> None:
     if train_win_periods >= len(X_chunk):
         raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
 
-    # 8. Walk-forward backtest
-    def model_fn() -> Ridge:
-        return Ridge(alpha=1.0)
+    # 9. Walk-forward backtest
+    def model_fn() -> RandomForestRegressor:
+        defaults = dict(n_estimators=500, max_depth=10, min_samples_leaf=5, n_jobs=-1)
+        defaults.update(tuned_params)
+        return RandomForestRegressor(**defaults)
 
     preds = run_backtest(
         model_fn,
         X_chunk,
         y_chunk,
         train_win=train_win_periods,
-        refit_frequency=1,
-        use_scaling=True,
+        refit_frequency=5,
     )
 
-    # 9. Duan smearing + save
+    # 10. Duan smearing + save
     oos_start = train_win_periods
     y_oos = y_chunk[oos_start:]
     dates_oos = dates_chunk.iloc[oos_start:].values
@@ -265,10 +259,10 @@ def main() -> None:
     results.to_csv(args.output_file, index=False)
 
     metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, "metrics.json")
+    metrics_path = os.path.join(out_dir, f"metrics_chunk_{args.chunk_id + 1}.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f)
-    print(f"Saved {len(results)} rows → {args.output_file}")
+    print(f"Saved {len(results)} rows -> {args.output_file}")
 
 
 if __name__ == "__main__":

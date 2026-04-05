@@ -11,7 +11,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from evaluation import calculate_metrics
+from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
 from src.transforms import robust_transform
 
@@ -61,18 +61,6 @@ def apply_horizon_shift(
         dates.iloc[:-shift].reset_index(drop=True),
         baselines[shift:],
     )
-
-
-# ── Duan smearing (inline) ───────────────────────────────────────────────
-
-
-def apply_duan_smearing(
-    forecasts: np.ndarray, y_true: np.ndarray, baselines: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    smear = np.mean((y_true - forecasts) ** 2)
-    pred_raw = (forecasts**2 + smear) * baselines
-    true_raw = (y_true**2) * baselines
-    return pred_raw, true_raw
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────
