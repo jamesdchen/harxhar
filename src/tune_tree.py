@@ -14,17 +14,17 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from evaluation import apply_duan_smearing
 from src.loading import load_raw_data
-from src.ml_random_forest import (
-    PERIODS_PER_DAY,
+from src.transforms import (
+    robust_transform,
+    resolve_har_lags,
+    generate_har_features,
     add_calendar_features,
     apply_horizon_shift,
-    generate_har_features,
-    resolve_har_lags,
-    run_backtest,
+    PERIODS_PER_DAY,
 )
-from src.transforms import robust_transform
+from src.scaling import run_backtest
+from src.evaluation import apply_duan_smearing
 
 # ── Search spaces ────────────────────────────────────────────────────────────
 
@@ -98,32 +98,28 @@ def _get_model_class(model_name: str):
 # ── Data preparation ─────────────────────────────────────────────────────────
 
 
-def prepare_data(data_path: str, train_window_days: int) -> tuple[np.ndarray, np.ndarray, pd.Series, np.ndarray, int]:
+def prepare_data(
+    data_path: str, train_window_days: int
+) -> tuple[np.ndarray, np.ndarray, pd.Series, np.ndarray, int]:
     """Run the standard pipeline and return arrays ready for backtesting.
 
     Returns (X, y, dates, baselines, train_win).
     """
-    # 1. Load
     df = load_raw_data(data_path, allow_missing=True)
 
-    # 2. Robust transform on RV
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
+    adj_rv, baseline = robust_transform(
+        df, "RV", is_target=True, use_diurnal=True, winsor_window=240
+    )
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
 
-    # 3. HAR features
     df, har_names = generate_har_features(df, target_col="adj_RV")
-
-    # 4. Calendar features
     cal_names = add_calendar_features(df)
-
     feature_names = har_names + cal_names
 
-    # 5. Drop initial NaN rows from HAR lag computation
     max_lag = resolve_har_lags()[-1]
     df = df.iloc[max_lag:].reset_index(drop=True)
 
-    # 6. Horizon shift (horizon=1)
     X = df[feature_names].values.astype(np.float64)
     y = df["adj_RV"].values.astype(np.float64)
     dates = df["t"]
@@ -156,22 +152,18 @@ def make_objective(
         params = suggest_fn(trial)
         model_fn = lambda: model_cls(**params)  # noqa: E731
 
-        # Walk-forward backtest
-        preds = run_backtest(model_fn, X, y, train_win, refit_frequency)
+        preds = run_backtest(
+            model_fn, X, y, train_win, refit_frequency, use_scaling=False
+        )
 
-        # OOS slice
         y_oos = y[train_win:]
         baselines_oos = baselines[train_win:]
 
-        # Duan smearing → raw scale
         pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
 
-        # QLIKE: mean(ratio - log(ratio) - 1), mask where both > 0
         mask = (true_raw > 0) & (pred_raw > 0)
         ratio = true_raw[mask] / pred_raw[mask]
-        qlike = float(np.mean(ratio - np.log(ratio) - 1))
-
-        return qlike
+        return float(np.mean(ratio - np.log(ratio) - 1))
 
     return objective
 
@@ -180,11 +172,15 @@ def make_objective(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Optuna hyperparameter tuning for tree-based volatility models")
+    parser = argparse.ArgumentParser(
+        description="Optuna hyperparameter tuning for tree-based volatility models"
+    )
     parser.add_argument("--model", required=True, choices=["rf", "xgb", "lgbm"])
     parser.add_argument("--n-trials", type=int, default=50)
     parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
+    parser.add_argument(
+        "--train-window", type=int, default=500, help="training window in days"
+    )
     parser.add_argument("--refit-frequency", type=int, default=5)
     parser.add_argument(
         "--storage",
@@ -196,19 +192,21 @@ def main() -> None:
         default=None,
         help="Optuna study name (required for distributed tuning)",
     )
-    parser.add_argument("--output-file", required=True, help="Output JSON file for best params")
+    parser.add_argument(
+        "--output-file", required=True, help="Output JSON file for best params"
+    )
     args = parser.parse_args()
 
-    # Prepare data
     X, y, dates, baselines, train_win = prepare_data(args.data_path, args.train_window)
+    objective = make_objective(
+        args.model, X, y, dates, baselines, train_win, args.refit_frequency
+    )
 
-    # Build objective
-    objective = make_objective(args.model, X, y, dates, baselines, train_win, args.refit_frequency)
-
-    # Storage
     storage = None
     if args.storage is not None:
-        storage = optuna.storages.JournalStorage(optuna.storages.JournalFileStorage(args.storage))
+        storage = optuna.storages.JournalStorage(
+            optuna.storages.JournalFileStorage(args.storage)
+        )
 
     study_name = args.study_name if args.study_name is not None else f"tune_{args.model}"
 
@@ -220,7 +218,6 @@ def main() -> None:
     )
     study.optimize(objective, n_trials=args.n_trials)
 
-    # Save best params
     best_params = study.best_trial.params
     out_dir = os.path.dirname(args.output_file) or "."
     os.makedirs(out_dir, exist_ok=True)

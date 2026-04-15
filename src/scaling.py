@@ -1,11 +1,12 @@
-"""Rolling robust scaler for online walk-forward backtests.
+"""Rolling robust scaler and walk-forward backtest infrastructure.
 
 Numba-accelerated sorted-matrix quantile tracking for O(W) median/IQR
-scaling per feature.  No imports from core/ or projects/.
+scaling, ring buffer for training data, and generic walk-forward loop.
 """
 
 import numpy as np
 from numba import njit
+from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
 # Numba kernels
@@ -66,8 +67,8 @@ class RollingRobustScaler:
     Maintains a rolling window of observations and a parallel sorted matrix
     per feature for O(W) median/IQR computation.  Supports two usage styles:
 
-    1. **get_scaler** — return (median, iqr) for manual scaling (ridge-style).
-    2. **transform_single / transform_buffer** — scale directly (PCR-style).
+    1. **get_scaler** -- return (median, iqr) for manual scaling (ridge-style).
+    2. **transform_single / transform_buffer** -- scale directly (PCR-style).
 
     Parameters
     ----------
@@ -123,3 +124,109 @@ class RollingRobustScaler:
         assert self.buffer is not None
         median, iqr = self.get_scaler()
         return (self.buffer - median) / iqr
+
+
+# ---------------------------------------------------------------------------
+# Rolling buffer
+# ---------------------------------------------------------------------------
+
+
+class RollingBuffer:
+    """Ring buffer for (X, y) pairs used in walk-forward backtests."""
+
+    def __init__(self, window_size: int, n_features: int, n_targets: int = 1) -> None:
+        self.window_size = window_size
+        self.X = np.zeros((window_size, n_features), dtype=np.float64)
+        self.y = np.zeros((window_size, n_targets), dtype=np.float64)
+        self.pos = 0
+        self.count = 0
+
+    def add(self, x_new: np.ndarray, y_new: np.ndarray) -> None:
+        self.X[self.pos] = x_new
+        self.y[self.pos] = y_new
+        self.pos = (self.pos + 1) % self.window_size
+        self.count = min(self.count + 1, self.window_size)
+
+    def get_view(self) -> tuple[np.ndarray, np.ndarray]:
+        if self.count < self.window_size:
+            return self.X[: self.count], self.y[: self.count]
+        idx = np.roll(np.arange(self.window_size), -self.pos)
+        return self.X[idx], self.y[idx]
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward backtest
+# ---------------------------------------------------------------------------
+
+
+def run_backtest(model_fn, X, y, train_win, refit_frequency=1, use_scaling=True):
+    """Walk-forward backtest with optional rolling robust scaling.
+
+    Parameters
+    ----------
+    model_fn : callable
+        Factory that returns a fresh model with ``.fit`` / ``.predict``.
+    X : np.ndarray
+        Feature matrix ``(n_samples, n_features)``.
+    y : np.ndarray
+        Target vector ``(n_samples,)``.
+    train_win : int
+        Rolling training window size.
+    refit_frequency : int
+        Refit model every *refit_frequency* steps.
+    use_scaling : bool
+        If True, apply ``RollingRobustScaler`` to features.
+    """
+    n_samples, n_features = X.shape
+    predictions = np.full(n_samples - train_win, np.nan)
+
+    # Initialize scaler + buffer
+    scaler_obj = RollingRobustScaler(train_win, n_features) if use_scaling else None
+    buf = RollingBuffer(train_win, n_features, n_targets=1)
+
+    X_init = X[:train_win].copy()
+    y_init = y[:train_win].copy()
+
+    if use_scaling:
+        scaler_obj.initialize(X_init)
+        med, iqr = scaler_obj.get_scaler()
+        X_scaled_init = (X_init - med) / iqr
+    else:
+        X_scaled_init = X_init
+
+    for i in range(train_win):
+        buf.add(X_scaled_init[i], y_init[i : i + 1])
+
+    # Initial fit
+    X_buf, y_buf = buf.get_view()
+    model = model_fn()
+    model.fit(X_buf, y_buf.ravel())
+
+    # Walk forward
+    for t in tqdm(range(train_win, n_samples), desc="backtest"):
+        x_t_raw = X[t]
+
+        # Scale
+        if use_scaling:
+            med, iqr = scaler_obj.get_scaler()
+            x_t_scaled = (x_t_raw - med) / iqr
+        else:
+            x_t_scaled = x_t_raw
+
+        # Predict
+        predictions[t - train_win] = model.predict(x_t_scaled.reshape(1, -1))[0]
+
+        # Update scaler
+        if use_scaling:
+            scaler_obj.update(x_t_raw)
+
+        # Add to buffer
+        buf.add(x_t_scaled, y[t : t + 1])
+
+        # Refit
+        if (t - train_win + 1) % refit_frequency == 0:
+            X_buf, y_buf = buf.get_view()
+            model = model_fn()
+            model.fit(X_buf, y_buf.ravel())
+
+    return predictions

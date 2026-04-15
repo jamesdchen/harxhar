@@ -1,7 +1,6 @@
 """PatchTST GPU backtest executor for volatility forecasting.
 
 Self-contained CLI: load -> transform -> PatchTST GPU backtest -> save chunk CSV.
-No imports from core/ or projects/.
 """
 
 import argparse
@@ -18,9 +17,9 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from transformers import PatchTSTConfig, PatchTSTModel, PreTrainedModel
 
-from evaluation import apply_duan_smearing, calculate_metrics
+from src.evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
-from src.transforms import robust_transform
+from src.transforms import apply_horizon_shift, robust_transform
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -64,7 +63,9 @@ class PatchTSTForecaster(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.backbone = PatchTSTModel(config)
-        dummy_input = torch.zeros(1, config.context_length, config.num_input_channels)
+        dummy_input = torch.zeros(
+            1, config.context_length, config.num_input_channels
+        )
         with torch.no_grad():
             dummy_out = self.backbone(past_values=dummy_input).last_hidden_state
         self.num_patches = dummy_out.shape[2]
@@ -75,7 +76,9 @@ class PatchTSTForecaster(PreTrainedModel):
         self.post_init()
 
     def forward(self, past_values, future_values=None, output_attentions=False):
-        outputs = self.backbone(past_values=past_values, output_attentions=output_attentions)
+        outputs = self.backbone(
+            past_values=past_values, output_attentions=output_attentions
+        )
         last_hidden_state = outputs.last_hidden_state
         batch_size, num_channels, _, _ = last_hidden_state.shape
         flattened = last_hidden_state.view(batch_size, num_channels, -1)
@@ -112,22 +115,13 @@ def get_model(cfg):
 
 
 def make_patchts_windows(X_tensor, y_tensor, config):
-    """Create strided windows for walk-forward PatchTST backtest.
-
-    Returns
-    -------
-    all_train_X : (num_windows, samples_per_window, context_len)
-    all_train_y : (num_windows, samples_per_window, 1)
-    all_test_X  : (num_windows, 1, context_len)
-    num_windows : int
-    """
+    """Create strided windows for walk-forward PatchTST backtest."""
     train_window = config["train_window"]
     context_len = config["model"]["context_len"]
     total_samples = X_tensor.shape[0]
     num_windows = total_samples - train_window
     samples_per_window = train_window // context_len
 
-    # 3D strided training windows
     window_shape_X = (num_windows, samples_per_window, context_len)
     strides_X = (
         X_tensor.stride(0),
@@ -136,7 +130,6 @@ def make_patchts_windows(X_tensor, y_tensor, config):
     )
     all_train_X = torch.as_strided(X_tensor, size=window_shape_X, stride=strides_X)
 
-    # Targets aligned with patches
     y_offset = y_tensor[context_len:]
     window_shape_y = (num_windows, samples_per_window, 1)
     strides_y = (
@@ -146,8 +139,7 @@ def make_patchts_windows(X_tensor, y_tensor, config):
     )
     all_train_y = torch.as_strided(y_offset, size=window_shape_y, stride=strides_y)
 
-    # Test windows
-    X_test_start = X_tensor[train_window - context_len :]
+    X_test_start = X_tensor[train_window - context_len:]
     window_shape_test = (num_windows, 1, context_len)
     strides_test = (
         X_test_start.stride(0),
@@ -182,45 +174,22 @@ def qlike_loss(pred, target, clamp_val=30.0):
 # ── GPU training kernel ─────────────────────────────────────────────────
 
 
-def _train_single_window(
-    model,
-    train_X,
-    train_y,
-    test_X,
-    cfg,
-    device,
-):
-    """Train PatchTST on one walk-forward window and return prediction.
-
-    Parameters
-    ----------
-    model : PatchTSTForecaster (fresh or reused)
-    train_X : (samples_per_window, context_len) on device
-    train_y : (samples_per_window, 1) on device
-    test_X  : (1, context_len) on device
-    cfg : dict
-    device : torch.device
-
-    Returns
-    -------
-    float : prediction for this window
-    """
+def _train_single_window(model, train_X, train_y, test_X, cfg, device):
+    """Train PatchTST on one walk-forward window and return prediction."""
     num_epochs = cfg["train"]["num_epochs"]
     lr = cfg["train"]["learning_rate"]
     batch_size = cfg["train"]["batch_size"]
-    # Instance normalization on training data
+
     train_flat = train_X.reshape(-1)
     t_mean = train_flat.mean()
     t_std = train_flat.std().clamp(min=1e-8)
     train_X_norm = (train_X - t_mean) / t_std
     test_X_norm = (test_X - t_mean) / t_std
 
-    # Reshape for PatchTST: (batch, context_len, num_channels=1)
     n_samples = train_X_norm.shape[0]
-    train_X_3d = train_X_norm.unsqueeze(-1)  # (n_samples, context_len, 1)
-    test_X_3d = test_X_norm.unsqueeze(-1)  # (1, context_len, 1)
+    train_X_3d = train_X_norm.unsqueeze(-1)
+    test_X_3d = test_X_norm.unsqueeze(-1)
 
-    # Reset model weights
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
@@ -232,7 +201,6 @@ def _train_single_window(
             y_batch = train_y[idx]
 
             pred = model(past_values=x_batch)
-            # pred shape: (batch, 1, prediction_length) → squeeze to (batch,)
             pred_squeezed = pred.squeeze(-1).squeeze(-1)
             y_squeezed = y_batch.squeeze(-1)
 
@@ -243,7 +211,6 @@ def _train_single_window(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
-    # Predict
     model.eval()
     with torch.no_grad():
         pred_test = model(past_values=test_X_3d)
@@ -270,16 +237,9 @@ def _gpu_worker(gpu_id, window_indices, shared_data, config, result_dict):
         train_y = all_train_y[w_idx]
         test_X = all_test_X[w_idx]
 
-        # Re-init model weights each window
         model_fresh = get_model(config["model"]).to(device)
-
         pred = _train_single_window(
-            model_fresh,
-            train_X,
-            train_y,
-            test_X,
-            config,
-            device,
+            model_fresh, train_X, train_y, test_X, config, device,
         )
         predictions[w_idx] = pred
 
@@ -295,12 +255,7 @@ def _gpu_worker(gpu_id, window_indices, shared_data, config, result_dict):
 
 
 def run_patchts_backtest(X_tensor, y_tensor, config):
-    """Run PatchTST walk-forward backtest across GPUs.
-
-    Returns
-    -------
-    np.ndarray : predictions of shape (num_windows,)
-    """
+    """Run PatchTST walk-forward backtest across GPUs."""
     gpu_count = config.get("gpu_count", 1)
     available_gpus = torch.cuda.device_count()
     gpu_count = min(gpu_count, available_gpus)
@@ -310,7 +265,9 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
 
     logger.info(f"Using {gpu_count} GPU(s) for PatchTST backtest")
 
-    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(X_tensor, y_tensor, config)
+    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(
+        X_tensor, y_tensor, config
+    )
     logger.info(f"Created {num_windows} walk-forward windows")
 
     shared_data = {
@@ -320,17 +277,14 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
     }
 
     if gpu_count == 1:
-        # Single GPU — run directly without multiprocessing
         result_dict: dict[int, dict[int, float]] = {}
         _gpu_worker(0, list(range(num_windows)), shared_data, config, result_dict)
         predictions = np.array([result_dict[0][i] for i in range(num_windows)])
     else:
-        # Multi-GPU with torch.multiprocessing
         ctx = mp.get_context("spawn")
         manager = ctx.Manager()
         result_dict = manager.dict()
 
-        # Distribute windows across GPUs
         window_splits: list[list[int]] = [[] for _ in range(gpu_count)]
         for i in range(num_windows):
             window_splits[i % gpu_count].append(i)
@@ -353,7 +307,6 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
         for p in processes:
             p.join()
 
-        # Collect results
         all_preds = {}
         for gpu_id in range(gpu_count):
             all_preds.update(result_dict[gpu_id])
@@ -363,27 +316,13 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
     return predictions
 
 
-# ── Horizon shift ────────────────────────────────────────────────────────
-
-
-def apply_horizon_shift(X, y, dates, baselines, horizon):
-    """Shift target arrays forward by horizon-1 steps."""
-    if horizon <= 1:
-        return X, y, dates, baselines
-    shift = horizon - 1
-    return (
-        X[:-shift],
-        y[shift:],
-        dates.iloc[:-shift].reset_index(drop=True),
-        baselines[shift:],
-    )
-
-
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PatchTST GPU walk-forward backtest")
+    parser = argparse.ArgumentParser(
+        description="PatchTST GPU walk-forward backtest"
+    )
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--gpu-count", type=int, default=1)
@@ -395,7 +334,7 @@ def main():
     parser.add_argument("--output-file", required=True)
     args = parser.parse_args()
 
-    config = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
+    config = json.loads(json.dumps(DEFAULT_CONFIG))
     config["gpu_count"] = args.gpu_count
     if args.epochs is not None:
         config["train"]["num_epochs"] = args.epochs
@@ -404,27 +343,20 @@ def main():
     if args.learning_rate is not None:
         config["train"]["learning_rate"] = args.learning_rate
 
-    # 1. Load data
     logger.info(f"Loading data from {args.data_path}")
     df = load_raw_data(args.data_path)
 
-    # 2. Robust transform on RV
     adj_rv, baseline = robust_transform(
-        df,
-        "RV",
-        use_diurnal=True,
-        winsor_window=240,
-        is_target=True,
+        df, "RV", use_diurnal=True, winsor_window=240, is_target=True,
     )
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
 
-    # 3. Extract univariate time series
     adj_rv_arr = df["adj_RV"].values.astype(np.float64)
     baseline_arr = df["baseline"].values.astype(np.float64)
     dates = df["t"]
 
-    # 4. Horizon shift (applied to 1D arrays)
+    # Horizon shift (PatchTST uses 1D arrays, apply manually)
     if args.horizon > 1:
         shift = args.horizon - 1
         adj_rv_arr_X = adj_rv_arr[:-shift]
@@ -435,7 +367,6 @@ def main():
         adj_rv_arr_X = adj_rv_arr
         adj_rv_arr_y = adj_rv_arr
 
-    # 5. Slice
     start = args.start
     end = len(adj_rv_arr_X) if args.end == -1 else args.end
 
@@ -446,37 +377,33 @@ def main():
 
     train_window = config["train_window"]
     if train_window >= len(X_chunk):
-        raise ValueError(f"train_window ({train_window}) >= chunk size ({len(X_chunk)})")
+        raise ValueError(
+            f"train_window ({train_window}) >= chunk size ({len(X_chunk)})"
+        )
 
-    # 6. Convert to tensors
     X_tensor = torch.tensor(X_chunk, dtype=torch.float32)
     y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
 
-    # 7. Run PatchTST backtest
-    logger.info("Running PatchTST backtest")
     t0 = time.time()
     preds = run_patchts_backtest(X_tensor, y_tensor, config)
     elapsed = time.time() - t0
     logger.info(f"Backtest complete in {elapsed:.1f}s")
 
-    # 8. Duan smearing + save
     num_windows = len(preds)
-    y_oos = y_chunk[train_window : train_window + num_windows]
-    dates_oos = dates_chunk.iloc[train_window : train_window + num_windows].values
-    baselines_oos = baselines_chunk[train_window : train_window + num_windows]
+    y_oos = y_chunk[train_window:train_window + num_windows]
+    dates_oos = dates_chunk.iloc[train_window:train_window + num_windows].values
+    baselines_oos = baselines_chunk[train_window:train_window + num_windows]
 
     pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
 
-    results = pd.DataFrame(
-        {
-            "date": dates_oos,
-            "horizon": args.horizon,
-            "true_adj": y_oos,
-            "pred_adj": preds,
-            "true_raw": true_raw,
-            "pred_raw": pred_raw,
-        }
-    )
+    results = pd.DataFrame({
+        "date": dates_oos,
+        "horizon": args.horizon,
+        "true_adj": y_oos,
+        "pred_adj": preds,
+        "true_raw": true_raw,
+        "pred_raw": pred_raw,
+    })
 
     out_dir = os.path.dirname(args.output_file) or "."
     os.makedirs(out_dir, exist_ok=True)

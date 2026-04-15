@@ -1,8 +1,4 @@
-"""Standalone data transforms for volatility forecasting.
-
-Diurnal adjustment, semantic transforms, rolling winsorization, and a
-combined robust_transform pipeline.  No imports from core/ or projects/.
-"""
+"""Standalone data transforms and feature generation for volatility forecasting."""
 
 import numpy as np
 import pandas as pd
@@ -11,6 +7,7 @@ import pandas as pd
 # Constants
 # ---------------------------------------------------------------------------
 
+PERIODS_PER_DAY: int = 48
 DIURNAL_WINDOW: int = 20
 DIURNAL_MIN_PERIODS: int = 5
 WINSOR_LOWER_Q: float = 0.05
@@ -51,12 +48,18 @@ def diurnal_adjust(
     df = pd.DataFrame({"val": series, "slot": time_of_day_series})
 
     if has_negatives:
-        baseline = df.groupby("slot")["val"].transform(
-            lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
+        baseline = (
+            df.groupby("slot")["val"]
+            .transform(
+                lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
+            )
         )
     else:
-        baseline = df.groupby("slot")["val"].transform(
-            lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
+        baseline = (
+            df.groupby("slot")["val"]
+            .transform(
+                lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
+            )
         )
 
     baseline = baseline.fillna(1.0)
@@ -78,12 +81,12 @@ def apply_semantic_transform(
     """Apply a variance-stabilising transform chosen by column name.
 
     Rules (checked in order):
-    1. name contains ret2 / RV / turnover / bipow / effspread → sqrt
-    2. name contains autocov → sign(x) * sqrt(|x|)
-    3. name contains ret3 → cbrt
-    4. name contains ret4 → fourth root (x ** 0.25)
-    5. has_negatives or name contains sumabsret → identity (NaN → 0)
-    6. default → log
+    1. name contains ret2 / RV / turnover / bipow / effspread -> sqrt
+    2. name contains autocov -> sign(x) * sqrt(|x|)
+    3. name contains ret3 -> cbrt
+    4. name contains ret4 -> fourth root (x ** 0.25)
+    5. has_negatives or name contains sumabsret -> identity (NaN -> 0)
+    6. default -> log
     """
     name = col_name.lower()
 
@@ -155,7 +158,7 @@ def robust_transform(
     winsor_window: int | None = None,
     is_target: bool = False,
 ) -> tuple[pd.Series, pd.Series]:
-    """Chain diurnal_adjust → apply_semantic_transform → rolling_winsorize.
+    """Chain diurnal_adjust -> apply_semantic_transform -> rolling_winsorize.
 
     Parameters
     ----------
@@ -191,10 +194,111 @@ def robust_transform(
 
     # --- semantic transform ---
     if use_transform:
-        series = apply_semantic_transform(series, col_name, has_negatives, allow_missing=allow_missing)
+        series = apply_semantic_transform(
+            series, col_name, has_negatives, allow_missing=allow_missing
+        )
 
     # --- winsorize ---
     ww = winsor_window if winsor_window is not None else 240
-    series = rolling_winsorize(series, window=ww, allow_missing=allow_missing, is_target=is_target)
+    series = rolling_winsorize(
+        series, window=ww, allow_missing=allow_missing, is_target=is_target
+    )
 
     return series, baseline
+
+
+# ---------------------------------------------------------------------------
+# HAR lag features
+# ---------------------------------------------------------------------------
+
+
+def resolve_har_lags(max_lag: int = 3125) -> list[int]:
+    """Powers-of-5 lag sequence: [1, 5, 25, 125, 625, 3125]."""
+    seq, v = [], 1
+    while v <= max_lag:
+        seq.append(v)
+        v *= 5
+    return seq
+
+
+def generate_har_features(
+    df: pd.DataFrame,
+    target_col: str = "adj_RV",
+) -> tuple[pd.DataFrame, list[str]]:
+    """Add rolling-mean HAR features (shifted by 1) for each powers-of-5 lag."""
+    lags = resolve_har_lags()
+    features: dict[str, pd.Series] = {}
+    feature_names: list[str] = []
+    for lag in lags:
+        name = f"har_ma_{lag}"
+        features[name] = df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
+        feature_names.append(name)
+    feat_df = pd.DataFrame(features, index=df.index)
+    return pd.concat([df, feat_df], axis=1), feature_names
+
+
+# ---------------------------------------------------------------------------
+# Calendar features
+# ---------------------------------------------------------------------------
+
+
+def add_calendar_features(df: pd.DataFrame) -> list[str]:
+    """Add day-of-week (0-6) and hour features. Returns new column names."""
+    df["DOW"] = df["t"].dt.dayofweek
+    df["hour"] = df["t"].dt.hour
+    return ["DOW", "hour"]
+
+
+# ---------------------------------------------------------------------------
+# Horizon shift
+# ---------------------------------------------------------------------------
+
+
+def apply_horizon_shift(
+    X: np.ndarray,
+    y: np.ndarray,
+    dates: pd.Series,
+    baselines: np.ndarray,
+    horizon: int,
+) -> tuple[np.ndarray, np.ndarray, pd.Series, np.ndarray]:
+    """Align features at time *t* with target at *t + horizon*.
+
+    When horizon <= 1 the arrays are returned unchanged.
+    """
+    if horizon <= 1:
+        return X, y, dates, baselines
+    shift = horizon - 1
+    return (
+        X[:-shift],
+        y[shift:],
+        dates.iloc[:-shift].reset_index(drop=True),
+        baselines[shift:],
+    )
+
+
+# ---------------------------------------------------------------------------
+# PCA lag features
+# ---------------------------------------------------------------------------
+
+
+def resolve_pca_lags(max_lag: int = 3125, num_points: int = 20) -> list[int]:
+    """Generate log-spaced lag indices from 1 to *max_lag*."""
+    raw = np.geomspace(1, max_lag, num=num_points)
+    return sorted(set(int(round(v)) for v in raw))
+
+
+def generate_raw_lag_features(
+    df: pd.DataFrame,
+    target_col: str = "adj_RV",
+    max_lag: int = 3125,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Create shifted-lag columns for each log-spaced lag."""
+    lags = resolve_pca_lags(max_lag)
+    features: dict[str, pd.Series] = {}
+    feature_names: list[str] = []
+    for lag in lags:
+        name = f"{target_col}_lag_{lag}"
+        features[name] = df[target_col].shift(lag)
+        feature_names.append(name)
+    feat_df = pd.DataFrame(features, index=df.index)
+    return pd.concat([df, feat_df], axis=1), feature_names

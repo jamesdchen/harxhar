@@ -1,7 +1,6 @@
 """AE+Ridge GPU backtest executor for volatility forecasting.
 
 Self-contained CLI: load -> transform -> AE encode -> Ridge predict -> save chunk CSV.
-No imports from core/ or projects/.
 """
 
 import argparse
@@ -14,12 +13,12 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-import torch.multiprocessing as mp
 import torch.nn as nn
+import torch.multiprocessing as mp
 
-from evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
-from src.transforms import robust_transform
+from src.transforms import robust_transform, apply_horizon_shift, PERIODS_PER_DAY
+from src.evaluation import apply_duan_smearing, calculate_metrics
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -29,7 +28,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────
-PERIODS_PER_DAY = 48
 
 DEFAULT_AE_CONFIG = {
     "train_window": 24000,
@@ -337,22 +335,6 @@ def run_ae_ridge_backtest(X, y, config):
         predictions = np.array([all_preds[i] for i in range(num_windows)])
 
     return predictions
-
-
-# ── Horizon shift ────────────────────────────────────────────────────────
-
-
-def apply_horizon_shift(X, y, dates, baselines, horizon):
-    """Shift target arrays forward by horizon-1 steps."""
-    if horizon <= 1:
-        return X, y, dates, baselines
-    shift = horizon - 1
-    return (
-        X[:-shift],
-        y[shift:],
-        dates.iloc[:-shift].reset_index(drop=True),
-        baselines[shift:],
-    )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────
