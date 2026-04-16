@@ -106,6 +106,23 @@ profiles:
     gpu_fallback: [a100, h200, a6000, h100, v100, rtx2080ti]
     max_retries: 3
 
+  tune_tree:
+    run: "python3 src/tune_tree.py evaluate --params-dir params"
+    grid:
+      trial-id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      model: [xgb]
+    backtest:
+      start_arg: "--start"
+      end_arg: "--end"
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/tune/{run_id}"
+      pattern: "results_chunk_*.csv"
+
   dl_ae_ridge:
     run: "python3 src/dl_ae_ridge.py"
     backtest:
