@@ -9,11 +9,43 @@ import pandas as pd
 
 PERIODS_PER_DAY: int = 48
 DIURNAL_WINDOW: int = 20
+SEGMENT_CHOICES: list[str] = ["all", "morning", "midday", "closing", "overnight"]
 DIURNAL_MIN_PERIODS: int = 5
 WINSOR_LOWER_Q: float = 0.05
 WINSOR_UPPER_Q: float = 0.95
 SKIP_VARS: set[str] = {"hour", "DOW", "t", "date"}
 DIURNAL_EXCLUDED: set[str] = SKIP_VARS | {"vix", "sentiment"}
+
+
+def _hhmm(h: int, m: int) -> int:
+    return h * 60 + m
+
+
+SEGMENT_DEFINITIONS: dict[str, tuple[int, int]] = {
+    "morning": (_hhmm(8, 30), _hhmm(11, 0)),
+    "midday": (_hhmm(10, 30), _hhmm(14, 30)),
+    "closing": (_hhmm(14, 0), _hhmm(16, 0)),
+    "overnight": (_hhmm(16, 30), _hhmm(8, 30)),
+}
+
+
+def slice_to_segment(df: pd.DataFrame, segment: str) -> pd.DataFrame:
+    """Filter rows to a time-of-day segment. Handles midnight wrap-around."""
+    start, end = SEGMENT_DEFINITIONS[segment]
+    minutes = df["t"].dt.hour * 60 + df["t"].dt.minute
+    if start < end:
+        mask = (minutes >= start) & (minutes <= end)
+    else:
+        mask = (minutes >= start) | (minutes <= end)
+    return df.loc[mask].reset_index(drop=True)
+
+
+def compute_segment_train_window(dates: pd.Series, train_window_days: int) -> int:
+    """Compute train window in periods using median slots/day for a segment."""
+    daily_counts = pd.Series(dates).dt.date.value_counts()
+    median_slots = int(daily_counts.median())
+    return train_window_days * median_slots
+
 
 # ---------------------------------------------------------------------------
 # Diurnal adjustment
@@ -224,15 +256,21 @@ def resolve_har_lags(max_lag: int = 3125) -> list[int]:
 def generate_har_features(
     df: pd.DataFrame,
     target_col: str = "adj_RV",
+    exog_cols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Add rolling-mean HAR features (shifted by 1) for each powers-of-5 lag."""
+    """Add rolling-mean HAR features (shifted by 1) for each powers-of-5 lag.
+
+    Features are generated for *target_col* and each column in *exog_cols*.
+    Target features are named ``har_ma_{lag}``; exog features ``{col}_ma_{lag}``.
+    """
     lags = resolve_har_lags()
     features: dict[str, pd.Series] = {}
     feature_names: list[str] = []
-    for lag in lags:
-        name = f"har_ma_{lag}"
-        features[name] = df[target_col].rolling(window=lag, min_periods=1).mean().shift(1)
-        feature_names.append(name)
+    for col in [target_col] + (exog_cols or []):
+        for lag in lags:
+            name = f"har_ma_{lag}" if col == target_col else f"{col}_ma_{lag}"
+            features[name] = df[col].rolling(window=lag, min_periods=1).mean().shift(1)
+            feature_names.append(name)
     feat_df = pd.DataFrame(features, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names
 
@@ -291,14 +329,19 @@ def generate_raw_lag_features(
     df: pd.DataFrame,
     target_col: str = "adj_RV",
     max_lag: int = 3125,
+    exog_cols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Create shifted-lag columns for each log-spaced lag."""
+    """Create shifted-lag columns for each log-spaced lag.
+
+    Features are generated for *target_col* and each column in *exog_cols*.
+    """
     lags = resolve_pca_lags(max_lag)
     features: dict[str, pd.Series] = {}
     feature_names: list[str] = []
-    for lag in lags:
-        name = f"{target_col}_lag_{lag}"
-        features[name] = df[target_col].shift(lag)
-        feature_names.append(name)
+    for col in [target_col] + (exog_cols or []):
+        for lag in lags:
+            name = f"{col}_lag_{lag}"
+            features[name] = df[col].shift(lag)
+            feature_names.append(name)
     feat_df = pd.DataFrame(features, index=df.index)
     return pd.concat([df, feat_df], axis=1), feature_names

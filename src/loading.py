@@ -11,6 +11,39 @@ from functools import reduce
 
 import pandas as pd
 
+# ── Overnight fill windows (start, end) — wrap-around midnight ────────
+OVERNIGHT_WINDOWS: dict[str, tuple[str, str]] = {
+    "ewstock": ("20:30", "04:00"),
+    "vwstock": ("20:30", "04:00"),
+    "voldemand": ("17:00", "10:00"),
+}
+
+
+def parse_exog_cols(exog_str: str | None) -> list[str]:
+    """Parse a pipe-separated exog column string into a list."""
+    if not exog_str or exog_str.lower() == "none":
+        return []
+    return [c.strip() for c in exog_str.split("|") if c.strip()]
+
+
+def apply_overnight_fills(df: pd.DataFrame, exog_cols: list[str]) -> None:
+    """Fill NaN with 1.0 during overnight windows for specific exog columns."""
+    tod = df["t"].dt.time
+    for col in exog_cols:
+        if col not in df.columns:
+            continue
+        name_lower = col.lower()
+        overnight_key = next(
+            (kw for kw in OVERNIGHT_WINDOWS if kw in name_lower), None
+        )
+        if overnight_key is None:
+            continue
+        t_start = pd.Timestamp(f"1900-01-01 {OVERNIGHT_WINDOWS[overnight_key][0]}").time()
+        t_end = pd.Timestamp(f"1900-01-01 {OVERNIGHT_WINDOWS[overnight_key][1]}").time()
+        # Wrap-around midnight: time >= start OR time < end
+        mask = (tod >= t_start) | (tod < t_end)
+        df.loc[mask & df[col].isna(), col] = 1.0
+
 # ── Constants ──────────────────────────────────────────────────────────
 START_DATE = "2005-01-01"
 FRIDAY_CLOSE = "20:00"
