@@ -1,0 +1,148 @@
+"""HPC chunking shim — translates chunk_id/total_chunks to --start/--end.
+
+claude-hpc fans out tasks using (chunk_id, total_chunks). Backtest executors
+in this repo expect absolute (--start, --end) indices. This shim bridges
+the two interfaces:
+
+    1. Determines total post-transform rows (cached after first call)
+    2. Splits [0, total_rows) evenly across total_chunks
+    3. Forwards --start/--end to the downstream executor
+
+Usage (called by _hpc_dispatch.py via hpc.yaml):
+
+    python3 src/hpc_backtest_shim.py --chunk-id 3 --total-chunks 100 \\
+        -- python3 src/ml_xgboost.py --output-file results.csv
+
+Inspect / modify:
+    - get_total_rows() — change if the data pipeline changes
+    - range_split()    — change if you need non-uniform chunks
+    - _CACHE_FILE      — set to None to disable caching
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+_CACHE_FILE = "_backtest_total_rows.json"
+
+
+# ── Data length probe ────────────────────────────────────────────────────────
+
+
+def get_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
+    """Compute post-transform row count for the harxhar backtest pipeline.
+
+    This runs the same transforms as the executors (load → robust_transform →
+    HAR features → calendar features → lag trim → horizon shift) and returns
+    len(X) — the number of rows an executor would iterate over.
+    """
+    import numpy as np
+
+    from src.loading import load_raw_data
+    from src.transforms import (
+        PERIODS_PER_DAY,
+        add_calendar_features,
+        apply_horizon_shift,
+        generate_har_features,
+        resolve_har_lags,
+        robust_transform,
+    )
+
+    df = load_raw_data(data_path, allow_missing=True)
+    adj_rv, baseline = robust_transform(
+        df, "RV", is_target=True, use_diurnal=True, winsor_window=240,
+    )
+    df["adj_RV"] = adj_rv
+
+    df, har_names = generate_har_features(df, target_col="adj_RV")
+    cal_names = add_calendar_features(df)
+
+    max_lag = resolve_har_lags()[-1]
+    df = df.iloc[max_lag:].reset_index(drop=True)
+
+    X = df[har_names + cal_names].values.astype(np.float64)
+    y = df["adj_RV"].values.astype(np.float64)
+    dates = df["t"]
+    baselines = df["baseline"].values.astype(np.float64) if "baseline" in df else np.zeros(len(df))
+
+    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, horizon)
+    return len(X)
+
+
+def _cached_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
+    """Return total_rows, reading from cache or computing and caching."""
+    if _CACHE_FILE and os.path.isfile(_CACHE_FILE):
+        with open(_CACHE_FILE) as f:
+            cache = json.load(f)
+        key = f"{data_path}__h{horizon}"
+        if key in cache:
+            return cache[key]
+
+    total = get_total_rows(data_path, horizon)
+
+    if _CACHE_FILE:
+        cache = {}
+        if os.path.isfile(_CACHE_FILE):
+            with open(_CACHE_FILE) as f:
+                cache = json.load(f)
+        key = f"{data_path}__h{horizon}"
+        cache[key] = total
+        tmp = _CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cache, f)
+        os.replace(tmp, _CACHE_FILE)
+
+    return total
+
+
+# ── Range arithmetic ─────────────────────────────────────────────────────────
+
+
+def range_split(total_rows: int, total_chunks: int, chunk_id: int) -> tuple[int, int]:
+    """Even split with remainder distributed to first chunks.
+
+    Returns (start, end) — a half-open range suitable for array slicing.
+    """
+    base = total_rows // total_chunks
+    remainder = total_rows % total_chunks
+    start = base * chunk_id + min(chunk_id, remainder)
+    end = start + base + (1 if chunk_id < remainder else 0)
+    return start, end
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Translate chunk_id/total_chunks to --start/--end",
+    )
+    parser.add_argument("--chunk-id", type=int, required=True)
+    parser.add_argument("--total-chunks", type=int, required=True)
+    parser.add_argument("--data-path", default="all30min")
+    parser.add_argument("--horizon", type=int, default=1)
+    args, downstream = parser.parse_known_args()
+
+    # Strip leading "--" separator if present
+    if downstream and downstream[0] == "--":
+        downstream = downstream[1:]
+
+    if not downstream:
+        parser.error("no downstream command provided after --")
+
+    total_rows = _cached_total_rows(args.data_path, args.horizon)
+    start, end = range_split(total_rows, args.total_chunks, args.chunk_id)
+
+    cmd = downstream + ["--start", str(start), "--end", str(end)]
+    print(f"[shim] chunk {args.chunk_id}/{args.total_chunks} -> "
+          f"rows [{start}:{end}) of {total_rows}")
+    sys.exit(subprocess.run(cmd).returncode)
+
+
+if __name__ == "__main__":
+    main()

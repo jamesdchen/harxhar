@@ -107,13 +107,11 @@ profiles:
     max_retries: 3
 
   tune_tree:
-    run: "python3 src/tune_tree.py evaluate --params-dir params"
+    run: "python3 src/hpc_backtest_shim.py -- python3 src/tune_tree.py evaluate --params-dir params"
     grid:
-      trial-id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
       model: [xgb]
-    backtest:
-      start_arg: "--start"
-      end_arg: "--end"
+    chunking:
+      total: 100
     env_group: ml
     resources:
       cpus: 1
