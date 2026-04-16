@@ -14,7 +14,7 @@ cluster_envs:
     ml: { modules: "python gcc", conda_env: null }
     dl: { modules: "conda cuda/12.3", conda_env: harxhar-dl }
   discovery:
-    ml: { modules: "python", conda_env: null }
+    ml: { modules: "", conda_env: project-cucuringu }
     dl: { modules: "", conda_env: project-cucuringu }
 
 profiles:
@@ -107,9 +107,10 @@ profiles:
     max_retries: 3
 
   tune_tree:
-    run: "python3 src/hpc_backtest_shim.py -- python3 src/tune_tree.py evaluate --params-dir params"
+    run: "python3 src/hpc_backtest_shim.py --overlap 24000 -- python3 src/tune_tree.py evaluate --params-dir params"
     grid:
-      model: [xgb]
+      model: [rf, xgb, lgbm]
+      trial-id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     chunking:
       total: 100
     env_group: ml

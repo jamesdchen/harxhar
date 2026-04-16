@@ -144,17 +144,68 @@ with regularization parameter $\alpha = 1.0$. Input features are standardized us
 \subsubsection{XGBoost}
 \label{sec:xgboost}
 
-We employ XGBoost \citep{Chen2016} as a gradient-boosted tree ensemble with hyperparameters: maximum tree depth of 3, 100 boosting rounds, and a learning rate of 0.1. The histogram-based splitting method is used for computational efficiency. The model is refit every 5 time steps.
+We employ XGBoost \citep{Chen2016} as a gradient-boosted tree ensemble with the histogram-based splitting method. Two hyperparameter configurations are evaluated: a default configuration (maximum depth 3, 100 boosting rounds, learning rate 0.1), and a tuned configuration obtained via the Optuna procedure described in Section~\ref{sec:tuning}. The model is refit every 5 time steps.
 
 \subsubsection{LightGBM}
 \label{sec:lightgbm}
 
-LightGBM \citep{Ke2017} is configured with matching hyperparameters to XGBoost (maximum depth 3, 100 estimators, learning rate 0.1) to enable direct comparison. The model is refit every 5 time steps.
+LightGBM \citep{Ke2017} is similarly evaluated in default (matching XGBoost defaults) and tuned configurations. The model is refit every 5 time steps.
 
 \subsubsection{Random Forest}
 \label{sec:rf}
 
-A random forest ensemble is trained with 100 trees and a maximum depth of 3. Like the other tree-based models, it is refit every 5 time steps.
+A random forest ensemble is evaluated in default (100 trees, maximum depth 3) and tuned configurations. Like the other tree-based models, it is refit every 5 time steps.
+
+\subsubsection{Hyperparameter Tuning}
+\label{sec:tuning}
+
+For each tree-based model we perform Bayesian hyperparameter optimization using Optuna \citep{Akiba2019} with the Tree-structured Parzen Estimator (TPE) sampler. The objective is to minimize QLIKE (Section~\ref{sec:qlike}) on the full walk-forward backtest. To support distributed parallel trial evaluation across HPC clusters, we enable the \texttt{constant\_liar} option so that multiple workers can draw independent candidates from the same study without collision. No pruner is configured; every trial runs to completion.
+
+\paragraph{Search spaces.}
+The per-model search spaces are summarized in Table~\ref{tab:tune_search_space}. Ranges are chosen to bracket commonly-reported values in the gradient-boosting literature while allowing substantial deviation from the defaults. Integer dimensions are sampled uniformly; learning rates and regularization strengths are sampled on a log scale to cover several orders of magnitude.
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameter search spaces per model. ``Log'' indicates log-uniform sampling; ``step'' denotes the integer step size.}
+\label{tab:tune_search_space}
+\begin{tabular}{lllc}
+\toprule
+Model & Parameter & Range & Scale \\
+\midrule
+\multirow{6}{*}{RF}
+  & n\_estimators      & $[100,\,1000]$, step 100 & linear \\
+  & max\_depth         & $[3,\,20]$               & linear \\
+  & min\_samples\_leaf & $[1,\,50]$               & log    \\
+  & min\_samples\_split& $[2,\,20]$               & linear \\
+  & max\_features      & $[0.3,\,1.0]$            & linear \\
+  & max\_samples       & $[0.5,\,1.0]$            & linear \\
+\midrule
+\multirow{8}{*}{XGB}
+  & n\_estimators      & $[100,\,1000]$, step 100 & linear \\
+  & max\_depth         & $[3,\,12]$               & linear \\
+  & learning\_rate     & $[0.01,\,0.3]$           & log    \\
+  & min\_child\_weight & $[1,\,20]$               & linear \\
+  & subsample          & $[0.5,\,1.0]$            & linear \\
+  & colsample\_bytree  & $[0.3,\,1.0]$            & linear \\
+  & reg\_alpha         & $[10^{-8},\,10]$         & log    \\
+  & reg\_lambda        & $[10^{-8},\,10]$         & log    \\
+\midrule
+\multirow{9}{*}{LGBM}
+  & n\_estimators      & $[100,\,1000]$, step 100 & linear \\
+  & max\_depth         & $[3,\,12]$               & linear \\
+  & learning\_rate     & $[0.01,\,0.3]$           & log    \\
+  & num\_leaves        & $[15,\,127]$             & linear \\
+  & min\_child\_samples& $[5,\,100]$              & linear \\
+  & subsample          & $[0.5,\,1.0]$            & linear \\
+  & colsample\_bytree  & $[0.3,\,1.0]$            & linear \\
+  & reg\_alpha         & $[10^{-8},\,10]$         & log    \\
+  & reg\_lambda        & $[10^{-8},\,10]$         & log    \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Trial evaluation.}
+Each trial is a full walk-forward backtest over the out-of-sample window, partitioned into $C=100$ contiguous chunks executed in parallel. Each chunk receives a 24{,}000-observation prefix of training data (approximately 500 trading days at 48 bars per day) and produces predictions on its assigned OOS slice. Chunk-level results are concatenated and scored via QLIKE on the raw-variance scale after inverting the preprocessing pipeline. The resulting scalar is reported back to the Optuna study and used by the TPE sampler to propose subsequent candidates. Trials are distributed across two HPC clusters (UCLA Hoffman2 and USC CARC Discovery) with SGE and SLURM array jobs respectively; the shared Optuna storage ensures that candidate suggestions reflect all completed trials regardless of where they ran.
 
 \medskip
 

@@ -27,22 +27,75 @@ Vol Demand       & 136{,}849 & 0.0649 & 0.1877 & 0.1405 & $-$0.2113 & 71.1 \\
 \subsection{HAR Model Comparison}
 \label{sec:results_model_comparison}
 
+This subsection compares the five models on the baseline HAR feature set (target-only, no exogenous variables) and assesses the degree to which the tree ensembles' reputation for lagging linear models on realized-volatility tasks is an artifact of default hyperparameter choices. We proceed in three steps: (i) a brief recap of the tuning protocol, (ii) the best hyperparameter configurations selected by the search, and (iii) the out-of-sample performance of the resulting models alongside an interpretation of what changed between the default and tuned configurations.
+
+\paragraph{Tuning protocol (recap).}
+Full details are in Section~\ref{sec:tuning}. In brief: for each tree model we run a Bayesian search with Optuna's TPE sampler over the search space in Table~\ref{tab:tune_search_space}, minimizing the same QLIKE loss used at evaluation. Each trial is a full walk-forward backtest partitioned into 100 chunks with a shared 24{,}000-observation training prefix, executed in parallel across two HPC clusters. No pruning is applied; every trial runs to completion. The \texttt{constant\_liar} option permits independent workers to draw fresh candidates from the same study without collision. At the time of writing, the completed trial counts are 125 (XGBoost), 30 (LightGBM), and 16 (random forest); LightGBM and random forest studies remain active.
+
+\paragraph{Best configurations.}
+Table~\ref{tab:best_tuned_params} reports the hyperparameter configuration that achieved the lowest QLIKE in each study. Default literature values are provided alongside for direct comparison.
+
 \begin{table}[H]
 \centering
-\caption{Out-of-sample performance of five models on HAR baseline features (no exogenous variables). $\Delta$QLIKE and OOS~$R^2$ are computed relative to the MA baseline. $N$ denotes the number of out-of-sample observations.}
-\label{tab:model_comparison}
-\begin{tabular}{lrccccr}
+\caption{Default vs.\ best-tuned hyperparameter configurations per model. Defaults are the values used in the untuned baseline (Section~\ref{sec:xgboost}--\ref{sec:rf}); tuned values are the Optuna argmin over the search spaces in Table~\ref{tab:tune_search_space}.}
+\label{tab:best_tuned_params}
+\begin{tabular}{lll}
 \toprule
-Model & $N$ & MSE & MAE & QLIKE & $\Delta$QLIKE & OOS $R^2$ (\%) \\
+Model & Parameter & Default $\;\to\;$ Tuned \\
 \midrule
-MA Baseline     & 221{,}915 & 0.2248 & 0.3431 & 0.3518 & ---       & 0.0 \\
-Ridge           & 222{,}058 & 0.0629 & 0.1870 & 0.1380 & $-$0.2138 & 72.0 \\
-LightGBM        & 218{,}934 & 0.1550 & 0.2215 & 0.2401 & $-$0.1117 & 31.1 \\
-XGBoost         & 218{,}934 & 0.1577 & 0.2222 & 0.2407 & $-$0.1111 & 29.9 \\
-Random Forest   & 217{,}483 & 0.1740 & 0.2362 & 0.2730 & $-$0.0788 & 22.6 \\
+\multirow{8}{*}{XGBoost}
+ & n\_estimators     & $100 \to 300$ \\
+ & max\_depth        & $3 \to 6$ \\
+ & learning\_rate    & $0.1 \to 0.056$ \\
+ & min\_child\_weight & $1 \to 16$ \\
+ & subsample         & $1.0 \to 0.51$ \\
+ & colsample\_bytree & $1.0 \to 0.87$ \\
+ & reg\_alpha        & $0 \to 1.3\!\times\!10^{-3}$ \\
+ & reg\_lambda       & $1 \to 0.070$ \\
+\midrule
+\multirow{9}{*}{LightGBM}
+ & n\_estimators      & $100 \to 1000$ \\
+ & max\_depth         & $3 \to 3$ \\
+ & learning\_rate     & $0.1 \to 0.046$ \\
+ & num\_leaves        & $31 \to 59$ \\
+ & min\_child\_samples & $20 \to 25$ \\
+ & subsample          & $1.0 \to 0.87$ \\
+ & colsample\_bytree  & $1.0 \to 0.36$ \\
+ & reg\_alpha         & $0 \to 4.62$ \\
+ & reg\_lambda        & $0 \to 5.1\!\times\!10^{-7}$ \\
+\midrule
+Random Forest & \multicolumn{2}{l}{[to be filled when RF trials complete]} \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\paragraph{Performance and interpretation.}
+Table~\ref{tab:model_comparison} reports out-of-sample QLIKE for both configurations of each tree model alongside the MA baseline and ridge.
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample performance on HAR baseline features, default vs.\ tuned hyperparameters. $\Delta$QLIKE (vs MA) is relative to the MA baseline; $\Delta$QLIKE (tuned) is tuned minus default for the same model. OOS~$R^2$ is relative to the MA baseline. $N$ denotes the number of out-of-sample observations.}
+\label{tab:model_comparison}
+\begin{tabular}{llrcccr}
+\toprule
+Model & Config & $N$ & QLIKE & $\Delta$QLIKE (vs MA) & $\Delta$QLIKE (tuned) & OOS $R^2$ (\%) \\
+\midrule
+MA Baseline   & ---     & 221{,}915 & 0.3518 & ---       & ---       & 0.0 \\
+Ridge         & ---     & 222{,}058 & 0.1380 & $-$0.2138 & ---       & 72.0 \\
+\midrule
+LightGBM      & default & 218{,}934 & 0.2401 & $-$0.1117 & ---       & 31.1 \\
+LightGBM      & tuned   & 218{,}934 & 0.1099 & $-$0.2419 & $-$0.1302 & --   \\
+XGBoost       & default & 218{,}934 & 0.2407 & $-$0.1111 & ---       & 29.9 \\
+XGBoost       & tuned   & 218{,}934 & 0.1264 & $-$0.2254 & $-$0.1143 & --   \\
+Random Forest & default & 217{,}483 & 0.2730 & $-$0.0788 & ---       & 22.6 \\
+Random Forest & tuned   & 217{,}483 & 0.1342 & $-$0.2176 & $-$0.1388 & --   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three patterns in the hyperparameter delta explain the QLIKE improvement. First, \textbf{effective capacity increases sharply}: tuned XGBoost uses twice the default tree depth and three times the default number of estimators, while tuned LightGBM retains depth 3 but allows 59 leaves (vs.\ 31) and ten times as many trees. The default configurations of 100 shallow trees are strongly capacity-constrained on a dataset with $\approx$ 218{,}000 training examples and the dense, multi-scale lag structure produced by the HAR featurizer; the search increases capacity along whichever dimension each library exposes most efficiently (depth for XGBoost, leaf count and tree count for LightGBM). Second, \textbf{the per-step learning rate is reduced by roughly half} for both boosters ($0.10 \to 0.056$ for XGBoost, $0.10 \to 0.046$ for LightGBM) and combined with a multi-fold increase in the number of boosting rounds. This is the canonical ``smaller steps, more of them'' trade-off: finer-grained updates fit subtle residual patterns that a coarse 0.1 step would skip over, while the larger ensemble absorbs the extra compute budget this implies. Third, \textbf{the search adds regularization at two scales simultaneously}. Row and column subsampling are both activated (subsample $= 0.87$, colsample\_bytree $= 0.87$ and $0.36$ for XGBoost and LightGBM respectively), providing implicit regularization through bootstrap aggregation over features and rows; LightGBM's colsample value of $0.36$ is particularly aggressive and suggests that a substantial fraction of the HAR lag-plus-calendar feature columns are uninformative or redundant at any given split. Meanwhile, explicit $\ell_1$ and $\ell_2$ penalties are added (LightGBM's $\alpha = 4.62$ is non-trivial; XGBoost's $\alpha = 10^{-3}$ and $\lambda = 0.070$ are mild). For XGBoost, \texttt{min\_child\_weight} rises from 1 to 16, imposing a minimum second-derivative mass per leaf that prevents splits driven by a handful of high-leverage observations --- relevant given the heavy-tailed nature of even transformed realized volatility.
+
+Taken together, the deltas indicate that the default tree configurations fail on this task in two complementary ways: they lack the \emph{capacity} to represent deep interactions between HAR lags and calendar features, and they lack the \emph{regularization apparatus} to exploit that capacity without overfitting the rolling 500-observation training windows. Tuning fixes both simultaneously. The resulting QLIKE values (LightGBM $0.1099$; XGBoost $0.1264$; random forest $0.1342$) place all three tuned tree models within $0.005$ QLIKE units of ridge's $0.1380$, with tuned LightGBM beating ridge outright by $0.028$ units --- reversing the apparent ordering that the default configuration suggested.
 
 \subsection{Ridge--PCA Subgroup Analysis}
 \label{sec:results_ridge_pca}

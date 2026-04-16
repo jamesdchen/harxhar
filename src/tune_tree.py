@@ -19,20 +19,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import optuna
 import pandas as pd
-
-from src.evaluation import apply_duan_smearing
-from src.loading import load_raw_data
-from src.scaling import run_backtest
-from src.transforms import (
-    PERIODS_PER_DAY,
-    add_calendar_features,
-    apply_horizon_shift,
-    generate_har_features,
-    resolve_har_lags,
-    robust_transform,
-)
 
 # ── Search spaces ────────────────────────────────────────────────────────────
 
@@ -114,9 +101,13 @@ def _get_model_class(model_name: str):
 # ── Shared helpers ───────────────────────────────────────────────────────────
 
 
-def _make_storage(path: str | None) -> optuna.storages.BaseStorage | None:
+def _make_storage(path: str | None):
+    import optuna
+
     if path is None:
         return None
+    if path.endswith(".db"):
+        return f"sqlite:///{path}"
     return optuna.storages.JournalStorage(optuna.storages.JournalFileStorage(path))
 
 
@@ -124,7 +115,9 @@ def _load_or_create_study(
     model: str,
     storage_path: str | None,
     study_name: str | None = None,
-) -> optuna.Study:
+):
+    import optuna
+
     storage = _make_storage(storage_path)
     name = study_name or f"tune_{model}"
     return optuna.create_study(
@@ -149,6 +142,16 @@ def _compute_qlike(results_df: pd.DataFrame) -> float:
 
 def prepare_data(data_path: str, train_window_days: int) -> tuple[np.ndarray, np.ndarray, pd.Series, np.ndarray, int]:
     """Run the standard pipeline and return arrays ready for backtesting."""
+    from src.loading import load_raw_data
+    from src.transforms import (
+        PERIODS_PER_DAY,
+        add_calendar_features,
+        apply_horizon_shift,
+        generate_har_features,
+        resolve_har_lags,
+        robust_transform,
+    )
+
     df = load_raw_data(data_path, allow_missing=True)
 
     adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
@@ -186,6 +189,9 @@ def make_objective(
     refit_frequency: int,
 ):
     """Return an Optuna objective function (minimises QLIKE)."""
+    from src.evaluation import apply_duan_smearing
+    from src.scaling import run_backtest
+
     suggest_fn = _SUGGEST_FNS[model_name]
     model_cls = _get_model_class(model_name)
 
@@ -228,7 +234,7 @@ def suggest_batch(
 
     trials_info = []
     for i in range(batch_size):
-        trial = study.ask(search_space=_get_search_space(model))
+        trial = study.ask(fixed_distributions=_get_search_space(model))
 
         fname = f"trial_{i}.json"
         with open(out / fname, "w") as f:
@@ -258,6 +264,8 @@ def suggest_batch(
 
 def _get_search_space(model: str) -> dict:
     """Return Optuna search space distributions for study.ask()."""
+    import optuna
+
     if model == "rf":
         return {
             "n_estimators": optuna.distributions.IntDistribution(100, 1000, step=100),
@@ -309,10 +317,20 @@ def cmd_suggest(args: argparse.Namespace) -> None:
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
     """Delegate one trial evaluation to the appropriate ml_*.py executor."""
-    params_file = os.path.join(args.params_dir, f"trial_{args.trial_id}.json")
+    # Look for model-specific params subdir first, then flat layout
+    params_file = os.path.join(args.params_dir, args.model, f"trial_{args.trial_id}.json")
+    if not os.path.isfile(params_file):
+        params_file = os.path.join(args.params_dir, f"trial_{args.trial_id}.json")
     if not os.path.isfile(params_file):
         print(f"ERROR: params file not found: {params_file}", file=sys.stderr)
         sys.exit(1)
+
+    # Default output-file from HPC dispatch env vars
+    output_file = args.output_file
+    if output_file is None:
+        result_dir = os.environ.get("RESULT_DIR", ".")
+        task_id = os.environ.get("TASK_ID", "0")
+        output_file = os.path.join(result_dir, f"results_chunk_{task_id}.csv")
 
     executor = _EXECUTOR_SCRIPTS[args.model]
     cmd = [
@@ -321,7 +339,7 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         "--params-file",
         params_file,
         "--output-file",
-        args.output_file,
+        output_file,
     ]
     if args.start is not None:
         cmd += ["--start", str(args.start)]
@@ -351,7 +369,10 @@ def score_trials(
     study_name: str | None = None,
 ) -> dict:
     """Score completed trials and report to Optuna. Returns best params."""
-    manifest_path = os.path.join(params_dir, "manifest.json")
+    # Look for model-specific manifest first, then flat layout
+    manifest_path = os.path.join(params_dir, model, "manifest.json")
+    if not os.path.isfile(manifest_path):
+        manifest_path = os.path.join(params_dir, "manifest.json")
     with open(manifest_path) as f:
         manifest = json.load(f)
 
@@ -362,7 +383,10 @@ def score_trials(
         tid = trial_info["id"]
         optuna_num = trial_info["optuna_number"]
 
-        trial_dir = os.path.join(results_dir, f"trial_{tid}")
+        # Try model-specific dir (from grid run_id), then flat layout
+        trial_dir = os.path.join(results_dir, f"{model}_{tid}")
+        if not os.path.isdir(trial_dir):
+            trial_dir = os.path.join(results_dir, f"trial_{tid}")
         if not os.path.isdir(trial_dir):
             print(f"  Trial {tid}: no results dir, skipping")
             continue
@@ -413,6 +437,8 @@ def cmd_score(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Original single-machine Optuna loop."""
+    import optuna
+
     X, y, dates, baselines, train_win = prepare_data(args.data_path, args.train_window)
     objective = make_objective(args.model, X, y, dates, baselines, train_win, args.refit_frequency)
 
@@ -457,7 +483,7 @@ def main() -> None:
     p_eval.add_argument("--model", required=True, choices=_MODELS)
     p_eval.add_argument("--trial-id", type=int, required=True)
     p_eval.add_argument("--params-dir", required=True)
-    p_eval.add_argument("--output-file", required=True)
+    p_eval.add_argument("--output-file", default=None)
     p_eval.add_argument("--start", type=int, default=None)
     p_eval.add_argument("--end", type=int, default=None)
     p_eval.add_argument("--data-path", default=None)

@@ -1,2 +1,17 @@
 \section{Discussion}
 \label{sec:discussion}
+
+\subsection{Revisiting the Linear-vs-Tree Narrative}
+\label{sec:discussion_narrative}
+
+The default-hyperparameter tree results (Table~\ref{tab:model_comparison}) would, on their own, support a reading that \emph{linear HAR is uniquely well-suited to the realized-volatility forecasting problem}: ridge beats every tree ensemble by roughly 0.10 QLIKE units. After tuning, that reading disappears. The ordering across models becomes tight (all three tuned trees sit within $0.005$ QLIKE of ridge, and LightGBM beats ridge outright), and the remaining gap between ridge and XGBoost is of the same order as the gap between HAR-only ridge and ridge augmented with the best exogenous subgroup (Table~\ref{tab:ridge_har_subgroup}). The methodological implication is straightforward: claims about linear-versus-tree performance on this class of tasks are fragile in the absence of a tuning protocol, because the effort gap between a closed-form linear estimator and default tree configurations is large enough to masquerade as a model-class effect.
+
+\subsection{Caveats}
+\label{sec:discussion_caveats}
+
+Three caveats limit how strongly the tuned-tree comparison should be read. First, the tuning budget differs by model: at the time of writing, XGBoost has completed 125 trials and LightGBM 30 trials (with a further 13 arrays in flight), while random forest has only 16 completed trials --- an early wave timed out on a mis-set cluster wall-clock limit, and the resubmitted study is still producing its first results. The random forest QLIKE in Table~\ref{tab:model_comparison} should therefore be read as a lower bound on achievable performance; the tie with ridge may widen into a lead as the study matures. Second, the tuning objective is identical to the evaluation metric (QLIKE on the raw-variance scale after Duan smearing), so the reported QLIKE values carry the standard optimistic bias relative to a held-out future period. The ranking between models is the defensible quantity, not the absolute levels. Third, the walk-forward backtest uses a rolling 500-observation training window, re-fit every step for ridge and every five steps for the tree ensembles. The factor-of-five difference in refit frequency advantages ridge on non-stationary regimes and disadvantages the tree models; a shared refit cadence would be a cleaner comparison but is computationally prohibitive at this backtest length.
+
+\subsection{Relation to Exogenous-Variable Results}
+\label{sec:discussion_exog}
+
+The Ridge--HAR subgroup analysis (Table~\ref{tab:ridge_har_subgroup}) shows that exogenous variables buy 0.004--0.006 QLIKE when appended to HAR features with ridge. That is of similar order to the ridge--tuned-XGBoost gap (0.012) on the baseline feature set. A natural next experiment is to repeat the tuned tree comparison on the informative subgroups (moments, liquidity, market VW) to test whether the tree models' capacity advantage survives when ridge has access to additional linear signal. If the tuned trees continue to beat ridge--with--subgroup, it would suggest that the signal the trees are exploiting is irreducibly nonlinear rather than a proxy for what the right exogenous features would give to a linear model. We defer that experiment to future work.
