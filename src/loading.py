@@ -6,6 +6,8 @@ and returns a clean DataFrame ready for downstream pipelines.
 No imports from core/ or projects/ — only numpy, pandas, os, functools.
 """
 
+from __future__ import annotations
+
 import os
 from functools import reduce
 
@@ -33,9 +35,7 @@ def apply_overnight_fills(df: pd.DataFrame, exog_cols: list[str]) -> None:
         if col not in df.columns:
             continue
         name_lower = col.lower()
-        overnight_key = next(
-            (kw for kw in OVERNIGHT_WINDOWS if kw in name_lower), None
-        )
+        overnight_key = next((kw for kw in OVERNIGHT_WINDOWS if kw in name_lower), None)
         if overnight_key is None:
             continue
         t_start = pd.Timestamp(f"1900-01-01 {OVERNIGHT_WINDOWS[overnight_key][0]}").time()
@@ -43,6 +43,7 @@ def apply_overnight_fills(df: pd.DataFrame, exog_cols: list[str]) -> None:
         # Wrap-around midnight: time >= start OR time < end
         mask = (tod >= t_start) | (tod < t_end)
         df.loc[mask & df[col].isna(), col] = 1.0
+
 
 # ── Constants ──────────────────────────────────────────────────────────
 START_DATE = "2005-01-01"

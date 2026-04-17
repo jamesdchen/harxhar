@@ -26,7 +26,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 _CACHE_FILE = "_backtest_total_rows.json"
 
@@ -45,7 +44,6 @@ def get_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
 
     from src.loading import load_raw_data
     from src.transforms import (
-        PERIODS_PER_DAY,
         add_calendar_features,
         apply_horizon_shift,
         generate_har_features,
@@ -55,7 +53,11 @@ def get_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
 
     df = load_raw_data(data_path, allow_missing=True)
     adj_rv, baseline = robust_transform(
-        df, "RV", is_target=True, use_diurnal=True, winsor_window=240,
+        df,
+        "RV",
+        is_target=True,
+        use_diurnal=True,
+        winsor_window=240,
     )
     df["adj_RV"] = adj_rv
 
@@ -115,6 +117,31 @@ def range_split(total_rows: int, total_chunks: int, chunk_id: int) -> tuple[int,
     return start, end
 
 
+def range_split_overlap(
+    total_rows: int,
+    total_chunks: int,
+    chunk_id: int,
+    overlap: int,
+) -> tuple[int, int]:
+    """Split the OOS range [overlap:total_rows) into chunks, prepend overlap.
+
+    For walk-forward backtests: each chunk gets ``overlap`` rows of training
+    prefix plus its share of the OOS predictions.  The executor trains on
+    the first ``overlap`` rows and predicts on the rest.
+
+    Returns (start, end) — a half-open range suitable for array slicing.
+    """
+    oos_rows = total_rows - overlap
+    base = oos_rows // total_chunks
+    remainder = oos_rows % total_chunks
+    oos_start = overlap + base * chunk_id + min(chunk_id, remainder)
+    oos_end = oos_start + base + (1 if chunk_id < remainder else 0)
+    # Prepend training window so the executor can train
+    start = oos_start - overlap
+    end = oos_end
+    return start, end
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
@@ -124,6 +151,12 @@ def main() -> None:
     )
     parser.add_argument("--chunk-id", type=int, required=True)
     parser.add_argument("--total-chunks", type=int, required=True)
+    parser.add_argument(
+        "--overlap",
+        type=int,
+        default=0,
+        help="Training window rows to prepend to each chunk (for walk-forward backtests)",
+    )
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     args, downstream = parser.parse_known_args()
@@ -136,11 +169,21 @@ def main() -> None:
         parser.error("no downstream command provided after --")
 
     total_rows = _cached_total_rows(args.data_path, args.horizon)
-    start, end = range_split(total_rows, args.total_chunks, args.chunk_id)
+    if args.overlap > 0:
+        start, end = range_split_overlap(
+            total_rows,
+            args.total_chunks,
+            args.chunk_id,
+            args.overlap,
+        )
+    else:
+        start, end = range_split(total_rows, args.total_chunks, args.chunk_id)
 
     cmd = downstream + ["--start", str(start), "--end", str(end)]
-    print(f"[shim] chunk {args.chunk_id}/{args.total_chunks} -> "
-          f"rows [{start}:{end}) of {total_rows}")
+    print(
+        f"[shim] chunk {args.chunk_id}/{args.total_chunks} -> "
+        f"rows [{start}:{end}) of {total_rows} (overlap={args.overlap})"
+    )
     sys.exit(subprocess.run(cmd).returncode)
 
 

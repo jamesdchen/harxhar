@@ -1,5 +1,7 @@
 """Standalone data transforms and feature generation for volatility forecasting."""
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
@@ -80,18 +82,12 @@ def diurnal_adjust(
     df = pd.DataFrame({"val": series, "slot": time_of_day_series})
 
     if has_negatives:
-        baseline = (
-            df.groupby("slot")["val"]
-            .transform(
-                lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
-            )
+        baseline = df.groupby("slot")["val"].transform(
+            lambda g: g.rolling(window, min_periods=min_periods).std().shift(1)
         )
     else:
-        baseline = (
-            df.groupby("slot")["val"]
-            .transform(
-                lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
-            )
+        baseline = df.groupby("slot")["val"].transform(
+            lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
         )
 
     baseline = baseline.fillna(1.0)
@@ -226,15 +222,11 @@ def robust_transform(
 
     # --- semantic transform ---
     if use_transform:
-        series = apply_semantic_transform(
-            series, col_name, has_negatives, allow_missing=allow_missing
-        )
+        series = apply_semantic_transform(series, col_name, has_negatives, allow_missing=allow_missing)
 
     # --- winsorize ---
     ww = winsor_window if winsor_window is not None else 240
-    series = rolling_winsorize(
-        series, window=ww, allow_missing=allow_missing, is_target=is_target
-    )
+    series = rolling_winsorize(series, window=ww, allow_missing=allow_missing, is_target=is_target)
 
     return series, baseline
 

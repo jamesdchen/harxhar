@@ -4,6 +4,8 @@ Numba-accelerated sorted-matrix quantile tracking for O(W) median/IQR
 scaling, ring buffer for training data, and generic walk-forward loop.
 """
 
+from __future__ import annotations
+
 import numpy as np
 from numba import njit
 from tqdm import tqdm
