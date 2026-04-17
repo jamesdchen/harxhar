@@ -70,12 +70,15 @@ calculate_metrics()               ← Login node: MSE, MAE, QLIKE (claude-hpc ha
 
 ## Notebooks
 
-Each notebook walks through the pipeline stage-by-stage with data inspection cells, then `%%writefile`s a standalone Python module to `colab/src/`.
+Each notebook is the single human-readable source of truth for its matching module in `src/`. A cell whose first non-blank line is `# export` ships to `src/<name>.py` verbatim; every other cell is notebook-only (exploration, plots, tests). The final cell of every notebook calls `export_notebook(...)` from `notebooks/_exporter.py`, which concatenates the `# export` cells in notebook order and writes the module. No `%%writefile` cells, no hand-copied HEADER strings, no drift.
+
+**Reviewing a module means reading the `# export` cells of its notebook, top to bottom, with the adjacent test cells as the proof.** The final `export_notebook(...)` call regenerates `src/<name>.py` exactly — any hand-edit to `src/` will be overwritten the next time the notebook is run.
 
 **Pipeline notebooks** (run in order to understand the data):
 - `01_loading` — raw parquets → merged 30-min grid → market hours filter → NaN handling
 - `02_transforms` — diurnal adjustment → semantic transform (sqrt/log) → winsorization
 - `03_evaluation` — Duan smearing, QLIKE loss, MSE/MAE
+- `04_scaling` — rolling robust scaler + walk-forward backtest numba kernels
 
 **Experiment notebooks** (each imports from `src/loading` and `src/transforms`):
 - `ml_ridge` — Ridge with HAR features, robust scaling, refit every step
@@ -83,8 +86,12 @@ Each notebook walks through the pipeline stage-by-stage with data inspection cel
 - `ml_lightgbm` — LightGBM, same pattern as XGBoost
 - `ml_pcr` — PCA-compressed log-spaced lags + Ridge, PCA refit every 240 steps
 - `ml_baseline` — Naive lag-1 (har_ma_125) baseline
+- `ml_random_forest` — RandomForest with HAR features
+- `tune_tree` — Optuna hyperparameter tuning for tree-based models
 - `dl_patchts` — PatchTST transformer with QLIKE loss, GPU multi-worker
 - `dl_ae_ridge` — Hybrid autoencoder + closed-form Ridge, GPU multi-worker
+
+`src/hpc_backtest_shim.py` has no owning notebook and is hand-maintained.
 
 ## Runtime Requirements
 

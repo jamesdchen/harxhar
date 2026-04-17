@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/03_evaluation.ipynb. Do not edit by hand.
+
 """Evaluation metrics and Duan smearing for volatility forecasts.
 
 Standalone module — no imports from core/ or projects/.

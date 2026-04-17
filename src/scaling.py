@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/04_scaling.ipynb. Do not edit by hand.
+
 """Rolling robust scaler and walk-forward backtest infrastructure.
 
 Numba-accelerated sorted-matrix quantile tracking for O(W) median/IQR

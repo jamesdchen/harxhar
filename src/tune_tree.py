@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/tune_tree.ipynb. Do not edit by hand.
+
 """Optuna hyperparameter tuning for tree-based volatility models.
 
 Three subcommands for HPC-parallel tuning:

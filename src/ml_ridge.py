@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_ridge.ipynb. Do not edit by hand.
+
 """Ridge regression volatility backtest executor."""
 
 import argparse

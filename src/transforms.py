@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/02_transforms.ipynb. Do not edit by hand.
+
 """Standalone data transforms and feature generation for volatility forecasting."""
 
 from __future__ import annotations

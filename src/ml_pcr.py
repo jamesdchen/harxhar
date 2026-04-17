@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_pcr.ipynb. Do not edit by hand.
+
 """PCA + Ridge (PCR) walk-forward backtest for volatility forecasting."""
 
 import argparse

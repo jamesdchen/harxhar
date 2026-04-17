@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_xgboost.ipynb. Do not edit by hand.
+
 """XGBoost volatility backtest executor."""
 
 import argparse

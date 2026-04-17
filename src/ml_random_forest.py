@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_random_forest.ipynb. Do not edit by hand.
+
 """Random Forest volatility backtest executor."""
 
 import argparse
