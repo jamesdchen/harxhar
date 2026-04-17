@@ -46,14 +46,15 @@ def _suggest_rf(trial: optuna.Trial) -> dict:
 
 def _suggest_xgb(trial: optuna.Trial) -> dict:
     return {
-        "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=100),
+        "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-        "min_child_weight": trial.suggest_int("min_child_weight", 1, 20),
-        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+        "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.5, log=True),
+        "min_child_weight": trial.suggest_int("min_child_weight", 1, 50),
+        "subsample": trial.suggest_float("subsample", 0.3, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 1.0),
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+        "gamma": trial.suggest_float("gamma", 0.0, 5.0),
         "tree_method": "hist",
         "n_jobs": -1,
     }
@@ -64,7 +65,7 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict:
         "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=100),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-        "num_leaves": trial.suggest_int("num_leaves", 15, 127),
+        "num_leaves": trial.suggest_int("num_leaves", 15, 60),
         "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
         "subsample": trial.suggest_float("subsample", 0.5, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 1.0),
@@ -123,7 +124,11 @@ def _load_or_create_study(
     return optuna.create_study(
         study_name=name,
         storage=storage,
-        sampler=optuna.samplers.TPESampler(constant_liar=True),
+        sampler=optuna.samplers.TPESampler(
+            constant_liar=True,
+            n_ei_candidates=96,
+            gamma=lambda n: min(int(np.ceil(0.05 * n)), 15),
+        ),
         direction="minimize",
         load_if_exists=True,
     )
@@ -277,21 +282,22 @@ def _get_search_space(model: str) -> dict:
         }
     elif model == "xgb":
         return {
-            "n_estimators": optuna.distributions.IntDistribution(100, 1000, step=100),
+            "n_estimators": optuna.distributions.IntDistribution(100, 2000, step=100),
             "max_depth": optuna.distributions.IntDistribution(3, 12),
-            "learning_rate": optuna.distributions.FloatDistribution(0.01, 0.3, log=True),
-            "min_child_weight": optuna.distributions.IntDistribution(1, 20),
-            "subsample": optuna.distributions.FloatDistribution(0.5, 1.0),
+            "learning_rate": optuna.distributions.FloatDistribution(0.005, 0.5, log=True),
+            "min_child_weight": optuna.distributions.IntDistribution(1, 50),
+            "subsample": optuna.distributions.FloatDistribution(0.3, 1.0),
             "colsample_bytree": optuna.distributions.FloatDistribution(0.3, 1.0),
             "reg_alpha": optuna.distributions.FloatDistribution(1e-8, 10.0, log=True),
             "reg_lambda": optuna.distributions.FloatDistribution(1e-8, 10.0, log=True),
+            "gamma": optuna.distributions.FloatDistribution(0.0, 5.0),
         }
     elif model == "lgbm":
         return {
             "n_estimators": optuna.distributions.IntDistribution(100, 1000, step=100),
             "max_depth": optuna.distributions.IntDistribution(3, 12),
             "learning_rate": optuna.distributions.FloatDistribution(0.01, 0.3, log=True),
-            "num_leaves": optuna.distributions.IntDistribution(15, 127),
+            "num_leaves": optuna.distributions.IntDistribution(15, 60),
             "min_child_samples": optuna.distributions.IntDistribution(5, 100),
             "subsample": optuna.distributions.FloatDistribution(0.5, 1.0),
             "colsample_bytree": optuna.distributions.FloatDistribution(0.3, 1.0),

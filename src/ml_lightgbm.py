@@ -8,17 +8,17 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 
+from src.evaluation import apply_duan_smearing
 from src.loading import load_raw_data
+from src.scaling import run_backtest
 from src.transforms import (
-    robust_transform,
-    resolve_har_lags,
-    generate_har_features,
+    PERIODS_PER_DAY,
     add_calendar_features,
     apply_horizon_shift,
-    PERIODS_PER_DAY,
+    generate_har_features,
+    resolve_har_lags,
+    robust_transform,
 )
-from src.scaling import run_backtest
-from src.evaluation import apply_duan_smearing, calculate_metrics
 
 
 def main() -> None:
@@ -68,11 +68,20 @@ def main() -> None:
         raise ValueError(f"train_window ({train_win_periods}) >= chunk size ({len(X_chunk)})")
 
     def model_fn():
-        defaults = dict(n_estimators=500, max_depth=5, learning_rate=0.1, n_jobs=-1, verbose=-1)
+        defaults = dict(
+            n_estimators=500,
+            max_depth=5,
+            learning_rate=0.1,
+            n_jobs=-1,
+            verbose=-1,
+            max_bin=63,
+            min_data_in_bin=3,
+            force_row_wise=True,
+        )
         defaults.update(tuned_params)
         return LGBMRegressor(**defaults)
 
-    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=5, use_scaling=False)
+    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=20, use_scaling=False)
 
     oos_start = train_win_periods
     y_oos = y_chunk[oos_start:]
@@ -81,11 +90,16 @@ def main() -> None:
 
     pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
 
-    results = pd.DataFrame({
-        "date": dates_oos, "horizon": args.horizon,
-        "true_adj": y_oos, "pred_adj": preds,
-        "true_raw": true_raw, "pred_raw": pred_raw,
-    })
+    results = pd.DataFrame(
+        {
+            "date": dates_oos,
+            "horizon": args.horizon,
+            "true_adj": y_oos,
+            "pred_adj": preds,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
     os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
     results.to_csv(args.output_file, index=False)
