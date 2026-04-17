@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_lightgbm.ipynb. Do not edit by hand.
+
 """LightGBM volatility backtest executor."""
 
 import argparse

@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/dl_patchts.ipynb. Do not edit by hand.
+
 """PatchTST GPU backtest executor for volatility forecasting.
 
 Self-contained CLI: load -> transform -> PatchTST GPU backtest -> save chunk CSV.

@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/01_loading.ipynb. Do not edit by hand.
+
 """Standalone data loading module for volatility forecasting.
 
 Loads raw parquet data, builds a 30-min grid, filters market hours,

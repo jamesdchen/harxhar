@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/dl_ae_ridge.ipynb. Do not edit by hand.
+
 """AE+Ridge GPU backtest executor for volatility forecasting.
 
 Self-contained CLI: load -> transform -> AE encode -> Ridge predict -> save chunk CSV.

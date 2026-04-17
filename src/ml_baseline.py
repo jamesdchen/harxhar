@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/ml_baseline.ipynb. Do not edit by hand.
+
 """Naive lag-based baseline volatility forecast executor."""
 
 import argparse
