@@ -14,9 +14,9 @@ Usage (called by _hpc_dispatch.py via hpc.yaml):
         -- python3 src/ml_xgboost.py --output-file results.csv
 
 Inspect / modify:
-    - get_total_rows() — change if the data pipeline changes
-    - range_split()    — change if you need non-uniform chunks
-    - _CACHE_FILE      — set to None to disable caching
+    - get_total_rows()       — change if the data pipeline changes
+    - range_split_overlap()  — change if you need non-uniform chunks
+    - _CACHE_FILE            — set to None to disable caching
 """
 
 from __future__ import annotations
@@ -105,18 +105,6 @@ def _cached_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
 # ── Range arithmetic ─────────────────────────────────────────────────────────
 
 
-def range_split(total_rows: int, total_chunks: int, chunk_id: int) -> tuple[int, int]:
-    """Even split with remainder distributed to first chunks.
-
-    Returns (start, end) — a half-open range suitable for array slicing.
-    """
-    base = total_rows // total_chunks
-    remainder = total_rows % total_chunks
-    start = base * chunk_id + min(chunk_id, remainder)
-    end = start + base + (1 if chunk_id < remainder else 0)
-    return start, end
-
-
 def range_split_overlap(
     total_rows: int,
     total_chunks: int,
@@ -154,8 +142,9 @@ def main() -> None:
     parser.add_argument(
         "--overlap",
         type=int,
-        default=0,
-        help="Training window rows to prepend to each chunk (for walk-forward backtests)",
+        required=True,
+        help="Training window rows to prepend to each chunk (for walk-forward backtests). "
+        "Must match the executor's train_window × PERIODS_PER_DAY (e.g. 500×48=24000).",
     )
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
@@ -168,16 +157,16 @@ def main() -> None:
     if not downstream:
         parser.error("no downstream command provided after --")
 
+    if args.overlap <= 0:
+        parser.error("--overlap must be positive")
+
     total_rows = _cached_total_rows(args.data_path, args.horizon)
-    if args.overlap > 0:
-        start, end = range_split_overlap(
-            total_rows,
-            args.total_chunks,
-            args.chunk_id,
-            args.overlap,
-        )
-    else:
-        start, end = range_split(total_rows, args.total_chunks, args.chunk_id)
+    start, end = range_split_overlap(
+        total_rows,
+        args.total_chunks,
+        args.chunk_id,
+        args.overlap,
+    )
 
     cmd = downstream + ["--start", str(start), "--end", str(end)]
     print(

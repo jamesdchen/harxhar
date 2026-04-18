@@ -74,7 +74,7 @@ def main() -> None:
         defaults.update(tuned_params)
         return XGBRegressor(**defaults)
 
-    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=20, use_scaling=False)
+    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=1, use_scaling=False)
 
     oos_start = train_win_periods
     y_oos = y_chunk[oos_start:]

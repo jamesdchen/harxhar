@@ -2,13 +2,11 @@
 
 """Optuna hyperparameter tuning for tree-based volatility models.
 
-Three subcommands for HPC-parallel tuning:
+Subcommands (HPC-parallel workflow):
   suggest  — generate a batch of candidate param sets (shotgun TPE)
   evaluate — thin wrapper that delegates one trial to the right ml_*.py executor
-  score    — read executor results, compute QLIKE, report back to Optuna
-
-Legacy single-machine mode:
-  run      — full Optuna loop in-process (original behavior)
+  reduce   — cluster-side: per-trial CSV concat -> QLIKE -> qlike.json
+  score    — read qlike.json (or CSVs), compute QLIKE, report back to Optuna
 """
 
 from __future__ import annotations
@@ -32,73 +30,6 @@ _EXECUTOR_SCRIPTS = {
     "xgb": "src/ml_xgboost.py",
     "lgbm": "src/ml_lightgbm.py",
 }
-
-
-def _suggest_rf(trial: optuna.Trial) -> dict:
-    return {
-        "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=100),
-        "max_depth": trial.suggest_int("max_depth", 3, 20),
-        "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 50, log=True),
-        "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-        "max_features": trial.suggest_float("max_features", 0.3, 1.0),
-        "max_samples": trial.suggest_float("max_samples", 0.5, 1.0),
-        "n_jobs": -1,
-    }
-
-
-def _suggest_xgb(trial: optuna.Trial) -> dict:
-    return {
-        "n_estimators": trial.suggest_int("n_estimators", 100, 2000, step=100),
-        "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.5, log=True),
-        "min_child_weight": trial.suggest_int("min_child_weight", 1, 50),
-        "subsample": trial.suggest_float("subsample", 0.3, 1.0),
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 1.0),
-        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-        "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-        "gamma": trial.suggest_float("gamma", 0.0, 5.0),
-        "tree_method": "hist",
-        "n_jobs": -1,
-    }
-
-
-def _suggest_lgbm(trial: optuna.Trial) -> dict:
-    return {
-        "n_estimators": trial.suggest_int("n_estimators", 100, 1000, step=100),
-        "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-        "num_leaves": trial.suggest_int("num_leaves", 15, 60),
-        "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
-        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.3, 1.0),
-        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-        "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-        "n_jobs": -1,
-        "verbose": -1,
-    }
-
-
-_SUGGEST_FNS = {"rf": _suggest_rf, "xgb": _suggest_xgb, "lgbm": _suggest_lgbm}
-
-
-# ── Lazy model imports ───────────────────────────────────────────────────────
-
-
-def _get_model_class(model_name: str):
-    if model_name == "rf":
-        from sklearn.ensemble import RandomForestRegressor
-
-        return RandomForestRegressor
-    elif model_name == "xgb":
-        from xgboost import XGBRegressor
-
-        return XGBRegressor
-    elif model_name == "lgbm":
-        from lightgbm import LGBMRegressor
-
-        return LGBMRegressor
-    else:
-        raise ValueError(f"Unknown model: {model_name}")
 
 
 # ── Shared helpers ───────────────────────────────────────────────────────────
@@ -142,82 +73,6 @@ def _compute_qlike(results_df: pd.DataFrame) -> float:
     mask = (true_raw > 0) & (pred_raw > 0)
     ratio = true_raw[mask] / pred_raw[mask]
     return float(np.mean(ratio - np.log(ratio) - 1))
-
-
-# ── Data preparation (for legacy run mode) ───────────────────────────────────
-
-
-def prepare_data(data_path: str, train_window_days: int) -> tuple[np.ndarray, np.ndarray, pd.Series, np.ndarray, int]:
-    """Run the standard pipeline and return arrays ready for backtesting."""
-    from src.loading import load_raw_data
-    from src.transforms import (
-        PERIODS_PER_DAY,
-        add_calendar_features,
-        apply_horizon_shift,
-        generate_har_features,
-        resolve_har_lags,
-        robust_transform,
-    )
-
-    df = load_raw_data(data_path, allow_missing=True)
-
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
-    df["adj_RV"] = adj_rv
-    df["baseline"] = baseline
-
-    df, har_names = generate_har_features(df, target_col="adj_RV")
-    cal_names = add_calendar_features(df)
-    feature_names = har_names + cal_names
-
-    max_lag = resolve_har_lags()[-1]
-    df = df.iloc[max_lag:].reset_index(drop=True)
-
-    X = df[feature_names].values.astype(np.float64)
-    y = df["adj_RV"].values.astype(np.float64)
-    dates = df["t"]
-    baselines = df["baseline"].values.astype(np.float64)
-
-    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, horizon=1)
-    train_win = train_window_days * PERIODS_PER_DAY
-
-    return X, y, dates, baselines, train_win
-
-
-# ── Objective factory (for legacy run mode) ──────────────────────────────────
-
-
-def make_objective(
-    model_name: str,
-    X: np.ndarray,
-    y: np.ndarray,
-    dates: pd.Series,
-    baselines: np.ndarray,
-    train_win: int,
-    refit_frequency: int,
-):
-    """Return an Optuna objective function (minimises QLIKE)."""
-    from src.evaluation import apply_duan_smearing
-    from src.scaling import run_backtest
-
-    suggest_fn = _SUGGEST_FNS[model_name]
-    model_cls = _get_model_class(model_name)
-
-    def objective(trial: optuna.Trial) -> float:
-        params = suggest_fn(trial)
-        model_fn = lambda: model_cls(**params)  # noqa: E731
-
-        preds = run_backtest(model_fn, X, y, train_win, refit_frequency, use_scaling=False)
-
-        y_oos = y[train_win:]
-        baselines_oos = baselines[train_win:]
-
-        pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
-
-        mask = (true_raw > 0) & (pred_raw > 0)
-        ratio = true_raw[mask] / pred_raw[mask]
-        return float(np.mean(ratio - np.log(ratio) - 1))
-
-    return objective
 
 
 # ── Subcommand: suggest ──────────────────────────────────────────────────────
@@ -368,6 +223,60 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
 # ── Subcommand: score ────────────────────────────────────────────────────────
 
 
+def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> float | None:
+    """Concat all chunk CSVs in a trial dir and compute QLIKE. None if insufficient chunks."""
+    csvs = sorted(Path(trial_dir).glob("*.csv"))
+    if not csvs or (require_chunks is not None and len(csvs) < require_chunks):
+        return None
+    chunks = [pd.read_csv(p) for p in csvs]
+    results_df = pd.concat(chunks, ignore_index=True)
+    return _compute_qlike(results_df)
+
+
+def reduce_trials(
+    model: str,
+    results_dir: str,
+    require_chunks: int | None = 100,
+    force: bool = False,
+) -> int:
+    """Cluster-side reduce: compute QLIKE per trial dir, write qlike.json.
+
+    Idempotent: skips dirs that already have qlike.json unless force=True.
+    Returns count of trials reduced.
+    """
+    reduced = 0
+    for trial_dir in sorted(Path(results_dir).glob(f"{model}_*")):
+        if not trial_dir.is_dir():
+            continue
+        out = trial_dir / "qlike.json"
+        if out.exists() and not force:
+            continue
+        tid_str = trial_dir.name[len(f"{model}_") :]
+        try:
+            tid = int(tid_str)
+        except ValueError:
+            continue
+        qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
+        if qlike is None:
+            print(f"  Trial {tid}: insufficient chunks, skipping")
+            continue
+        with open(out, "w") as f:
+            json.dump({"trial_id": tid, "qlike": qlike}, f)
+        reduced += 1
+        print(f"  Trial {tid}: QLIKE = {qlike:.6f} -> {out}")
+    return reduced
+
+
+def cmd_reduce(args: argparse.Namespace) -> None:
+    n = reduce_trials(
+        model=args.model,
+        results_dir=args.results_dir,
+        require_chunks=args.require_chunks,
+        force=args.force,
+    )
+    print(f"\nReduced {n} trials for model={args.model}")
+
+
 def score_trials(
     model: str,
     storage_path: str | None,
@@ -376,7 +285,11 @@ def score_trials(
     output_file: str,
     study_name: str | None = None,
 ) -> dict:
-    """Score completed trials and report to Optuna. Returns best params."""
+    """Score completed trials and report to Optuna. Returns best params.
+
+    Prefers pre-computed qlike.json (from cluster-side reduce); falls back to
+    concatenating CSVs locally if qlike.json is missing.
+    """
     # Look for model-specific manifest first, then flat layout
     manifest_path = os.path.join(params_dir, model, "manifest.json")
     if not os.path.isfile(manifest_path):
@@ -399,16 +312,16 @@ def score_trials(
             print(f"  Trial {tid}: no results dir, skipping")
             continue
 
-        # Concatenate all chunk CSVs
-        csvs = sorted(Path(trial_dir).glob("*.csv"))
-        if not csvs:
-            print(f"  Trial {tid}: no CSVs found, skipping")
-            continue
+        qlike_path = os.path.join(trial_dir, "qlike.json")
+        if os.path.isfile(qlike_path):
+            with open(qlike_path) as f:
+                qlike = json.load(f)["qlike"]
+        else:
+            qlike = _compute_trial_qlike(trial_dir)
+            if qlike is None:
+                print(f"  Trial {tid}: no qlike.json and no CSVs, skipping")
+                continue
 
-        chunks = [pd.read_csv(p) for p in csvs]
-        results_df = pd.concat(chunks, ignore_index=True)
-
-        qlike = _compute_qlike(results_df)
         study.tell(optuna_num, qlike)
         scored += 1
         print(f"  Trial {tid} (optuna #{optuna_num}): QLIKE = {qlike:.6f}")
@@ -438,36 +351,6 @@ def cmd_score(args: argparse.Namespace) -> None:
         output_file=args.output_file,
         study_name=args.study_name,
     )
-
-
-# ── Subcommand: run (legacy) ────────────────────────────────────────────────
-
-
-def cmd_run(args: argparse.Namespace) -> None:
-    """Original single-machine Optuna loop."""
-    import optuna
-
-    X, y, dates, baselines, train_win = prepare_data(args.data_path, args.train_window)
-    objective = make_objective(args.model, X, y, dates, baselines, train_win, args.refit_frequency)
-
-    storage = _make_storage(args.storage)
-    study_name = args.study_name or f"tune_{args.model}"
-
-    study = optuna.create_study(
-        study_name=study_name,
-        storage=storage,
-        direction="minimize",
-        load_if_exists=True,
-    )
-    study.optimize(objective, n_trials=args.n_trials)
-
-    best_params = study.best_trial.params
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
-    with open(args.output_file, "w") as f:
-        json.dump(best_params, f, indent=2)
-
-    print(f"Best QLIKE: {study.best_trial.value:.6f}")
-    print(f"Best params: {best_params}")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -500,6 +383,13 @@ def main() -> None:
     p_eval.set_defaults(func=cmd_evaluate)
 
     # ── score ──
+    p_reduce = sub.add_parser("reduce", help="Cluster-side: compute per-trial QLIKE into qlike.json")
+    p_reduce.add_argument("--model", required=True, choices=_MODELS)
+    p_reduce.add_argument("--results-dir", required=True)
+    p_reduce.add_argument("--require-chunks", type=int, default=100)
+    p_reduce.add_argument("--force", action="store_true")
+    p_reduce.set_defaults(func=cmd_reduce)
+
     p_score = sub.add_parser("score", help="Score trials and report to Optuna")
     p_score.add_argument("--model", required=True, choices=_MODELS)
     p_score.add_argument("--storage", default=None)
@@ -508,18 +398,6 @@ def main() -> None:
     p_score.add_argument("--results-dir", required=True)
     p_score.add_argument("--output-file", required=True)
     p_score.set_defaults(func=cmd_score)
-
-    # ── run (legacy) ──
-    p_run = sub.add_parser("run", help="Full Optuna loop in-process (legacy)")
-    p_run.add_argument("--model", required=True, choices=_MODELS)
-    p_run.add_argument("--n-trials", type=int, default=50)
-    p_run.add_argument("--data-path", default="all30min")
-    p_run.add_argument("--train-window", type=int, default=500)
-    p_run.add_argument("--refit-frequency", type=int, default=5)
-    p_run.add_argument("--storage", default=None)
-    p_run.add_argument("--study-name", default=None)
-    p_run.add_argument("--output-file", required=True)
-    p_run.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

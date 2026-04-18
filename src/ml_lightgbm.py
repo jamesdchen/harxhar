@@ -76,9 +76,6 @@ def main() -> None:
             learning_rate=0.1,
             n_jobs=-1,
             verbose=-1,
-            max_bin=63,
-            min_data_in_bin=3,
-            force_row_wise=True,
         )
         defaults.update(tuned_params)
         return LGBMRegressor(**defaults)
