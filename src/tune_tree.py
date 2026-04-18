@@ -224,7 +224,26 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
 
 
 def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> float | None:
-    """Concat all chunk CSVs in a trial dir and compute QLIKE. None if insufficient chunks."""
+    """Trial QLIKE from per-chunk partial reduce JSONs; fall back to CSV concat.
+
+    Executors write ``*_reduce.json`` next to each chunk CSV via
+    ``evaluation.save_chunk_reduce``. Aggregating the partials is O(chunks) of
+    tiny JSON reads vs O(chunks * rows) for CSV parsing.
+    """
+    partials = sorted(Path(trial_dir).glob("*_reduce.json"))
+    if partials and (require_chunks is None or len(partials) >= require_chunks):
+        total_count = 0
+        total_sum = 0.0
+        for p in partials:
+            with open(p) as f:
+                d = json.load(f)
+            total_count += d["qlike_count"]
+            total_sum += d["qlike_sum"]
+        if total_count == 0:
+            return None
+        return total_sum / total_count
+
+    # Fallback: concatenate CSVs (slow, for legacy trial dirs without partials)
     csvs = sorted(Path(trial_dir).glob("*.csv"))
     if not csvs or (require_chunks is not None and len(csvs) < require_chunks):
         return None

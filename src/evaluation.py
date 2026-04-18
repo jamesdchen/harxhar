@@ -94,6 +94,55 @@ def build_results_dataframe(
     )
 
 
+def save_chunk_reduce(df: pd.DataFrame, output_file: str) -> str:
+    """Write per-chunk partial metrics next to ``output_file``.
+
+    Produces ``<basename>_reduce.json`` containing counts + sums suitable for
+    additive aggregation across chunks. Trial-level QLIKE is
+    ``sum(qlike_sum) / sum(qlike_count)``, which is exact because QLIKE is a
+    per-row mean.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Results with columns ``true_adj``, ``pred_adj``, ``true_raw``, ``pred_raw``.
+    output_file : str
+        The chunk's CSV path. Reduce JSON is written to the same basename
+        with ``_reduce.json`` suffix.
+
+    Returns
+    -------
+    str
+        Path of the reduce JSON written.
+    """
+    import json
+    import os
+
+    true_raw = np.asarray(df["true_raw"].values, dtype=np.float64)
+    pred_raw = np.asarray(df["pred_raw"].values, dtype=np.float64)
+    err_adj = np.asarray(df["true_adj"].values, dtype=np.float64) - np.asarray(df["pred_adj"].values, dtype=np.float64)
+
+    mask = (true_raw > 0) & (pred_raw > 0)
+    if mask.any():
+        ratio = true_raw[mask] / pred_raw[mask]
+        qlike_sum = float(np.sum(ratio - np.log(ratio) - 1.0))
+    else:
+        qlike_sum = 0.0
+
+    partial = {
+        "n_samples": int(len(df)),
+        "qlike_count": int(mask.sum()),
+        "qlike_sum": qlike_sum,
+        "mse_sum": float(np.sum(err_adj**2)),
+        "mae_sum": float(np.sum(np.abs(err_adj))),
+    }
+    base, ext = os.path.splitext(output_file)
+    reduce_path = (base if ext else output_file) + "_reduce.json"
+    with open(reduce_path, "w") as f:
+        json.dump(partial, f)
+    return reduce_path
+
+
 def calculate_metrics(df: pd.DataFrame) -> dict:
     """Compute evaluation metrics from a results DataFrame.
 

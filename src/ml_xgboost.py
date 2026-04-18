@@ -96,6 +96,9 @@ def main() -> None:
 
     os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
     results.to_csv(args.output_file, index=False)
+    from src.evaluation import save_chunk_reduce
+
+    save_chunk_reduce(results, args.output_file)
     print(f"Saved {len(results)} rows -> {args.output_file}")
 
 

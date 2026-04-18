@@ -80,7 +80,7 @@ def main() -> None:
         defaults.update(tuned_params)
         return LGBMRegressor(**defaults)
 
-    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=20, use_scaling=False)
+    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=1, use_scaling=False)
 
     oos_start = train_win_periods
     y_oos = y_chunk[oos_start:]
@@ -102,6 +102,9 @@ def main() -> None:
 
     os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
     results.to_csv(args.output_file, index=False)
+    from src.evaluation import save_chunk_reduce
+
+    save_chunk_reduce(results, args.output_file)
     print(f"Saved {len(results)} rows -> {args.output_file}")
 
 
