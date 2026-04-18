@@ -257,24 +257,26 @@ def reduce_trials(
     results_dir: str,
     require_chunks: int | None = 100,
     force: bool = False,
+    trial_prefix: str | None = None,
 ) -> int:
     """Cluster-side reduce: compute QLIKE per trial dir, write qlike.json.
+
+    Trial dirs are any subdirs of ``results_dir`` matching ``{trial_prefix}*``
+    (default ``{model}_``). The suffix is kept as a string, so arbitrary
+    naming like ``lgbm_jitter_rf1_0`` or ``lgbm_replay_libdef`` works.
 
     Idempotent: skips dirs that already have qlike.json unless force=True.
     Returns count of trials reduced.
     """
+    prefix = trial_prefix if trial_prefix is not None else f"{model}_"
     reduced = 0
-    for trial_dir in sorted(Path(results_dir).glob(f"{model}_*")):
+    for trial_dir in sorted(Path(results_dir).glob(f"{prefix}*")):
         if not trial_dir.is_dir():
             continue
         out = trial_dir / "qlike.json"
         if out.exists() and not force:
             continue
-        tid_str = trial_dir.name[len(f"{model}_") :]
-        try:
-            tid = int(tid_str)
-        except ValueError:
-            continue
+        tid = trial_dir.name[len(prefix) :]
         qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
         if qlike is None:
             print(f"  Trial {tid}: insufficient chunks, skipping")
@@ -292,6 +294,7 @@ def cmd_reduce(args: argparse.Namespace) -> None:
         results_dir=args.results_dir,
         require_chunks=args.require_chunks,
         force=args.force,
+        trial_prefix=args.trial_prefix,
     )
     print(f"\nReduced {n} trials for model={args.model}")
 
@@ -407,6 +410,12 @@ def main() -> None:
     p_reduce.add_argument("--results-dir", required=True)
     p_reduce.add_argument("--require-chunks", type=int, default=100)
     p_reduce.add_argument("--force", action="store_true")
+    p_reduce.add_argument(
+        "--trial-prefix",
+        default=None,
+        help="Glob prefix for trial dirs (default: '{model}_'). Use to scope reduce "
+        "to dirs with custom naming, e.g. 'lgbm_jitter_rf1_'.",
+    )
     p_reduce.set_defaults(func=cmd_reduce)
 
     p_score = sub.add_parser("score", help="Score trials and report to Optuna")

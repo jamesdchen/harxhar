@@ -12,6 +12,7 @@ from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
 from src.loading import apply_overnight_fills, load_raw_data, parse_exog_cols
+from src.scaling import RollingRobustScaler
 from src.transforms import (
     PERIODS_PER_DAY,
     SEGMENT_CHOICES,
@@ -22,11 +23,11 @@ from src.transforms import (
     robust_transform,
     slice_to_segment,
 )
-from src.scaling import RollingRobustScaler
 
 
 class PCATransform:
     """Thin wrapper around sklearn PCA for the backtest loop."""
+
     def __init__(self, n_components=5):
         self.pca = PCA(n_components=n_components, svd_solver="randomized")
 
@@ -107,7 +108,11 @@ def _run_backtest_and_save(
     baselines_arr = df_chunk["baseline"].values
 
     forecasts = run_pcr_backtest(
-        X, y, train_window=train_window, n_components=n_components, refit_frequency=240,
+        X,
+        y,
+        train_window=train_window,
+        n_components=n_components,
+        refit_frequency=240,
     )
 
     y_test = y[train_window:]
@@ -115,14 +120,19 @@ def _run_backtest_and_save(
     baselines_test = baselines_arr[train_window:]
 
     smear = np.mean((y_test - forecasts) ** 2)
-    pred_raw = (forecasts ** 2 + smear) * baselines_test
-    true_raw = (y_test ** 2) * baselines_test
+    pred_raw = (forecasts**2 + smear) * baselines_test
+    true_raw = (y_test**2) * baselines_test
 
-    results = pd.DataFrame({
-        "date": dates_test, "horizon": horizon,
-        "true_adj": y_test, "pred_adj": forecasts,
-        "true_raw": true_raw, "pred_raw": pred_raw,
-    })
+    results = pd.DataFrame(
+        {
+            "date": dates_test,
+            "horizon": horizon,
+            "true_adj": y_test,
+            "pred_adj": forecasts,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
     results.to_csv(output_file, index=False)
@@ -139,14 +149,16 @@ def main() -> None:
     parser.add_argument("--output-file", type=str, default="results_pcr.csv")
     parser.add_argument("--exog-cols", default=None, help="Pipe-separated exog columns, e.g. vix|sentiment")
     parser.add_argument("--segment", default=None, choices=SEGMENT_CHOICES, help="Time-of-day segment")
-    parser.add_argument("--lag-scope", default="global", choices=["global", "intra"], help="Compute lags on full dataset or per-segment")
+    parser.add_argument(
+        "--lag-scope", default="global", choices=["global", "intra"], help="Compute lags on full dataset or per-segment"
+    )
     parser.add_argument("--n-components", type=int, default=5)
     args = parser.parse_args()
 
     exog_cols = parse_exog_cols(args.exog_cols)
 
     # --- Load and transform ---
-    df = load_raw_data(args.data_path, allow_missing=bool(exog_cols))
+    df = load_raw_data(args.data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
         df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
@@ -166,7 +178,9 @@ def main() -> None:
     if args.segment is None:
         train_window = args.train_window * PERIODS_PER_DAY
         df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-        _run_backtest_and_save(df, feature_names, train_window, args.horizon, args.start, args.end, args.output_file, args.n_components)
+        _run_backtest_and_save(
+            df, feature_names, train_window, args.horizon, args.start, args.end, args.output_file, args.n_components
+        )
         return
 
     # --- Segmented backtest ---
@@ -191,7 +205,9 @@ def main() -> None:
 
         print(f"{'=' * 20} SEGMENT: {seg_name.upper()} {'=' * 20}")
         print(f"Window: {train_window} periods ({args.train_window} days)")
-        _run_backtest_and_save(seg_df, feature_names, train_window, args.horizon, args.start, args.end, seg_output, args.n_components)
+        _run_backtest_and_save(
+            seg_df, feature_names, train_window, args.horizon, args.start, args.end, seg_output, args.n_components
+        )
 
 
 if __name__ == "__main__":

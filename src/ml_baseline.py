@@ -8,15 +8,15 @@ import os
 import numpy as np
 import pandas as pd
 
+from src.evaluation import apply_duan_smearing
 from src.loading import load_raw_data
 from src.transforms import (
-    robust_transform,
-    resolve_har_lags,
-    generate_har_features,
-    apply_horizon_shift,
     PERIODS_PER_DAY,
+    apply_horizon_shift,
+    generate_har_features,
+    resolve_har_lags,
+    robust_transform,
 )
-from src.evaluation import apply_duan_smearing
 
 
 def main() -> None:
@@ -31,7 +31,8 @@ def main() -> None:
 
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
-    df = load_raw_data(args.data_path)
+    df = load_raw_data(args.data_path, allow_missing=True)
+    df = df.dropna(subset=["RV"]).reset_index(drop=True)
     adj_rv, baseline = robust_transform(df, "RV", is_target=True)
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
@@ -67,11 +68,16 @@ def main() -> None:
 
     pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
 
-    results = pd.DataFrame({
-        "date": dates_oos, "horizon": args.horizon,
-        "true_adj": y_oos, "pred_adj": preds,
-        "true_raw": true_raw, "pred_raw": pred_raw,
-    })
+    results = pd.DataFrame(
+        {
+            "date": dates_oos,
+            "horizon": args.horizon,
+            "true_adj": y_oos,
+            "pred_adj": preds,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
     os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
     results.to_csv(args.output_file, index=False)

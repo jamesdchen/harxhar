@@ -28,6 +28,12 @@ def main() -> None:
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--train-window", type=int, default=500, help="training window in days")
+    parser.add_argument(
+        "--refit-frequency",
+        type=int,
+        default=1,
+        help="how often to refit the model during walk-forward (1 = every step)",
+    )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
@@ -74,7 +80,14 @@ def main() -> None:
         defaults.update(tuned_params)
         return XGBRegressor(**defaults)
 
-    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=1, use_scaling=False)
+    preds = run_backtest(
+        model_fn,
+        X_chunk,
+        y_chunk,
+        train_win=train_win_periods,
+        refit_frequency=args.refit_frequency,
+        use_scaling=False,
+    )
 
     oos_start = train_win_periods
     y_oos = y_chunk[oos_start:]
