@@ -6,7 +6,7 @@
 #SBATCH --error=logs/%x_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
 #SBATCH --time=04:00:00
 #SBATCH --partition=main
@@ -42,6 +42,16 @@ fi
 cd "$REPO_DIR"
 export PYTHONPATH="$REPO_DIR:${PYTHONPATH:-}"
 mkdir -p "$RESULT_DIR"
+
+# Pin OpenMP / BLAS thread counts to the cgroup CPU allocation. XGBoost,
+# LightGBM, NumPy, etc. otherwise call multiprocessing.cpu_count() which
+# returns the host's full core count (not the cgroup limit) and oversubscribe.
+NTHREADS="${SLURM_CPUS_PER_TASK:-1}"
+export OMP_NUM_THREADS="$NTHREADS"
+export MKL_NUM_THREADS="$NTHREADS"
+export OPENBLAS_NUM_THREADS="$NTHREADS"
+export NUMEXPR_NUM_THREADS="$NTHREADS"
+export VECLIB_MAXIMUM_THREADS="$NTHREADS"
 
 echo "Result dir:   $RESULT_DIR"
 echo "Executor:     $EXECUTOR"

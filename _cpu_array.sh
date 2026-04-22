@@ -6,8 +6,9 @@
 
 #$ -cwd
 #$ -j y
-#$ -l h_data=16G
+#$ -l h_data=2G
 #$ -l h_rt=10:00:00
+#$ -pe shared 8
 
 set -e
 
@@ -40,6 +41,17 @@ fi
 
 cd "$REPO_DIR"
 export PYTHONPATH="$REPO_DIR:${PYTHONPATH:-}"
+
+# Pin OpenMP / BLAS thread counts to the parallel-environment slot count.
+# XGBoost, LightGBM, NumPy, etc. otherwise call multiprocessing.cpu_count()
+# which returns the host's full core count (not the cgroup limit) and
+# oversubscribe — slowing things down rather than speeding them up.
+NTHREADS="${NSLOTS:-1}"
+export OMP_NUM_THREADS="$NTHREADS"
+export MKL_NUM_THREADS="$NTHREADS"
+export OPENBLAS_NUM_THREADS="$NTHREADS"
+export NUMEXPR_NUM_THREADS="$NTHREADS"
+export VECLIB_MAXIMUM_THREADS="$NTHREADS"
 
 # Convert 1-based SGE_TASK_ID to 0-based, add offset for batched submission
 TASK_ID=$((SGE_TASK_ID - 1 + ${TASK_OFFSET:-0}))
