@@ -122,6 +122,23 @@ profiles:
       dir: "results/tune/{run_id}"
       pattern: "results_chunk_*.csv"
 
+  tune_tree_exog:
+    run: "python3 src/hpc_backtest_shim.py --overlap 24000 -- python3 src/tune_tree.py evaluate --params-dir params_exog"
+    grid:
+      model: [xgb, lgbm]
+      exog-bucket: [liquidity, moments]
+      trial-id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    chunking:
+      total: 100
+    env_group: ml
+    resources:
+      cpus: 1
+      mem: "16G"
+      walltime: "4:00:00"
+    results:
+      dir: "results/tune_exog/{run_id}"
+      pattern: "results_chunk_*.csv"
+
   dl_ae_ridge:
     run: "python3 src/dl_ae_ridge.py"
     backtest:

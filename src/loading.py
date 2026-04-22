@@ -47,6 +47,84 @@ def apply_overnight_fills(df: pd.DataFrame, exog_cols: list[str]) -> None:
         df.loc[mask & df[col].isna(), col] = 1.0
 
 
+# ── Feature groups ────────────────────────────────────────────────────
+# Single source of truth for exogenous variable subgroup membership.
+# Predicates encode the intent; lists are materialized at import time
+# for cheap inspection. If new columns are added to the parquet data,
+# extend ALL_FEATURES and verify the derived lists via the assertion.
+
+ALL_FEATURES: list[str] = [
+    "sumret",
+    "sumabsret",
+    "sumret3",
+    "sumret4",
+    "sumpret2",
+    "sumbipow",
+    "sumautocov",
+    "sumvolume",
+    "numobs",
+    "sumret2_ewstock",
+    "sumret3_ewstock",
+    "sumret4_ewstock",
+    "sumabsret_ewstock",
+    "sumbipow_ewstock",
+    "sumpret2_ewstock",
+    "turnover_ewstock",
+    "buyturnover_ewstock",
+    "sellturnover_ewstock",
+    "effspread_ewstock",
+    "spread_ewstock",
+    "sumret2_vwstock",
+    "sumret3_vwstock",
+    "sumret4_vwstock",
+    "sumabsret_vwstock",
+    "sumbipow_vwstock",
+    "sumpret2_vwstock",
+    "turnover_vwstock",
+    "buyturnover_vwstock",
+    "sellturnover_vwstock",
+    "effspread_vwstock",
+    "spread_vwstock",
+    "stocktwits_attention",
+    "stocktwits_sentiment",
+    "stocktwits_sentcount",
+    "vix",
+    "vvix",
+    "vix3m",
+    "voldemand_spx_open_and_close",
+    "voldemand_spx_open_only",
+    "voldemand_all_open_and_close",
+    "voldemand_all_open_only",
+]
+
+
+def _is_moment(f: str) -> bool:
+    return f.startswith("sum") and "stock" not in f and "volume" not in f
+
+
+def _is_liquidity(f: str) -> bool:
+    return any(x in f for x in ("volume", "turnover", "spread", "numobs"))
+
+
+SUBGROUPS: dict[str, list[str]] = {
+    "baseline": [],
+    "moments": [f for f in ALL_FEATURES if _is_moment(f)],
+    "liquidity": [f for f in ALL_FEATURES if _is_liquidity(f)],
+    "market_ew": [f for f in ALL_FEATURES if "ewstock" in f and not any(x in f for x in ("turnover", "spread"))],
+    "market_vw": [f for f in ALL_FEATURES if "vwstock" in f and not any(x in f for x in ("turnover", "spread"))],
+    "sentiment": [f for f in ALL_FEATURES if "stocktwits" in f],
+    "implied_vol": [f for f in ALL_FEATURES if "vix" in f],
+    "vol_demand": [f for f in ALL_FEATURES if "voldemand" in f],
+    "all_features": ALL_FEATURES,
+}
+
+
+def get_bucket(name: str) -> list[str]:
+    if name not in SUBGROUPS:
+        raise KeyError(f"Unknown subgroup '{name}'. Valid: {sorted(SUBGROUPS.keys())}")
+    return SUBGROUPS[name]
+
+
 # ── Constants ──────────────────────────────────────────────────────────
 START_DATE = "2005-01-01"
 FRIDAY_CLOSE = "20:00"

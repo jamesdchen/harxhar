@@ -40,9 +40,15 @@ def _make_storage(path: str | None):
 
     if path is None:
         return None
+    if path.startswith(("sqlite:", "postgresql:", "mysql:")):
+        return path
     if path.endswith(".db"):
         return f"sqlite:///{path}"
     return optuna.storages.JournalStorage(optuna.storages.JournalFileStorage(path))
+
+
+def _study_name(model: str, exog_bucket: str | None) -> str:
+    return f"tune_{model}_{exog_bucket}" if exog_bucket else f"tune_{model}"
 
 
 def _load_or_create_study(
@@ -171,7 +177,7 @@ def cmd_suggest(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         storage_path=args.storage,
         output_dir=args.output_dir,
-        study_name=args.study_name,
+        study_name=args.study_name or _study_name(args.model, args.exog_bucket),
     )
 
 
@@ -180,8 +186,13 @@ def cmd_suggest(args: argparse.Namespace) -> None:
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
     """Delegate one trial evaluation to the appropriate ml_*.py executor."""
-    # Look for model-specific params subdir first, then flat layout
-    params_file = os.path.join(args.params_dir, args.model, f"trial_{args.trial_id}.json")
+    # Bucket-scoped layout: {params_dir}/{model}_{bucket}/trial_X.json when --exog-bucket is set.
+    # Otherwise: {params_dir}/{model}/trial_X.json, falling back to flat.
+    if args.exog_bucket is not None:
+        subdir = f"{args.model}_{args.exog_bucket}"
+        params_file = os.path.join(args.params_dir, subdir, f"trial_{args.trial_id}.json")
+    else:
+        params_file = os.path.join(args.params_dir, args.model, f"trial_{args.trial_id}.json")
     if not os.path.isfile(params_file):
         params_file = os.path.join(args.params_dir, f"trial_{args.trial_id}.json")
     if not os.path.isfile(params_file):
@@ -192,8 +203,8 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
     output_file = args.output_file
     if output_file is None:
         result_dir = os.environ.get("RESULT_DIR", ".")
-        task_id = os.environ.get("TASK_ID", "0")
-        output_file = os.path.join(result_dir, f"results_chunk_{task_id}.csv")
+        chunk_id = os.environ.get("CHUNK_ID") or os.environ.get("TASK_ID") or "0"
+        output_file = os.path.join(result_dir, f"results_chunk_{chunk_id}.csv")
 
     executor = _EXECUTOR_SCRIPTS[args.model]
     cmd = [
@@ -214,6 +225,11 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         cmd += ["--train-window", str(args.train_window)]
     if args.horizon:
         cmd += ["--horizon", str(args.horizon)]
+    if args.exog_bucket is not None:
+        from src.loading import get_bucket
+
+        cols = get_bucket(args.exog_bucket)
+        cmd += ["--exog-cols", "|".join(cols)]
 
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd)
@@ -306,11 +322,17 @@ def score_trials(
     results_dir: str,
     output_file: str,
     study_name: str | None = None,
+    exog_bucket: str | None = None,
+    min_chunks: int = 100,
 ) -> dict:
     """Score completed trials and report to Optuna. Returns best params.
 
     Prefers pre-computed qlike.json (from cluster-side reduce); falls back to
     concatenating CSVs locally if qlike.json is missing.
+
+    Skips any trial whose result dir contains fewer than `min_chunks`
+    `results_chunk_*.csv` files — partial-data QLIKEs are biased and would
+    contaminate the optuna study if reported.
     """
     # Look for model-specific manifest first, then flat layout
     manifest_path = os.path.join(params_dir, model, "manifest.json")
@@ -326,12 +348,23 @@ def score_trials(
         tid = trial_info["id"]
         optuna_num = trial_info["optuna_number"]
 
-        # Try model-specific dir (from grid run_id), then flat layout
-        trial_dir = os.path.join(results_dir, f"{model}_{tid}")
-        if not os.path.isdir(trial_dir):
-            trial_dir = os.path.join(results_dir, f"trial_{tid}")
+        # Try bucket-scoped dir (exog runs), then model-specific, then flat
+        trial_dir = None
+        if exog_bucket:
+            cand = os.path.join(results_dir, f"{model}_{exog_bucket}_{tid}")
+            if os.path.isdir(cand):
+                trial_dir = cand
+        if trial_dir is None:
+            trial_dir = os.path.join(results_dir, f"{model}_{tid}")
+            if not os.path.isdir(trial_dir):
+                trial_dir = os.path.join(results_dir, f"trial_{tid}")
         if not os.path.isdir(trial_dir):
             print(f"  Trial {tid}: no results dir, skipping")
+            continue
+
+        n_chunks = sum(1 for f in os.listdir(trial_dir) if f.startswith("results_chunk_") and f.endswith(".csv"))
+        if n_chunks < min_chunks:
+            print(f"  Trial {tid}: incomplete ({n_chunks}/{min_chunks} chunks), skipping")
             continue
 
         qlike_path = os.path.join(trial_dir, "qlike.json")
@@ -344,6 +377,12 @@ def score_trials(
                 print(f"  Trial {tid}: no qlike.json and no CSVs, skipping")
                 continue
 
+        # Idempotent: skip if this trial was already told previously.
+        existing = next((t for t in study.trials if t.number == optuna_num), None)
+        if existing is not None and existing.state.is_finished():
+            scored += 1
+            print(f"  Trial {tid} (optuna #{optuna_num}): QLIKE = {existing.value:.6f}  (already-told)")
+            continue
         study.tell(optuna_num, qlike)
         scored += 1
         print(f"  Trial {tid} (optuna #{optuna_num}): QLIKE = {qlike:.6f}")
@@ -371,7 +410,9 @@ def cmd_score(args: argparse.Namespace) -> None:
         params_dir=args.params_dir,
         results_dir=args.results_dir,
         output_file=args.output_file,
-        study_name=args.study_name,
+        study_name=args.study_name or _study_name(args.model, args.exog_bucket),
+        exog_bucket=args.exog_bucket,
+        min_chunks=args.min_chunks,
     )
 
 
@@ -388,6 +429,7 @@ def main() -> None:
     p_suggest.add_argument("--batch-size", type=int, default=10)
     p_suggest.add_argument("--storage", default=None)
     p_suggest.add_argument("--study-name", default=None)
+    p_suggest.add_argument("--exog-bucket", default=None)
     p_suggest.add_argument("--output-dir", required=True)
     p_suggest.set_defaults(func=cmd_suggest)
 
@@ -402,6 +444,7 @@ def main() -> None:
     p_eval.add_argument("--data-path", default=None)
     p_eval.add_argument("--train-window", type=int, default=None)
     p_eval.add_argument("--horizon", type=int, default=None)
+    p_eval.add_argument("--exog-bucket", default=None)
     p_eval.set_defaults(func=cmd_evaluate)
 
     # ── score ──
@@ -422,9 +465,13 @@ def main() -> None:
     p_score.add_argument("--model", required=True, choices=_MODELS)
     p_score.add_argument("--storage", default=None)
     p_score.add_argument("--study-name", default=None)
+    p_score.add_argument("--exog-bucket", default=None)
     p_score.add_argument("--params-dir", required=True)
     p_score.add_argument("--results-dir", required=True)
     p_score.add_argument("--output-file", required=True)
+    p_score.add_argument(
+        "--min-chunks", type=int, default=100, help="Skip trials with fewer than N completed chunks (default 100)."
+    )
     p_score.set_defaults(func=cmd_score)
 
     args = parser.parse_args()

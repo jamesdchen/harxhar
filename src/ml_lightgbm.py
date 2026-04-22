@@ -11,7 +11,7 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 
 from src.evaluation import apply_duan_smearing
-from src.loading import load_raw_data
+from src.loading import apply_overnight_fills, load_raw_data, parse_exog_cols
 from src.scaling import run_backtest
 from src.transforms import (
     PERIODS_PER_DAY,
@@ -36,6 +36,7 @@ def main() -> None:
     )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=-1)
+    parser.add_argument("--exog-cols", default=None, help="Pipe-separated exog columns, e.g. vix|sentiment")
     parser.add_argument("--output-file", required=True)
     parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
     args = parser.parse_args()
@@ -45,14 +46,27 @@ def main() -> None:
         with open(args.params_file) as f:
             tuned_params = json.load(f)
 
+    exog_cols = parse_exog_cols(args.exog_cols)
+
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
     df = load_raw_data(args.data_path, allow_missing=True)
+    if exog_cols:
+        apply_overnight_fills(df, exog_cols)
+        df = df.dropna(subset=["RV"]).reset_index(drop=True)
+
     adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
 
-    df, har_names = generate_har_features(df, target_col="adj_RV")
+    adj_exog_cols: list[str] = []
+    for col in exog_cols:
+        adj_col = f"adj_{col}"
+        adj_series, _ = robust_transform(df, col, use_transform=True, use_diurnal=True)
+        df[adj_col] = adj_series
+        adj_exog_cols.append(adj_col)
+
+    df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
     cal_names = add_calendar_features(df)
     feature_names = har_names + cal_names
 

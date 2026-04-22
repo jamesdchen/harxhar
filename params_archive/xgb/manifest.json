@@ -1,0 +1,132 @@
+{
+  "model": "xgb",
+  "study_name": "tune_xgb",
+  "batch_size": 25,
+  "trials": [
+    {
+      "id": 0,
+      "file": "trial_0.json",
+      "optuna_number": 150
+    },
+    {
+      "id": 1,
+      "file": "trial_1.json",
+      "optuna_number": 151
+    },
+    {
+      "id": 2,
+      "file": "trial_2.json",
+      "optuna_number": 152
+    },
+    {
+      "id": 3,
+      "file": "trial_3.json",
+      "optuna_number": 153
+    },
+    {
+      "id": 4,
+      "file": "trial_4.json",
+      "optuna_number": 154
+    },
+    {
+      "id": 5,
+      "file": "trial_5.json",
+      "optuna_number": 155
+    },
+    {
+      "id": 6,
+      "file": "trial_6.json",
+      "optuna_number": 156
+    },
+    {
+      "id": 7,
+      "file": "trial_7.json",
+      "optuna_number": 157
+    },
+    {
+      "id": 8,
+      "file": "trial_8.json",
+      "optuna_number": 158
+    },
+    {
+      "id": 9,
+      "file": "trial_9.json",
+      "optuna_number": 159
+    },
+    {
+      "id": 10,
+      "file": "trial_10.json",
+      "optuna_number": 160
+    },
+    {
+      "id": 11,
+      "file": "trial_11.json",
+      "optuna_number": 161
+    },
+    {
+      "id": 12,
+      "file": "trial_12.json",
+      "optuna_number": 162
+    },
+    {
+      "id": 13,
+      "file": "trial_13.json",
+      "optuna_number": 163
+    },
+    {
+      "id": 14,
+      "file": "trial_14.json",
+      "optuna_number": 164
+    },
+    {
+      "id": 15,
+      "file": "trial_15.json",
+      "optuna_number": 165
+    },
+    {
+      "id": 16,
+      "file": "trial_16.json",
+      "optuna_number": 166
+    },
+    {
+      "id": 17,
+      "file": "trial_17.json",
+      "optuna_number": 167
+    },
+    {
+      "id": 18,
+      "file": "trial_18.json",
+      "optuna_number": 168
+    },
+    {
+      "id": 19,
+      "file": "trial_19.json",
+      "optuna_number": 169
+    },
+    {
+      "id": 20,
+      "file": "trial_20.json",
+      "optuna_number": 170
+    },
+    {
+      "id": 21,
+      "file": "trial_21.json",
+      "optuna_number": 171
+    },
+    {
+      "id": 22,
+      "file": "trial_22.json",
+      "optuna_number": 172
+    },
+    {
+      "id": 23,
+      "file": "trial_23.json",
+      "optuna_number": 173
+    },
+    {
+      "id": 24,
+      "file": "trial_24.json",
+      "optuna_number": 174
+    }
+  ]
+}

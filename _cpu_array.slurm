@@ -1,6 +1,4 @@
 #!/bin/bash
-set -e
-
 # SLURM CPU Array Job Template with TASK_OFFSET support (CARC Discovery)
 
 #SBATCH --job-name=tune_tree
@@ -10,8 +8,11 @@ set -e
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=48:00:00
+#SBATCH --time=04:00:00
+#SBATCH --partition=main
 #SBATCH --account=pollok_1603
+
+set -e
 
 RESULT_DIR="${RESULT_DIR:-.}"
 REPO_DIR="${REPO_DIR:-.}"
