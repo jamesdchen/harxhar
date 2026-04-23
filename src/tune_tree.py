@@ -334,9 +334,17 @@ def score_trials(
     `results_chunk_*.csv` files — partial-data QLIKEs are biased and would
     contaminate the optuna study if reported.
     """
-    # Look for model-specific manifest first, then flat layout
-    manifest_path = os.path.join(params_dir, model, "manifest.json")
-    if not os.path.isfile(manifest_path):
+    # Try bucket-scoped manifest (exog runs), then model-specific, then flat
+    manifest_path = None
+    if exog_bucket:
+        cand = os.path.join(params_dir, f"{model}_{exog_bucket}", "manifest.json")
+        if os.path.isfile(cand):
+            manifest_path = cand
+    if manifest_path is None:
+        cand = os.path.join(params_dir, model, "manifest.json")
+        if os.path.isfile(cand):
+            manifest_path = cand
+    if manifest_path is None:
         manifest_path = os.path.join(params_dir, "manifest.json")
     with open(manifest_path) as f:
         manifest = json.load(f)
