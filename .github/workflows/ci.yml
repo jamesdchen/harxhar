@@ -35,4 +35,4 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
-      - run: pytest src/ -m "not slow and not gpu" --tb=short -q
+      - run: pytest -m "not slow and not gpu" --tb=short -q
