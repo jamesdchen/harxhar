@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/build_master_table.ipynb. Do not edit by hand.
+
 """Build the master results table from results/MANIFEST.json.
 
 Outputs:

@@ -1,3 +1,5 @@
+# Auto-generated from notebooks/audit_check.ipynb. Do not edit by hand.
+
 """Fast, comprehensive audit-readiness gate for the harxhar repo.
 
 Run this first to confirm the repo is in a coherent state. Read-only.
@@ -8,7 +10,7 @@ Checks (in order; first failure halts):
     3. Diagnostics integrity (7 files per bundle + mz_stats.json keys + recompute match)
     4. src.evaluation exports (10 expected symbols importable)
     5. plot_mz_scatter draws both MZ fit and 45° reference (literal-string check)
-    6. DL seeding pinned (_seed_everything + --seed in dl_patchts and dl_ae_ridge)
+    6. DL seeding pinned (seed_everything + --seed in dl_patchts and dl_ae_ridge)
     7. README invariants documented (## Key Invariants section + 4 keywords)
 
 Usage:
@@ -347,23 +349,50 @@ def check_mz_scatter_strings() -> bool:
 
 def check_dl_seeding() -> bool:
     failures = []
+    # Per-DL-file invariants: import + call site
     for name in ("dl_patchts", "dl_ae_ridge"):
         path = REPO / "src" / f"{name}.py"
         if not path.exists():
             failures.append(f"src/{name}.py missing")
             continue
         text = path.read_text(encoding="utf-8")
-        if "_seed_everything" not in text:
-            failures.append(f"src/{name}.py missing _seed_everything")
-        if "--seed" not in text:
-            failures.append(f"src/{name}.py missing --seed CLI flag")
+        has_import = "from src.dl_executor import" in text and "seed_everything" in text
+        if not has_import:
+            failures.append(f"src/{name}.py missing 'from src.dl_executor import ... seed_everything'")
+        if "seed_everything(args.seed)" not in text:
+            failures.append(f"src/{name}.py missing 'seed_everything(args.seed)' call site")
+        if has_import and "seed_everything(args.seed)" in text:
+            _v(f"src/{name}.py: import + seed_everything(args.seed) present")
+
+    # Shared definition + RNG pins + --seed flag live in dl_executor
+    exec_path = REPO / "src" / "dl_executor.py"
+    if not exec_path.exists():
+        failures.append("src/dl_executor.py missing")
+    else:
+        exec_text = exec_path.read_text(encoding="utf-8")
+        required = (
+            "def seed_everything(",
+            "np.random.seed(",
+            "torch.manual_seed(",
+            "torch.cuda.manual_seed_all(",
+            "torch.backends.cudnn",
+            "PYTHONHASHSEED",
+            "--seed",
+        )
+        missing = [r for r in required if r not in exec_text]
+        if missing:
+            failures.append(f"src/dl_executor.py missing seeding primitives: {missing}")
         else:
-            _v(f"src/{name}.py: _seed_everything + --seed present")
+            _v(
+                "src/dl_executor.py: seed_everything pins numpy + torch + cuda + cudnn + PYTHONHASHSEED; "
+                "--seed in build_dl_parser"
+            )
+
     if failures:
         for f in failures:
             _fail(f)
         return False
-    _ok("DL seeding pinned (dl_patchts, dl_ae_ridge)")
+    _ok("DL seeding pinned (dl_executor.seed_everything; dl_patchts, dl_ae_ridge)")
     return True
 
 

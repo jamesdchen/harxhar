@@ -10,7 +10,7 @@ PYTHON ?= python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help table diagnostics diagnostics-quick audit pipeline-export strategy-eval lint type test clean-cache repro repro-fixture
+.PHONY: help table diagnostics diagnostics-quick audit pipeline-export scripts-export executors-export export strategy-eval lint type test clean-cache repro repro-fixture
 
 help:  ## Show available targets.
 	@echo "harxhar Makefile — available targets:"
@@ -22,10 +22,10 @@ table:  ## Regenerate master_table.csv + LaTeX.
 	$(PYTHON) scripts/build_master_table.py
 
 diagnostics:  ## Regenerate full diagnostics bundles.
-	$(PYTHON) scripts/build_diagnostics.py
+	PYTHONUTF8=1 jupyter nbconvert --to notebook --execute --inplace notebooks/audits/build_diagnostics.ipynb
 
 diagnostics-quick:  ## Regenerate diagnostics, skipping bundles that already exist.
-	$(PYTHON) scripts/build_diagnostics.py --skip-existing
+	SKIP_EXISTING=1 PYTHONUTF8=1 jupyter nbconvert --to notebook --execute --inplace notebooks/audits/build_diagnostics.ipynb
 
 audit:  ## Run the audit gate.
 	$(PYTHON) scripts/audit_check.py --quick || echo "audit_check.py not yet built"
@@ -44,13 +44,30 @@ pipeline-export:  ## Export every notebooks/pipeline/*.ipynb to its src/ module.
 			*) echo "no mapping for $$name; skipping"; continue ;; \
 		esac; \
 		echo "exporting $$nb -> $$out"; \
-		$(PYTHON) notebooks/_exporter.py $$nb $$out; \
+		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
 	done
 
-strategy-eval:  ## Assemble, export, and validate the strategy_eval pipeline.
+scripts-export:  ## Re-export every notebook in notebooks/scripts/ to scripts/.
+	@for nb in notebooks/scripts/*.ipynb; do \
+		name=$$(basename $$nb .ipynb); \
+		out=scripts/$$name.py; \
+		echo "exporting $$nb -> $$out"; \
+		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
+	done
+
+executors-export:  ## Re-export every notebook in notebooks/executors/ to src/.
+	@for nb in notebooks/executors/*.ipynb; do \
+		name=$$(basename $$nb .ipynb); \
+		out=src/$$name.py; \
+		echo "exporting $$nb -> $$out"; \
+		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
+	done
+
+export: pipeline-export executors-export scripts-export  ## Re-export every notebook in the project.
+
+strategy-eval:  ## Assemble and export the strategy_eval pipeline.
 	$(PYTHON) scripts/_assemble_strategy_eval_nb.py
-	$(PYTHON) notebooks/_exporter.py notebooks/pipeline/06_strategy_eval.ipynb src/strategy_eval.py
-	PYTHONPATH=. $(PYTHON) scripts/validate_strategy_eval.py
+	PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py notebooks/pipeline/06_strategy_eval.ipynb src/strategy_eval.py
 
 lint:  ## Run ruff check --fix and ruff format on scripts/ and src/.
 	ruff check --fix scripts/ src/ && ruff format scripts/ src/
