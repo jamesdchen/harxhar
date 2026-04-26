@@ -233,6 +233,7 @@ def run_backtest(
     y_init = y[:train_win].copy()
 
     if use_scaling:
+        assert scaler_obj is not None  # mypy: scaler_obj is non-None when use_scaling=True
         scaler_obj.initialize(X_init)
         med, iqr = scaler_obj.get_scaler()
         X_scaled_init = (X_init - med) / iqr
@@ -253,6 +254,7 @@ def run_backtest(
 
         # Scale
         if use_scaling:
+            assert scaler_obj is not None  # mypy: scaler_obj is non-None when use_scaling=True
             med, iqr = scaler_obj.get_scaler()
             x_t_scaled = (x_t_raw - med) / iqr
         else:
@@ -263,6 +265,7 @@ def run_backtest(
 
         # Update scaler
         if use_scaling:
+            assert scaler_obj is not None  # mypy: scaler_obj is non-None when use_scaling=True
             scaler_obj.update(x_t_raw)
 
         # Add to buffer

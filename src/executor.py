@@ -274,6 +274,8 @@ def run_executor(
         dropna_with_exog=dropna_with_exog,
     )
 
+    feature_names: list[str]
+
     # ---- No segment: single global backtest ----
     if segment is None:
         train_win_periods = train_window * PERIODS_PER_DAY
@@ -303,7 +305,7 @@ def run_executor(
         df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
         if add_calendar:
             cal_names = add_calendar_features(df)
-            feature_names: list[str] = har_names + cal_names
+            feature_names = har_names + cal_names
         else:
             feature_names = har_names
 
