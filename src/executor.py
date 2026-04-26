@@ -176,7 +176,16 @@ def _backtest_and_save(
     print(f"Saved {len(results)} rows -> {output_file}")
 
 
-def _load_and_transform(
+def _build_har_and_calendar(df, exog_cols, add_calendar):
+    df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=exog_cols)
+    if add_calendar:
+        feature_names = har_names + add_calendar_features(df)
+    else:
+        feature_names = har_names
+    return df, feature_names
+
+
+def load_and_transform(
     data_path: str,
     exog_cols: list[str],
     *,
@@ -231,6 +240,34 @@ def _load_and_transform(
     return df, adj_exog_cols
 
 
+def _iter_TOD_segment(
+    df, *, segment, lag_scope, train_window, output_file, exog_cols, add_calendar,
+):
+    """Yield (seg_name, job_df, feature_names, train_win_periods, job_output_file)
+    for each time-of-day segment we need to backtest. ``seg_name`` is None when
+    no segmentation is requested."""
+    if segment is None:
+        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar)
+        yield None, df, feature_names, train_window * PERIODS_PER_DAY, output_file
+        return
+
+    segments = list(SEGMENT_DEFINITIONS) if segment == "all" else [segment]
+    base, ext = os.path.splitext(output_file)
+
+    if lag_scope == "global":
+        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar)
+
+    for seg_name in segments:
+        seg_df = slice_to_segment(df, seg_name)
+        if seg_df.empty:
+            print(f"No data for segment '{seg_name}'. Skipping.")
+            continue
+        if lag_scope == "intra":
+            seg_df, feature_names = _build_har_and_calendar(seg_df, exog_cols, add_calendar)
+        train_win_periods = compute_segment_train_window(seg_df["t"], train_window)
+        yield seg_name, seg_df, feature_names, train_win_periods, f"{base}_{seg_name}{ext}"
+
+
 def run_executor(
     method_name: str,
     fit_predict: FitPredict,
@@ -266,7 +303,7 @@ def run_executor(
     """
     del seed  # reserved; per-method scripts can wire seed into model_fn directly
 
-    df, adj_exog_cols = _load_and_transform(
+    df, adj_exog_cols = load_and_transform(
         data_path,
         exog_cols,
         target_use_diurnal=target_use_diurnal,
@@ -274,70 +311,16 @@ def run_executor(
         dropna_with_exog=dropna_with_exog,
     )
 
-    feature_names: list[str]
-
-    # ---- No segment: single global backtest ----
-    if segment is None:
-        train_win_periods = train_window * PERIODS_PER_DAY
-        df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-        if add_calendar:
-            cal_names = add_calendar_features(df)
-            feature_names = har_names + cal_names
-        else:
-            feature_names = har_names
+    for seg_name, job_df, feature_names, train_win, out_file in _iter_TOD_segment(
+        df,
+        segment=segment, lag_scope=lag_scope,
+        train_window=train_window, output_file=output_file,
+        exog_cols=adj_exog_cols, add_calendar=add_calendar,
+    ):
+        if seg_name is not None:
+            print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
+            print(f"Window: {train_win} periods ({train_window} days)")
         _backtest_and_save(
-            df,
-            feature_names,
-            fit_predict,
-            hyperparams,
-            train_win_periods,
-            horizon,
-            start,
-            end,
-            output_file,
-        )
-        return
-
-    # ---- Segmented backtest (Ridge only) ----
-    segments = list(SEGMENT_DEFINITIONS) if segment == "all" else [segment]
-
-    if lag_scope == "global":
-        df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-        if add_calendar:
-            cal_names = add_calendar_features(df)
-            feature_names = har_names + cal_names
-        else:
-            feature_names = har_names
-
-    for seg_name in segments:
-        seg_df = slice_to_segment(df, seg_name)
-        if seg_df.empty:
-            print(f"No data for segment '{seg_name}'. Skipping.")
-            continue
-
-        if lag_scope == "intra":
-            seg_df, har_names = generate_har_features(seg_df, target_col="adj_RV", exog_cols=adj_exog_cols)
-            if add_calendar:
-                cal_names = add_calendar_features(seg_df)
-                feature_names = har_names + cal_names
-            else:
-                feature_names = har_names
-
-        train_win_periods = compute_segment_train_window(seg_df["t"], train_window)
-
-        base, ext = os.path.splitext(output_file)
-        seg_output = f"{base}_{seg_name}{ext}"
-
-        print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
-        print(f"Window: {train_win_periods} periods ({train_window} days)")
-        _backtest_and_save(
-            seg_df,
-            feature_names,
-            fit_predict,
-            hyperparams,
-            train_win_periods,
-            horizon,
-            start,
-            end,
-            seg_output,
+            job_df, feature_names, fit_predict, hyperparams,
+            train_win, horizon, start, end, out_file,
         )

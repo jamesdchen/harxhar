@@ -33,6 +33,16 @@ DEFAULT_RF_PARAMS: dict = dict(
 # used 5 as its argparse default.
 DEFAULT_RF_REFIT_FREQUENCY: int = 5
 
+# Method-specific data-prep flags forwarded to ``run_executor``. RF uses
+# diurnal-adjusted, winsor-240 RV targets and intersection-N dropna
+# (``dropna_with_exog=True``) -- historical behavior for RF exog runs.
+DEFAULT_RF_DATA_PREP: dict = dict(
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=240,
+    dropna_with_exog=True,
+)
+
 
 def fit_predict_rf(
     X_chunk: np.ndarray,
@@ -96,10 +106,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=True,
+        **DEFAULT_RF_DATA_PREP,
         seed=args.seed,
     )
 

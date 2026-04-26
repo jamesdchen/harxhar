@@ -34,6 +34,17 @@ DEFAULT_LGBM_PARAMS: dict = dict(
 # 1 as its argparse default.
 DEFAULT_LGBM_REFIT_FREQUENCY: int = 1
 
+# Method-specific data-prep flags forwarded to ``run_executor``. Tree
+# methods (LGBM) historically use diurnal-adjusted, winsor-240 RV
+# targets and *RV-only* dropna (exog NaNs are tolerated since LightGBM
+# handles missing values natively).
+DEFAULT_LGBM_DATA_PREP: dict = dict(
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=240,
+    dropna_with_exog=False,
+)
+
 
 def fit_predict_lgbm(
     X_chunk: np.ndarray,
@@ -97,10 +108,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=False,
+        **DEFAULT_LGBM_DATA_PREP,
         seed=args.seed,
     )
 

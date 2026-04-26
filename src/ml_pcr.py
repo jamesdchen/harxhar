@@ -11,7 +11,8 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from src.loading import apply_overnight_fills, load_raw_data, parse_exog_cols
+from src.executor import load_and_transform
+from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
 from src.transforms import (
     PERIODS_PER_DAY,
@@ -20,7 +21,6 @@ from src.transforms import (
     compute_segment_train_window,
     generate_raw_lag_features,
     resolve_pca_lags,
-    robust_transform,
     slice_to_segment,
 )
 
@@ -160,22 +160,14 @@ def main() -> None:
 
     exog_cols = parse_exog_cols(args.exog_cols)
 
-    # --- Load and transform ---
-    df = load_raw_data(args.data_path, allow_missing=True)
-    if exog_cols:
-        apply_overnight_fills(df, exog_cols)
-        df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
-
-    adj_series, baseline = robust_transform(df, "RV", is_target=True)
-    df["adj_RV"] = adj_series
-    df["baseline"] = baseline
-
-    adj_exog_cols: list[str] = []
-    for col in exog_cols:
-        adj_col = f"adj_{col}"
-        adj_s, _ = robust_transform(df, col, use_transform=True, use_diurnal=True)
-        df[adj_col] = adj_s
-        adj_exog_cols.append(adj_col)
+    # --- Load and transform (shared with executor.run_executor) ---
+    df, adj_exog_cols = load_and_transform(
+        args.data_path,
+        exog_cols,
+        target_use_diurnal=True,
+        target_winsor_window=None,
+        dropna_with_exog=True,
+    )
 
     # --- No segment: global backtest ---
     if args.segment is None:
