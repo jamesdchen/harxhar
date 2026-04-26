@@ -34,6 +34,17 @@ DEFAULT_XGB_PARAMS: dict = dict(
 # 1 as its argparse default.
 DEFAULT_XGB_REFIT_FREQUENCY: int = 1
 
+# Method-specific data-prep flags forwarded to ``run_executor``. Tree
+# methods (XGB) historically use diurnal-adjusted, winsor-240 RV
+# targets and *RV-only* dropna (exog NaNs are tolerated since XGBoost
+# handles missing values natively).
+DEFAULT_XGB_DATA_PREP: dict = dict(
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=240,
+    dropna_with_exog=False,
+)
+
 
 def fit_predict_xgb(
     X_chunk: np.ndarray,
@@ -93,10 +104,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=False,
+        **DEFAULT_XGB_DATA_PREP,
         seed=args.seed,
     )
 

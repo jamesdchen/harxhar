@@ -28,6 +28,18 @@ DEFAULT_RIDGE_PARAMS: dict = dict(alpha=1.0)
 # 1 as its argparse default (closed-form solver -> cheap to refit).
 DEFAULT_RIDGE_REFIT_FREQUENCY: int = 1
 
+# Method-specific data-prep flags forwarded to ``run_executor``. Ridge
+# is the linear baseline and historically does NOT use diurnal
+# adjustment, calendar features, or winsorization on the target;
+# intersection-N dropna is required because Ridge cannot tolerate NaN
+# features.
+DEFAULT_RIDGE_DATA_PREP: dict = dict(
+    add_calendar=False,
+    target_use_diurnal=False,
+    target_winsor_window=None,
+    dropna_with_exog=True,
+)
+
 
 def fit_predict_ridge(
     X_chunk: np.ndarray,
@@ -94,10 +106,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        add_calendar=False,
-        target_use_diurnal=False,
-        target_winsor_window=None,
-        dropna_with_exog=True,
+        **DEFAULT_RIDGE_DATA_PREP,
         seed=args.seed,
     )
 
