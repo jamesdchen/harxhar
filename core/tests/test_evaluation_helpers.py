@@ -10,11 +10,11 @@ import pytest
 
 from src.evaluation import (
     mz_regression,
-    qlike_by_slot,
-    plot_mz_scatter,
-    plot_y_yhat_timeseries,
     plot_crash_window,
+    plot_mz_scatter,
     plot_qlike_by_slot,
+    plot_y_yhat_timeseries,
+    qlike_by_slot,
 )
 
 

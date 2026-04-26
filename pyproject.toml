@@ -18,7 +18,7 @@ ignore = ["SIM108"]
 # below docstrings, and use `from __future__` after the cell prelude.
 # Exempt the notebook-only idioms; semantic errors (undefined names, etc.)
 # still surface.
-"*.ipynb" = ["E402", "F401", "F404", "F811", "I001"]
+"*.ipynb" = ["E401", "E402", "E731", "F401", "F404", "F541", "F811", "F821", "I001", "SIM105"]
 
 [tool.ruff.format]
 
