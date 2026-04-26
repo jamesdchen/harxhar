@@ -2,10 +2,26 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 EXPORT_MARKER = "# export"
 AUTOGEN_HEADER = "# Auto-generated from notebooks/{src}. Do not edit by hand.\n"
+_FUTURE_RE = re.compile(r"^\s*from __future__ import .+$")
+
+
+def _dedupe_future_imports(body: str) -> str:
+    """Keep only the first `from __future__ import ...` line; blank out later ones."""
+    seen = False
+    out_lines: list[str] = []
+    for line in body.split("\n"):
+        if _FUTURE_RE.match(line):
+            if seen:
+                out_lines.append("")
+                continue
+            seen = True
+        out_lines.append(line)
+    return "\n".join(out_lines)
 
 
 def export_notebook(nb_path: str | Path, out_path: str | Path) -> Path:
@@ -33,7 +49,7 @@ def export_notebook(nb_path: str | Path, out_path: str | Path) -> Path:
     body = "\n\n".join(chunks)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(header + "\n" + body)
+    out.write_text(header + "\n" + _dedupe_future_imports(body))
     return out
 
 

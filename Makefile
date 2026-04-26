@@ -10,7 +10,7 @@ PYTHON ?= python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help table diagnostics diagnostics-quick audit pipeline-export lint type test clean-cache
+.PHONY: help table diagnostics diagnostics-quick audit pipeline-export strategy-eval lint type test clean-cache
 
 help:  ## Show available targets.
 	@echo "harxhar Makefile — available targets:"
@@ -39,11 +39,17 @@ pipeline-export:  ## Export every notebooks/pipeline/*.ipynb to its src/ module.
 			03_evaluation) out=src/evaluation.py ;; \
 			04_scaling)    out=src/scaling.py ;; \
 			05_executor)   out=src/executor.py ;; \
+			06_strategy_eval) out=src/strategy_eval.py ;; \
 			*) echo "no mapping for $$name; skipping"; continue ;; \
 		esac; \
 		echo "exporting $$nb -> $$out"; \
 		$(PYTHON) notebooks/_exporter.py $$nb $$out; \
 	done
+
+strategy-eval:  ## Assemble, export, and validate the strategy_eval pipeline.
+	$(PYTHON) scripts/_assemble_strategy_eval_nb.py
+	$(PYTHON) notebooks/_exporter.py notebooks/pipeline/06_strategy_eval.ipynb src/strategy_eval.py
+	PYTHONPATH=. $(PYTHON) scripts/validate_strategy_eval.py
 
 lint:  ## Run ruff check --fix and ruff format on scripts/ and src/.
 	ruff check --fix scripts/ src/ && ruff format scripts/ src/
