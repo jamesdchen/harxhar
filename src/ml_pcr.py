@@ -2,7 +2,6 @@
 
 """PCA + Ridge (PCR) walk-forward backtest for volatility forecasting."""
 
-import argparse
 import os
 
 import numpy as np
@@ -11,12 +10,11 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from src.executor import CONFIGS, load_and_transform
+from src.executor import CONFIGS, build_executor_parser, load_and_transform
 from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
 from src.transforms import (
     PERIODS_PER_DAY,
-    SEGMENT_CHOICES,
     SEGMENT_DEFINITIONS,
     compute_segment_train_window,
     generate_raw_lag_features,
@@ -142,20 +140,8 @@ def _run_backtest_and_save(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="PCA + Ridge (PCR) volatility backtest")
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--train-window", type=int, default=500, help="Training window in days")
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--output-file", type=str, default="results_pcr.csv")
-    parser.add_argument("--exog-cols", default=None, help="Pipe-separated exog columns, e.g. vix|sentiment")
-    parser.add_argument("--segment", default=None, choices=SEGMENT_CHOICES, help="Time-of-day segment")
-    parser.add_argument(
-        "--lag-scope", default="global", choices=["global", "intra"], help="Compute lags on full dataset or per-segment"
-    )
+    parser = build_executor_parser("PCA + Ridge (PCR) volatility backtest")
     parser.add_argument("--n-components", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=42, help="random_state for randomized PCA / Ridge")
     args = parser.parse_args()
 
     exog_cols = parse_exog_cols(args.exog_cols)

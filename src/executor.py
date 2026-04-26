@@ -82,13 +82,14 @@ CONFIGS: dict[str, ExecutorConfig] = {
 # ml_baseline (no exog path; doesn't reach these flags).
 
 
-def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
-    """Build the canonical executor arg parser and parse argv.
+def build_executor_parser(description: str = "Walk-forward backtest") -> argparse.ArgumentParser:
+    """Build the canonical executor arg parser without parsing argv.
 
-    Every per-method ``src/ml_*.py`` calls this. The flag set is the
-    union of flags that any executor or `tune_tree` cmd_evaluate uses;
-    methods that don't care about a given flag (e.g. ``--segment`` for
-    XGB/LGBM/RF) simply ignore it.
+    Returns the parser object so per-method scripts can extend it with
+    method-specific flags before calling ``parser.parse_args()``. The
+    flag set is the union used by any executor or `tune_tree`
+    cmd_evaluate; methods that don't care about a given flag (e.g.
+    ``--segment`` for XGB/LGBM/RF) simply ignore it.
 
     Notes
     -----
@@ -128,7 +129,17 @@ def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.
         help="Compute lags on full dataset or per-segment (Ridge only)",
     )
     parser.add_argument("--seed", type=int, default=42)
-    return parser.parse_args()
+    return parser
+
+def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
+    """Build the canonical executor arg parser and parse argv.
+
+    Thin wrapper around :func:`build_executor_parser`. Every per-method
+    ``src/ml_*.py`` calls this when it doesn't need to add any custom
+    flags. Methods that need extras (PCR's ``--n-components``) call
+    ``build_executor_parser`` directly so they can extend the parser.
+    """
+    return build_executor_parser(description).parse_args()
 
 
 def _backtest_and_save(

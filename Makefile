@@ -39,6 +39,7 @@ pipeline-export:  ## Export every notebooks/pipeline/*.ipynb to its src/ module.
 			03_evaluation) out=src/evaluation.py ;; \
 			04_scaling)    out=src/scaling.py ;; \
 			05_executor)   out=src/executor.py ;; \
+			05b_dl_executor) out=src/dl_executor.py ;; \
 			06_strategy_eval) out=src/strategy_eval.py ;; \
 			*) echo "no mapping for $$name; skipping"; continue ;; \
 		esac; \

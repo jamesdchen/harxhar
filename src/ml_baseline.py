@@ -2,40 +2,33 @@
 
 """Naive lag-based baseline volatility forecast executor."""
 
-import argparse
 import os
 
 import numpy as np
 import pandas as pd
 
 from src.evaluation import apply_duan_smearing
-from src.loading import load_raw_data
+from src.executor import build_executor_parser, load_and_transform
 from src.transforms import (
     PERIODS_PER_DAY,
     apply_horizon_shift,
     generate_har_features,
     resolve_har_lags,
-    robust_transform,
 )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Naive baseline backtest")
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--train-window", type=int, default=500, help="training window in days (burn-in)")
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--output-file", required=True)
-    args = parser.parse_args()
+    args = build_executor_parser("Naive baseline backtest").parse_args()
 
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
-    df = load_raw_data(args.data_path, allow_missing=True)
-    df = df.dropna(subset=["RV"]).reset_index(drop=True)
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True)
-    df["adj_RV"] = adj_rv
-    df["baseline"] = baseline
+    df, _ = load_and_transform(
+        args.data_path,
+        exog_cols=[],
+        target_use_diurnal=False,
+        target_winsor_window=None,
+        dropna_with_exog=False,
+    )
 
     df, feature_names = generate_har_features(df, target_col="adj_RV")
     max_lag = resolve_har_lags()[-1]

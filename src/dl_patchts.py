@@ -5,23 +5,19 @@
 Self-contained CLI: load -> transform -> PatchTST GPU backtest -> save chunk CSV.
 """
 
-import argparse
 import gc
 import json
 import logging
-import os
 import time
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 from transformers import PatchTSTConfig, PatchTSTModel, PreTrainedModel
 
-from src.evaluation import apply_duan_smearing, calculate_metrics
-from src.loading import load_raw_data
-from src.transforms import robust_transform
+from src.dl_executor import build_dl_parser, save_dl_results, seed_everything
+from src.executor import load_and_transform
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -317,40 +313,9 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
     return predictions
 
 
-def _seed_everything(seed: int = 42) -> None:
-    """Pin RNGs for reproducibility (numpy, torch, cuda, cudnn).
-
-    Call at the top of main() BEFORE any data loading or model construction.
-    """
-    import os
-    import random
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-
-# ── CLI ──────────────────────────────────────────────────────────────────
-
-
 def main():
-    parser = argparse.ArgumentParser(description="PatchTST GPU walk-forward backtest")
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--gpu-count", type=int, default=1)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--learning-rate", type=float, default=None)
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--output-file", required=True)
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-    _seed_everything(args.seed)
+    args = build_dl_parser("PatchTST GPU walk-forward backtest").parse_args()
+    seed_everything(args.seed)
 
     config = json.loads(json.dumps(DEFAULT_CONFIG))
     config["gpu_count"] = args.gpu_count
@@ -362,17 +327,13 @@ def main():
         config["train"]["learning_rate"] = args.learning_rate
 
     logger.info(f"Loading data from {args.data_path}")
-    df = load_raw_data(args.data_path)
-
-    adj_rv, baseline = robust_transform(
-        df,
-        "RV",
-        use_diurnal=True,
-        winsor_window=240,
-        is_target=True,
+    df, _ = load_and_transform(
+        args.data_path,
+        exog_cols=[],
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=False,
     )
-    df["adj_RV"] = adj_rv
-    df["baseline"] = baseline
 
     adj_rv_arr = df["adj_RV"].values.astype(np.float64)
     baseline_arr = df["baseline"].values.astype(np.float64)
@@ -409,33 +370,7 @@ def main():
     elapsed = time.time() - t0
     logger.info(f"Backtest complete in {elapsed:.1f}s")
 
-    num_windows = len(preds)
-    y_oos = y_chunk[train_window : train_window + num_windows]
-    dates_oos = dates_chunk.iloc[train_window : train_window + num_windows].values
-    baselines_oos = baselines_chunk[train_window : train_window + num_windows]
-
-    pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
-
-    results = pd.DataFrame(
-        {
-            "date": dates_oos,
-            "horizon": args.horizon,
-            "true_adj": y_oos,
-            "pred_adj": preds,
-            "true_raw": true_raw,
-            "pred_raw": pred_raw,
-        }
-    )
-
-    out_dir = os.path.dirname(args.output_file) or "."
-    os.makedirs(out_dir, exist_ok=True)
-    results.to_csv(args.output_file, index=False)
-
-    metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, "metrics.json")
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f)
-    logger.info(f"Saved {len(results)} rows -> {args.output_file}")
+    save_dl_results(preds, y_chunk, dates_chunk, baselines_chunk, train_window, args.horizon, args.output_file)
 
 
 if __name__ == "__main__":

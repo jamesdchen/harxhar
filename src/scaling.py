@@ -86,14 +86,17 @@ class RollingRobustScaler:
         otherwise allocation is deferred to :meth:`initialize`.
     """
 
+    buffer: np.ndarray | None
+    sorted_mat: np.ndarray | None
+
     def __init__(self, window_size: int, n_features: int | None = None) -> None:
         self.window_size = window_size
         if n_features is not None:
             self.buffer = np.zeros((window_size, n_features), dtype=np.float64)
             self.sorted_mat = np.zeros((n_features, window_size), dtype=np.float64)
         else:
-            self.buffer: np.ndarray | None = None  # type: ignore[no-redef]
-            self.sorted_mat: np.ndarray | None = None  # type: ignore[no-redef]
+            self.buffer = None
+            self.sorted_mat = None
         self.pos: int = 0
 
     def initialize(self, data_block: np.ndarray) -> None:
