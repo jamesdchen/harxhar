@@ -1,9 +1,6 @@
 # export
-"""Black-Scholes gamma helpers for the delta-hedged ATM straddle eval."""
-
-import math
-
-import numpy as np
+# Black-Scholes gamma helpers for the delta-hedged ATM straddle eval.
+# Imports (math, numpy as np) are hoisted to 01_module_header.
 
 
 def _bs_gamma(S: float, K: float, sigma: float, tau: float, r: float = 0.0) -> float:

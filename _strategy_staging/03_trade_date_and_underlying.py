@@ -16,12 +16,9 @@ Sunday 18:30 ET through Friday 20:00 ET, weekends dropped, all timestamps
 tz-naive ET. Timestamps refer to the *end* of the bar (`endbartime`).
 """
 
-from datetime import time as _time
-
-import numpy as np
-import pandas as pd
-
-from .loading import FREQ, FRIDAY_CLOSE, START_DATE, SUBGROUPS, SUNDAY_OPEN, load_raw_data
+# Imports hoisted to 01_module_header: datetime.time as _time, numpy as np,
+# pandas as pd, and from .loading import FREQ / FRIDAY_CLOSE / START_DATE /
+# SUBGROUPS / SUNDAY_OPEN / load_raw_data.
 
 # Legal trading-day-boundary values. The aggregator passes one of these strings.
 _LEGAL_BOUNDARIES: tuple[str, ...] = ("16:00", "17:00", "18:30")
@@ -168,7 +165,10 @@ def _session_bars(
     sun_open = pd.Timestamp(f"1900-01-01 {SUNDAY_OPEN}").time()
 
     keep: np.ndarray = np.array(
-        [not ((wd == 4 and t > fri_close) or (wd == 5) or (wd == 6 and t < sun_open)) for wd, t in zip(weekday, tod)],
+        [
+            not ((wd == 4 and t > fri_close) or (wd == 5) or (wd == 6 and t < sun_open))
+            for wd, t in zip(weekday, tod, strict=False)
+        ],
         dtype=bool,
     )
     candidates = candidates[keep]

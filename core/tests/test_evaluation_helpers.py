@@ -1,6 +1,7 @@
 """Smoke tests for MZ + standardized plot helpers added to src.evaluation."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,11 +29,13 @@ def synthetic_predictions():
 @pytest.fixture
 def synthetic_dataframe(synthetic_predictions):
     y, yhat = synthetic_predictions
-    return pd.DataFrame({
-        "date": pd.date_range("2020-01-01", periods=len(y), freq="30min"),
-        "true_raw": y,
-        "pred_raw": yhat,
-    })
+    return pd.DataFrame(
+        {
+            "date": pd.date_range("2020-01-01", periods=len(y), freq="30min"),
+            "true_raw": y,
+            "pred_raw": yhat,
+        }
+    )
 
 
 def test_mz_regression_recovers_known_slope(synthetic_predictions):
@@ -79,10 +82,13 @@ def test_qlike_by_slot_returns_expected_columns(synthetic_dataframe):
 
 def test_plot_y_yhat_timeseries_renders_two_axes(synthetic_dataframe):
     fig, (ax_raw, ax_log) = plt.subplots(2, 1)
-    plot_y_yhat_timeseries(synthetic_dataframe["date"],
-                           synthetic_dataframe["true_raw"].to_numpy(),
-                           synthetic_dataframe["pred_raw"].to_numpy(),
-                           ax_raw, ax_log)
+    plot_y_yhat_timeseries(
+        synthetic_dataframe["date"],
+        synthetic_dataframe["true_raw"].to_numpy(),
+        synthetic_dataframe["pred_raw"].to_numpy(),
+        ax_raw,
+        ax_log,
+    )
     assert len(ax_raw.get_lines()) == 2
     assert len(ax_log.get_lines()) == 2
     plt.close(fig)

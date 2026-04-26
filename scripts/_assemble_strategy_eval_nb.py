@@ -119,14 +119,20 @@ def main() -> None:
     cells.append(_md_cell(_require_md(md_map, None, MARKDOWN_JSON)))
 
     # 2..13. For each section: md cell, then code cell with file contents.
+    # Notebook cell sources don't carry a trailing newline (ruff format strips
+    # it on .ipynb cells), but staging .py files keep one for POSIX/ruff
+    # compliance. Strip exactly one trailing newline so regenerated notebooks
+    # stay format-clean across `ruff format --check`.
     for fname, section_key in SECTIONS:
         md_text = _require_md(md_map, section_key, MARKDOWN_JSON)
         cells.append(_md_cell(md_text))
         code_text = (STAGING_DIR / fname).read_text(encoding="utf-8")
+        if code_text.endswith("\n"):
+            code_text = code_text[:-1]
         cells.append(_code_cell(code_text))
 
     # 14. Final code cell that invokes run_all_smoke().
-    cells.append(_code_cell("run_all_smoke()\n"))
+    cells.append(_code_cell("run_all_smoke()"))
 
     notebook: dict[str, Any] = {
         "cells": cells,

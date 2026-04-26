@@ -1,37 +1,32 @@
 # notebook-only: smoke tests and demo
-"""Smoke tests / verification cells for `notebooks/pipeline/06_strategy_eval.ipynb`.
-
-This module is a container for the notebook's bottom smoke cells. It is NOT
-exported into `src/strategy_eval.py` (no leading `# export` marker). The tests
-exercise the plumbing of the strategy-eval scaffold against synthetic data;
-nothing here produces real P&L or research-grade numbers. See plan
-`how-would-we-start-virtual-gadget.md` sections "Verification" and "Tests for
-the filter (in the notebook smoke cells)" for the canonical specifications.
-
-Naming convention:
-- `test_01_smoke_run` .. `test_12_notebook_src_parity` -> the 12 verification
-  items from the plan's "Verification" section.
-- `test_filter_01` .. `test_filter_11` -> the 11 filter-specific tests from
-  the plan's "Tests for the filter" section.
-
-All tests reference module-level names brought in by earlier notebook cells
-(filter_intraday_estimate, compute_delta_hedged_atm_straddle_pnl,
-compute_variance_swap_pnl_diagnostic, compute_strategy_metrics, _bs_gamma,
-_compute_trade_date, _session_bars, _reconstruct_underlying_prices,
-SyntheticIVProvider, OptionChainProvider). Within the notebook these resolve
-to the cell-level scope; this file mirrors that and does NOT re-import them
-from `src.strategy_eval`.
-"""
-
-from __future__ import annotations
-
 import json
-import math
 from collections.abc import Callable
 from typing import Any
 
-import numpy as np
-import pandas as pd
+# math, numpy as np, pandas as pd are imported by the assembled module
+# (notebook cell 1 / src/strategy_eval.py header) and resolved at notebook
+# scope; we do not re-import here.
+#
+# Smoke tests / verification cells for `notebooks/pipeline/06_strategy_eval.ipynb`.
+# Container for the notebook's bottom smoke cells. NOT exported into
+# `src/strategy_eval.py` (no leading `# export` marker). Exercises the
+# plumbing of the strategy-eval scaffold against synthetic data; nothing
+# here produces real P&L or research-grade numbers. See plan
+# `how-would-we-start-virtual-gadget.md` sections "Verification" and "Tests
+# for the filter (in the notebook smoke cells)" for canonical specs.
+#
+# Naming:
+# - `test_01_smoke_run` .. `test_12_notebook_src_parity` -> 12 verification
+#   items from the plan's "Verification" section.
+# - `test_filter_01` .. `test_filter_11` -> 11 filter-specific tests from
+#   the plan's "Tests for the filter" section.
+#
+# All tests reference module-level names brought in by earlier notebook
+# cells (filter_intraday_estimate, compute_delta_hedged_atm_straddle_pnl,
+# compute_variance_swap_pnl_diagnostic, compute_strategy_metrics, _bs_gamma,
+# _compute_trade_date, _session_bars, _reconstruct_underlying_prices,
+# SyntheticIVProvider, OptionChainProvider). Within the notebook these
+# resolve to the cell-level scope.
 
 # ---------------------------------------------------------------------------
 # Helpers

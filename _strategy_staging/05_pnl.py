@@ -9,10 +9,7 @@ sibling staging files). Strategy code consumes the daily summary produced by
 implied vol only through the thin `IVProvider` protocol.
 """
 
-from typing import Literal
-
-import numpy as np
-import pandas as pd
+# Imports (typing.Literal, numpy as np, pandas as pd) hoisted to 01_module_header.
 
 # Annualization constants. 252 trading days * 48 thirty-minute bars per
 # 24-hour day. The continuous 24/5 grid in `src/loading.py` motivates the
