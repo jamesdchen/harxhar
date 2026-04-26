@@ -154,6 +154,36 @@ All HPC infrastructure is handled by [`claude-hpc`](https://github.com/jamesdche
 | `dl_patchts` | `colab/src/dl_patchts.py` | 10 | 4 CPU, 2×A100, 16G, 6h |
 | `dl_ae_ridge` | `colab/src/dl_ae_ridge.py` | 10 | 4 CPU, 2×A100, 16G, 6h |
 
+## Key Invariants
+
+Properties that must hold for results to be valid. Audit reviewers should verify each at the cited file:line.
+
+**1. Duan smearing (log/sqrt -> raw transform with bias correction)**
+- Formula: `pred_raw = (forecast^2 + smear) * baseline`, where `smear = mean((y_true - forecasts)^2)`.
+- Why: forecasts live on the adjusted scale (sqrt-RV / log-RV after `robust_transform`). Naive squaring underestimates raw variance by Jensen's inequality; the smearing term restores it nonparametrically (Duan, 1983).
+- Source: `src/evaluation.py:apply_duan_smearing` (lines 20-50).
+
+**2. Dropna policy (intersection-N for cross-feature comparison)**
+- Baseline / HAR-only runs drop on `RV` only: `df.dropna(subset=["RV"])` (`src/ml_xgboost.py:56`, `src/ml_lightgbm.py:56`, `src/ml_baseline.py:35`, `src/loading.py:204`).
+- Exogenous-feature runs drop on `RV + exog_cols`: `df.dropna(subset=["RV"] + exog_cols)` (`src/ml_ridge.py:114`, `src/ml_random_forest.py:50`, `src/ml_pcr.py:164`).
+- Consequence: baseline-vs-exog comparisons MUST be evaluated on the intersection sample. The 2026-04-23 audit found Ridge's apparent 6% liquidity gain disappeared once both arms were aligned on intersection-N — apparent gains can otherwise reflect a smaller, easier sample.
+
+**3. Strict-causality feature lag (`shift(1)` everywhere)**
+- All HAR rolling means, exogenous lag features, diurnal baselines, and winsorization quantiles are produced via `.shift(1)` so that any feature/quantile at time t depends only on data through t-1. No look-ahead.
+- Source: `src/transforms.py:generate_har_features` (line 266), `diurnal_adjust` (lines 88, 92), `rolling_winsorize` (lines 171-172).
+
+**4. Refit cadence**
+- Ridge: `refit_frequency=1` (every step) — sklearn Ridge is closed-form and cheap (`src/ml_ridge.py:63`).
+- XGBoost / LightGBM: CLI-tunable via `--refit-frequency`, default `1`; HPC profiles typically override (`src/ml_xgboost.py:32-36`, `src/ml_lightgbm.py:32-36`).
+- RandomForest: hardcoded `refit_frequency=5` (`src/ml_random_forest.py:91`).
+- PCR: hardcoded `refit_frequency=240` (PCA refit only; Ridge head refits every step) (`src/ml_pcr.py:115`).
+- Loop logic: `src/scaling.py:run_backtest` (line 231) — refits when `(t - train_win + 1) % refit_frequency == 0`.
+
+**5. Reproducibility seeds**
+- DL executors: `SEED=42` pinned through `_seed_everything()` covering `random`, `numpy`, `torch`, `torch.cuda`, `cudnn.deterministic=True` (`src/dl_patchts.py:321-333`, `src/dl_ae_ridge.py:342-354`). Trial-level overrides via `--seed` (default 42).
+- HPC dispatchers: per-trial seed varies via `--seed` CLI flag, default 42.
+- sklearn / Ridge / PCR: closed-form solvers, no RNG. XGBoost / LightGBM rely on library defaults today (no explicit `random_state` set in `src/`); flag if reproducibility across XGB/LGBM trials is required.
+
 ## Key Design Decisions
 
 - **Geometric lag scales** (1, 5, 25, 125, 625, 3125) capture multi-horizon temporal patterns — the core HAR insight

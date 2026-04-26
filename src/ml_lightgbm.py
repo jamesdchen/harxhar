@@ -1,138 +1,108 @@
 # Auto-generated from notebooks/ml_lightgbm.ipynb. Do not edit by hand.
 
-"""LightGBM volatility backtest executor."""
+"""LightGBM volatility backtest executor.
 
-import argparse
+Method-specific glue around the shared scaffold in :mod:`src.executor`.
+Only the model factory + default hyperparams + ``main()`` wrapper live
+here; everything else (CLI parsing, loading, features, backtest loop,
+smearing, reduce JSON) is owned by ``src.executor``.
+"""
+
+from __future__ import annotations
+
 import json
-import os
 
 import numpy as np
-import pandas as pd
 from lightgbm import LGBMRegressor
 
-from src.evaluation import apply_duan_smearing
-from src.loading import apply_overnight_fills, load_raw_data, parse_exog_cols
+from src.executor import parse_executor_args, run_executor
+from src.loading import parse_exog_cols
 from src.scaling import run_backtest
-from src.transforms import (
-    PERIODS_PER_DAY,
-    add_calendar_features,
-    apply_horizon_shift,
-    generate_har_features,
-    resolve_har_lags,
-    robust_transform,
+
+# Per-method default hyperparams. Tuned overrides from --params-file are
+# merged on top via dict.update().
+DEFAULT_LGBM_PARAMS: dict = dict(
+    n_estimators=500,
+    max_depth=5,
+    learning_rate=0.1,
+    n_jobs=-1,
+    verbose=-1,
 )
 
+# Method-specific refit-frequency default. The CLI ``--refit-frequency``
+# sentinel of None falls back to this; the original ml_lightgbm.py used
+# 1 as its argparse default.
+DEFAULT_LGBM_REFIT_FREQUENCY: int = 1
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="LightGBM walk-forward backtest")
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
-    parser.add_argument(
-        "--refit-frequency",
-        type=int,
-        default=1,
-        help="how often to refit the model during walk-forward (1 = every step)",
-    )
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--exog-cols", default=None, help="Pipe-separated exog columns, e.g. vix|sentiment")
-    parser.add_argument("--output-file", required=True)
-    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
-    args = parser.parse_args()
 
-    tuned_params = {}
-    if args.params_file:
-        with open(args.params_file) as f:
-            tuned_params = json.load(f)
+def fit_predict_lgbm(
+    X_chunk: np.ndarray,
+    y_chunk: np.ndarray,
+    train_win_periods: int,
+    hyperparams: dict,
+) -> np.ndarray:
+    """Walk-forward backtest with LightGBM. Returns OOS predictions.
 
-    exog_cols = parse_exog_cols(args.exog_cols)
-
-    train_win_periods = args.train_window * PERIODS_PER_DAY
-
-    df = load_raw_data(args.data_path, allow_missing=True)
-    if exog_cols:
-        apply_overnight_fills(df, exog_cols)
-        df = df.dropna(subset=["RV"]).reset_index(drop=True)
-
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
-    df["adj_RV"] = adj_rv
-    df["baseline"] = baseline
-
-    adj_exog_cols: list[str] = []
-    for col in exog_cols:
-        adj_col = f"adj_{col}"
-        adj_series, _ = robust_transform(df, col, use_transform=True, use_diurnal=True)
-        df[adj_col] = adj_series
-        adj_exog_cols.append(adj_col)
-
-    df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-    cal_names = add_calendar_features(df)
-    feature_names = har_names + cal_names
-
-    max_lag = resolve_har_lags()[-1]
-    df = df.iloc[max_lag:].reset_index(drop=True)
-
-    X = df[feature_names].values.astype(np.float64)
-    y = df["adj_RV"].values.astype(np.float64)
-    dates = df["t"]
-    baselines = df["baseline"].values.astype(np.float64)
-
-    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
-
-    start = args.start
-    end = len(X) if args.end == -1 else args.end
-    X_chunk, y_chunk = X[start:end], y[start:end]
-    dates_chunk = dates.iloc[start:end].reset_index(drop=True)
-    baselines_chunk = baselines[start:end]
-
-    if train_win_periods >= len(X_chunk):
-        raise ValueError(f"train_window ({train_win_periods}) >= chunk size ({len(X_chunk)})")
+    Wraps :func:`src.scaling.run_backtest` with the LGBM-specific
+    settings (``use_scaling=False``; refit frequency from
+    ``hyperparams['_refit_frequency']``). The model is constructed
+    with ``random_state=hyperparams.get("random_state", 42)`` for
+    reproducibility.
+    """
+    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_LGBM_REFIT_FREQUENCY))
+    # Strip our internal control key before passing to LGBMRegressor.
+    model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
+    model_kwargs.setdefault("random_state", 42)
 
     def model_fn():
-        defaults = dict(
-            n_estimators=500,
-            max_depth=5,
-            learning_rate=0.1,
-            n_jobs=-1,
-            verbose=-1,
-        )
-        defaults.update(tuned_params)
-        return LGBMRegressor(**defaults)
+        return LGBMRegressor(**model_kwargs)
 
-    preds = run_backtest(
+    return run_backtest(
         model_fn,
         X_chunk,
         y_chunk,
         train_win=train_win_periods,
-        refit_frequency=args.refit_frequency,
+        refit_frequency=refit_frequency,
         use_scaling=False,
     )
 
-    oos_start = train_win_periods
-    y_oos = y_chunk[oos_start:]
-    dates_oos = dates_chunk.iloc[oos_start:].values
-    baselines_oos = baselines_chunk[oos_start:]
 
-    pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
+def main() -> None:
+    args = parse_executor_args("LightGBM walk-forward backtest")
 
-    results = pd.DataFrame(
-        {
-            "date": dates_oos,
-            "horizon": args.horizon,
-            "true_adj": y_oos,
-            "pred_adj": preds,
-            "true_raw": true_raw,
-            "pred_raw": pred_raw,
-        }
+    tuned_params: dict = {}
+    if args.params_file:
+        with open(args.params_file) as f:
+            tuned_params = json.load(f)
+
+    # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
+    hyperparams = dict(DEFAULT_LGBM_PARAMS)
+    hyperparams.update(tuned_params)
+    hyperparams["random_state"] = args.seed
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_LGBM_REFIT_FREQUENCY
+    hyperparams["_refit_frequency"] = refit_frequency
+
+    exog_cols = parse_exog_cols(args.exog_cols)
+
+    run_executor(
+        method_name="lightgbm",
+        fit_predict=fit_predict_lgbm,
+        hyperparams=hyperparams,
+        data_path=args.data_path,
+        output_file=args.output_file,
+        horizon=args.horizon,
+        train_window=args.train_window,
+        start=args.start,
+        end=args.end,
+        exog_cols=exog_cols,
+        segment=args.segment,
+        lag_scope=args.lag_scope,
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=False,
+        seed=args.seed,
     )
-
-    os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
-    results.to_csv(args.output_file, index=False)
-    from src.evaluation import save_chunk_reduce
-
-    save_chunk_reduce(results, args.output_file)
-    print(f"Saved {len(results)} rows -> {args.output_file}")
 
 
 if __name__ == "__main__":

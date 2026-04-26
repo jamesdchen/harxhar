@@ -1,4 +1,6 @@
+# Python cache directories (do not commit)
 __pycache__/
+*.pyc
 *.py[cod]
 *.pyo
 *.nbc

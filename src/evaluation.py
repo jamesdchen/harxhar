@@ -191,3 +191,219 @@ def calculate_metrics(df: pd.DataFrame) -> dict:
         "w_qlike": w_qlike,
         "n_samples": len(df),
     }
+
+
+def mz_regression(y: np.ndarray, yhat: np.ndarray) -> dict:
+    """Mincer-Zarnowitz regression: OLS of y on [1, yhat] in raw RV levels.
+
+    Optimal forecasts satisfy alpha=0, beta=1. Returns OLS estimates with
+    standard errors and t-statistics for the joint hypothesis.
+
+    Parameters
+    ----------
+    y : array-like
+        Realized variance (raw scale, positive).
+    yhat : array-like
+        Forecast variance (raw scale, positive).
+
+    Returns
+    -------
+    dict
+        alpha, beta, alpha_se, beta_se, r2, n, t_beta_eq_1, t_alpha_eq_0.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    yhat = np.asarray(yhat, dtype=np.float64)
+    X = np.column_stack([np.ones_like(yhat), yhat])
+    beta_hat, *_ = np.linalg.lstsq(X, y, rcond=None)
+    alpha, beta = beta_hat[0], beta_hat[1]
+    fit = X @ beta_hat
+    ss_res = float(((y - fit) ** 2).sum())
+    ss_tot = float(((y - y.mean()) ** 2).sum())
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    n = len(y)
+    sigma2 = ss_res / max(n - 2, 1)
+    xtx_inv = np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(sigma2 * xtx_inv))
+    return {
+        "alpha": float(alpha),
+        "beta": float(beta),
+        "alpha_se": float(se[0]),
+        "beta_se": float(se[1]),
+        "r2": float(r2),
+        "n": int(n),
+        "t_beta_eq_1": float((beta - 1.0) / se[1]),
+        "t_alpha_eq_0": float(alpha / se[0]),
+    }
+
+
+def qlike_by_slot(df: pd.DataFrame) -> pd.DataFrame:
+    """QLIKE stratified by 30-minute intraday slot (0..47).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain columns: date (datetime), true_raw, pred_raw.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: slot, hour_start, n, qlike, mean_y, mean_yhat (one row per slot).
+    """
+    d = df.copy()
+    d["slot"] = d["date"].dt.hour * 2 + (d["date"].dt.minute >= 30).astype(int)
+    rows = []
+    for slot, g in d.groupby("slot"):
+        true_raw = g["true_raw"].to_numpy()
+        pred_raw = g["pred_raw"].to_numpy()
+        mask = (true_raw > 0) & (pred_raw > 0)
+        if mask.sum() == 0:
+            q = float("nan")
+        else:
+            r = true_raw[mask] / pred_raw[mask]
+            q = float(np.mean(r - np.log(r) - 1.0))
+        rows.append(
+            {
+                "slot": int(slot),
+                "hour_start": f"{slot // 2:02d}:{(slot % 2) * 30:02d}",
+                "n": int(len(g)),
+                "qlike": q,
+                "mean_y": float(g["true_raw"].mean()),
+                "mean_yhat": float(g["pred_raw"].mean()),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("slot").reset_index(drop=True)
+
+
+def plot_mz_scatter(
+    y: np.ndarray,
+    yhat: np.ndarray,
+    ax,
+    title: str | None = None,
+    point_alpha: float = 0.15,
+    point_size: float = 2.0,
+) -> dict:
+    """Mincer-Zarnowitz scatter with mainstream regression-axis convention.
+
+    Plots `ŷ` on horizontal, `y` on vertical (matches OLS `y = α + β·ŷ`).
+    ALWAYS draws both the fitted MZ line AND the 45° perfect-forecast
+    reference. Returns the MZ regression dict.
+
+    Parameters
+    ----------
+    y, yhat : array-like
+        Realized and forecast RV on raw scale.
+    ax : matplotlib Axes
+        Target axis. The function does not call savefig.
+    title : str | None
+        Override title. Default summarises α/β/R²/N.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    yhat = np.asarray(yhat, dtype=np.float64)
+    mz = mz_regression(y, yhat)
+
+    ax.scatter(yhat, y, s=point_size, alpha=point_alpha, rasterized=True, color="steelblue")
+
+    lo = float(min(y.min(), yhat.min()))
+    hi = float(max(y.max(), yhat.max()))
+    grid = np.array([lo, hi])
+
+    mz_line = mz["alpha"] + mz["beta"] * grid
+    ax.plot(grid, mz_line, color="red", lw=1.5, label=f"MZ fit: y = {mz['alpha']:.3g} + {mz['beta']:.3f}·ŷ")
+    ax.plot(grid, grid, color="gray", lw=1.0, ls="--", label="45° (perfect forecast)")
+
+    ax.set_xlabel("forecast ŷ (raw RV)")
+    ax.set_ylabel("realized y (raw RV)")
+    if title is None:
+        title = (
+            f"MZ: α={mz['alpha']:.3g}, β={mz['beta']:.3f} "
+            f"(t_β=1: {mz['t_beta_eq_1']:.2f}), "
+            f"R²={mz['r2']:.3f}, N={mz['n']:,}"
+        )
+    ax.set_title(title)
+    ax.legend(loc="lower right", fontsize=8)
+    ax.grid(True, alpha=0.3)
+    return mz
+
+
+def plot_y_yhat_timeseries(
+    dates,
+    y: np.ndarray,
+    yhat: np.ndarray,
+    ax_raw,
+    ax_log=None,
+    title: str | None = None,
+) -> None:
+    """Plot Y vs Ŷ time series. Linear scale on `ax_raw`, optional log on `ax_log`."""
+    y = np.asarray(y, dtype=np.float64)
+    yhat = np.asarray(yhat, dtype=np.float64)
+    ax_raw.plot(dates, y, color="black", lw=0.6, label="realized (y)")
+    ax_raw.plot(dates, yhat, color="tab:orange", lw=0.6, alpha=0.85, label="forecast (ŷ)")
+    ax_raw.set_ylabel("RV (raw)")
+    if title is not None:
+        ax_raw.set_title(title)
+    ax_raw.legend(loc="upper left")
+    ax_raw.grid(True, alpha=0.3)
+    if ax_log is not None:
+        ax_log.semilogy(dates, y, color="black", lw=0.6, label="realized (y)")
+        ax_log.semilogy(dates, yhat, color="tab:orange", lw=0.6, alpha=0.85, label="forecast (ŷ)")
+        ax_log.set_ylabel("RV (log)")
+        ax_log.set_xlabel("date")
+        ax_log.grid(True, which="both", alpha=0.3)
+
+
+def plot_crash_window(
+    df: pd.DataFrame,
+    start,
+    end,
+    ax_raw,
+    ax_log=None,
+    title: str | None = None,
+) -> None:
+    """Plot Y vs Ŷ for a crash-window time range.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain columns: date (datetime), true_raw, pred_raw.
+    start, end : str | pd.Timestamp
+        Inclusive crash-window bounds.
+    """
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    sub = df[(df["date"] >= start) & (df["date"] <= end)].sort_values("date")
+    if sub.empty:
+        if ax_raw is not None:
+            ax_raw.text(
+                0.5,
+                0.5,
+                f"No data in {start.date()} – {end.date()}",
+                ha="center",
+                va="center",
+                transform=ax_raw.transAxes,
+            )
+        return
+    plot_y_yhat_timeseries(
+        sub["date"],
+        sub["true_raw"].to_numpy(),
+        sub["pred_raw"].to_numpy(),
+        ax_raw,
+        ax_log,
+        title=(title or f"{start.date()} – {end.date()}  (N={len(sub):,})"),
+    )
+
+
+def plot_qlike_by_slot(
+    slot_df: pd.DataFrame,
+    ax,
+    global_qlike: float | None = None,
+    title: str | None = None,
+) -> None:
+    """Bar chart of per-slot QLIKE; optional horizontal line for the global QLIKE."""
+    ax.bar(slot_df["slot"], slot_df["qlike"], width=0.8, color="steelblue")
+    if global_qlike is not None:
+        ax.axhline(global_qlike, color="red", lw=1, ls="--", label=f"global QLIKE = {global_qlike:.4f}")
+        ax.legend(loc="upper right")
+    ax.set_xlabel("30-min intraday slot (0 = 00:00, 47 = 23:30)")
+    ax.set_ylabel("QLIKE")
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, axis="y", alpha=0.3)

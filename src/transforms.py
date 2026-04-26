@@ -65,6 +65,16 @@ def diurnal_adjust(
 ) -> tuple[pd.Series, pd.Series]:
     """Remove intraday seasonality via rolling per-slot baseline.
 
+    Causality (audit-relevant):
+    Within each time-of-day slot, the rolling statistic is followed by
+    ``.shift(1)`` so that the baseline at time *t* is computed from the
+    ``window`` most recent in-slot observations strictly before *t*. The
+    adjusted value ``series[t] / baseline[t]`` therefore uses no information
+    from time *t* itself or later. This is part of the project-wide strict-
+    causality invariant (see also ``generate_har_features`` and
+    ``rolling_winsorize``); any forecast produced downstream is guaranteed
+    free of look-ahead bias from the diurnal stage.
+
     Parameters
     ----------
     series : pd.Series
@@ -75,7 +85,9 @@ def diurnal_adjust(
         If True the variable can be negative and the baseline is rolling std;
         otherwise the baseline is rolling mean.
     window, min_periods : int
-        Rolling window parameters applied *within* each slot.
+        Rolling window parameters applied *within* each slot. NaN baselines
+        (warm-up rows lacking ``min_periods`` history) are filled with 1.0
+        so that the adjusted value equals the raw value during warm-up.
 
     Returns
     -------

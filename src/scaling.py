@@ -8,6 +8,9 @@ scaling, ring buffer for training data, and generic walk-forward loop.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 from numba import njit
 from tqdm import tqdm
@@ -163,23 +166,61 @@ class RollingBuffer:
 # ---------------------------------------------------------------------------
 
 
-def run_backtest(model_fn, X, y, train_win, refit_frequency=1, use_scaling=True):
-    """Walk-forward backtest with optional rolling robust scaling.
+def run_backtest(
+    model_fn: Callable[[], Any],
+    X: np.ndarray,
+    y: np.ndarray,
+    train_win: int,
+    refit_frequency: int = 1,
+    use_scaling: bool = True,
+) -> np.ndarray:
+    """Walk-forward backtest with periodic refit.
 
     Parameters
     ----------
-    model_fn : callable
-        Factory that returns a fresh model with ``.fit`` / ``.predict``.
+    model_fn : Callable[[], Any]
+        Zero-argument factory returning a fresh model exposing ``.fit(X, y)``
+        and ``.predict(X)``. Called once for the initial fit and again at
+        every refit step.
     X : np.ndarray
-        Feature matrix ``(n_samples, n_features)``.
+        Feature matrix of shape ``(n_samples, n_features)``.
     y : np.ndarray
-        Target vector ``(n_samples,)``.
+        Target vector of shape ``(n_samples,)``.
     train_win : int
-        Rolling training window size.
-    refit_frequency : int
-        Refit model every *refit_frequency* steps.
-    use_scaling : bool
-        If True, apply ``RollingRobustScaler`` to features.
+        Rolling training window size, in samples.
+    refit_frequency : int, default=1
+        Cadence (in steps) at which the model is refit on the latest window.
+        ``1`` refits every step; larger values amortize fit cost.
+    use_scaling : bool, default=True
+        If True, apply ``RollingRobustScaler`` (median / IQR) to features
+        using statistics computed only over the trailing ``train_win`` window.
+
+    Returns
+    -------
+    np.ndarray
+        Predictions of shape ``(n_samples - train_win,)``. Entry ``k``
+        corresponds to the prediction for sample ``t = train_win + k``.
+
+    Notes
+    -----
+    **Refit cadence invariant.** A model is refit when
+    ``(t - train_win + 1) % refit_frequency == 0``, where ``t`` is the
+    current step index in ``[train_win, n_samples)``. This is an amortized
+    schedule: cheap models like Ridge typically use ``refit_frequency=1``
+    (refit every step), while heavier tree models (XGBoost, LightGBM) use
+    larger values to amortize fitting cost across multiple predictions.
+
+    **Strict causality.** At step ``t`` the model is trained on the closed-
+    open window ``[t - train_win : t]`` and predicts ``y[t]``. The feature
+    row ``X[t]`` is scaled using statistics from ``[t - train_win : t]``
+    (the scaler is updated *after* the prediction at step ``t`` is made),
+    and ``y[t]`` is appended to the training buffer *after* prediction.
+    No look-ahead is possible: target and same-step feature information
+    never enter the model used to produce the prediction at ``t``.
+
+    Scaling, when enabled, uses ``RollingRobustScaler`` -- a rolling median
+    and inter-quartile range computed over the trailing ``train_win``
+    window via numba-accelerated sorted-matrix tracking.
     """
     n_samples, n_features = X.shape
     predictions = np.full(n_samples - train_win, np.nan)

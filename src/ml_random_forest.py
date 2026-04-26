@@ -1,122 +1,107 @@
 # Auto-generated from notebooks/ml_random_forest.ipynb. Do not edit by hand.
 
-"""Random Forest volatility backtest executor."""
+"""Random Forest volatility backtest executor.
 
-import argparse
+Method-specific glue around the shared scaffold in :mod:`src.executor`.
+Only the model factory + default hyperparams + ``main()`` wrapper live
+here; everything else (CLI parsing, loading, features, backtest loop,
+smearing, reduce JSON) is owned by ``src.executor``.
+"""
+
+from __future__ import annotations
+
 import json
-import os
 
 import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
-from src.evaluation import apply_duan_smearing, calculate_metrics
-from src.loading import apply_overnight_fills, load_raw_data, parse_exog_cols
+from src.executor import parse_executor_args, run_executor
+from src.loading import parse_exog_cols
 from src.scaling import run_backtest
-from src.transforms import (
-    PERIODS_PER_DAY,
-    add_calendar_features,
-    apply_horizon_shift,
-    generate_har_features,
-    resolve_har_lags,
-    robust_transform,
+
+# Per-method default hyperparams. Tuned overrides from --params-file are
+# merged on top via dict.update().
+DEFAULT_RF_PARAMS: dict = dict(
+    n_estimators=500,
+    max_depth=10,
+    min_samples_leaf=5,
+    n_jobs=-1,
 )
+
+# Method-specific refit-frequency default. The CLI ``--refit-frequency``
+# sentinel of None falls back to this; the original ml_random_forest.py
+# used 5 as its argparse default.
+DEFAULT_RF_REFIT_FREQUENCY: int = 5
+
+
+def fit_predict_rf(
+    X_chunk: np.ndarray,
+    y_chunk: np.ndarray,
+    train_win_periods: int,
+    hyperparams: dict,
+) -> np.ndarray:
+    """Walk-forward backtest with RandomForest. Returns OOS predictions.
+
+    Wraps :func:`src.scaling.run_backtest` with the RF-specific settings
+    (``use_scaling=False``; refit frequency from
+    ``hyperparams['_refit_frequency']``). ``random_state`` defaults to
+    42 and can be overridden via ``hyperparams['random_state']``.
+    """
+    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_RF_REFIT_FREQUENCY))
+    # Strip our internal control key before passing to RandomForestRegressor.
+    model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
+    model_kwargs.setdefault("random_state", 42)
+
+    def model_fn():
+        return RandomForestRegressor(**model_kwargs)
+
+    return run_backtest(
+        model_fn,
+        X_chunk,
+        y_chunk,
+        train_win=train_win_periods,
+        refit_frequency=refit_frequency,
+        use_scaling=False,
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Random Forest walk-forward backtest")
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--exog-cols", default=None, help="Pipe-separated exog columns, e.g. vix|sentiment")
-    parser.add_argument("--output-file", required=True)
-    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
-    args = parser.parse_args()
+    args = parse_executor_args("Random Forest walk-forward backtest")
 
-    exog_cols = parse_exog_cols(args.exog_cols)
-
-    tuned_params = {}
+    tuned_params: dict = {}
     if args.params_file:
         with open(args.params_file) as f:
             tuned_params = json.load(f)
 
-    train_win_periods = args.train_window * PERIODS_PER_DAY
+    # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
+    hyperparams = dict(DEFAULT_RF_PARAMS)
+    hyperparams.update(tuned_params)
+    # Wire seed through to RandomForestRegressor's random_state.
+    hyperparams.setdefault("random_state", args.seed)
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_RF_REFIT_FREQUENCY
+    hyperparams["_refit_frequency"] = refit_frequency
 
-    df = load_raw_data(args.data_path, allow_missing=True)
-    if exog_cols:
-        apply_overnight_fills(df, exog_cols)
-        df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
+    exog_cols = parse_exog_cols(args.exog_cols)
 
-    adj_rv, baseline = robust_transform(df, "RV", is_target=True, use_diurnal=True, winsor_window=240)
-    df["adj_RV"] = adj_rv
-    df["baseline"] = baseline
-
-    adj_exog_cols: list[str] = []
-    for col in exog_cols:
-        adj_col = f"adj_{col}"
-        adj_series, _ = robust_transform(df, col, use_transform=True, use_diurnal=True)
-        df[adj_col] = adj_series
-        adj_exog_cols.append(adj_col)
-
-    df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-    cal_names = add_calendar_features(df)
-    feature_names = har_names + cal_names
-
-    max_lag = resolve_har_lags()[-1]
-    df = df.iloc[max_lag:].reset_index(drop=True)
-
-    X = df[feature_names].values.astype(np.float64)
-    y = df["adj_RV"].values.astype(np.float64)
-    dates = df["t"]
-    baselines = df["baseline"].values.astype(np.float64)
-
-    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, args.horizon)
-
-    start = args.start
-    end = len(X) if args.end == -1 else args.end
-    X_chunk, y_chunk = X[start:end], y[start:end]
-    dates_chunk = dates.iloc[start:end].reset_index(drop=True)
-    baselines_chunk = baselines[start:end]
-
-    if train_win_periods >= len(X_chunk):
-        raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
-
-    def model_fn():
-        defaults = dict(n_estimators=500, max_depth=10, min_samples_leaf=5, n_jobs=-1)
-        defaults.update(tuned_params)
-        return RandomForestRegressor(**defaults)
-
-    preds = run_backtest(model_fn, X_chunk, y_chunk, train_win=train_win_periods, refit_frequency=5, use_scaling=False)
-
-    oos_start = train_win_periods
-    y_oos = y_chunk[oos_start:]
-    dates_oos = dates_chunk.iloc[oos_start:].values
-    baselines_oos = baselines_chunk[oos_start:]
-
-    pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
-
-    results = pd.DataFrame(
-        {
-            "date": dates_oos,
-            "horizon": args.horizon,
-            "true_adj": y_oos,
-            "pred_adj": preds,
-            "true_raw": true_raw,
-            "pred_raw": pred_raw,
-        }
+    run_executor(
+        method_name="random_forest",
+        fit_predict=fit_predict_rf,
+        hyperparams=hyperparams,
+        data_path=args.data_path,
+        output_file=args.output_file,
+        horizon=args.horizon,
+        train_window=args.train_window,
+        start=args.start,
+        end=args.end,
+        exog_cols=exog_cols,
+        segment=args.segment,
+        lag_scope=args.lag_scope,
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=True,
+        seed=args.seed,
     )
-
-    out_dir = os.path.dirname(args.output_file) or "."
-    os.makedirs(out_dir, exist_ok=True)
-    results.to_csv(args.output_file, index=False)
-
-    metrics = calculate_metrics(results)
-    metrics_path = os.path.join(out_dir, f"metrics_chunk_{start}.json")
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f)
-    print(f"Saved {len(results)} rows -> {args.output_file}")
 
 
 if __name__ == "__main__":

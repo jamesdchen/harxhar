@@ -1,0 +1,29 @@
+\begin{table}[t]
+\centering
+\caption{Full master table across (method × feature set × config).}
+\label{tab:master_full}
+\begin{tabular}{lllllllll}
+\toprule
+method & feature\_set & config & n & qlike & mse & mae & mz\_alpha & mz\_beta \\
+\midrule
+naive & har & default & 221,915 & 0.3518 & 0.2248 & 0.3431 & — & — \\
+ridge & har & paper & 222,058 & 0.1380 & 0.0629 & 0.1870 & +5.23e-07 & 0.772 \\
+ridge & moments & paper & 217,214 & 0.1322 & 0.0617 & 0.1851 & — & — \\
+ridge & liquidity & paper & 203,433 & 0.1317 & 0.0620 & 0.1856 & — & — \\
+ridge & market\_ew & paper & 200,687 & 0.1338 & 0.0622 & 0.1861 & — & — \\
+ridge & market\_vw & paper & 200,687 & 0.1335 & 0.0621 & 0.1859 & — & — \\
+ridge & sentiment & paper & 138,279 & 0.1397 & 0.0652 & 0.1881 & — & — \\
+ridge & vol\_demand & paper & 136,849 & 0.1405 & 0.0649 & 0.1877 & — & — \\
+ridge & implied\_vol & paper & 14,468 & 0.1259 & 0.0595 & 0.1782 & — & — \\
+ridge & all & paper & 12,890 & 0.1231 & 0.0587 & 0.1758 & — & — \\
+ridge & har & default & 222,058 & 0.1380 & 0.0629 & 0.1870 & +4.59e-07 & 0.796 \\
+xgb & har & default & 218,934 & 0.2510 & 0.1778 & 0.2336 & — & — \\
+lgbm & har & default & 218,934 & 0.2460 & 0.1647 & 0.2278 & — & — \\
+rf & har & default & 143,540 & 0.2351 & 0.1492 & 0.2228 & — & — \\
+xgb & har & tuned & 218,909 & 0.1319 & 0.0000 & 0.0000 & +6.18e-07 & 0.742 \\
+lgbm & har & tuned & 218,909 & 0.1316 & 0.0000 & 0.0000 & +5.08e-07 & 0.778 \\
+patchts & har & default & 221,579 & 0.4612 & 0.3156 & 0.3732 & — & — \\
+patchts & har & default\_overlap & 221,819 & 0.4786 & 0.3140 & 0.3747 & — & — \\
+\bottomrule
+\end{tabular}
+\end{table}

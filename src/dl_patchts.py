@@ -21,7 +21,7 @@ from transformers import PatchTSTConfig, PatchTSTModel, PreTrainedModel
 
 from src.evaluation import apply_duan_smearing, calculate_metrics
 from src.loading import load_raw_data
-from src.transforms import apply_horizon_shift, robust_transform
+from src.transforms import robust_transform
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -65,9 +65,7 @@ class PatchTSTForecaster(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.backbone = PatchTSTModel(config)
-        dummy_input = torch.zeros(
-            1, config.context_length, config.num_input_channels
-        )
+        dummy_input = torch.zeros(1, config.context_length, config.num_input_channels)
         with torch.no_grad():
             dummy_out = self.backbone(past_values=dummy_input).last_hidden_state
         self.num_patches = dummy_out.shape[2]
@@ -78,9 +76,7 @@ class PatchTSTForecaster(PreTrainedModel):
         self.post_init()
 
     def forward(self, past_values, future_values=None, output_attentions=False):
-        outputs = self.backbone(
-            past_values=past_values, output_attentions=output_attentions
-        )
+        outputs = self.backbone(past_values=past_values, output_attentions=output_attentions)
         last_hidden_state = outputs.last_hidden_state
         batch_size, num_channels, _, _ = last_hidden_state.shape
         flattened = last_hidden_state.view(batch_size, num_channels, -1)
@@ -141,7 +137,7 @@ def make_patchts_windows(X_tensor, y_tensor, config):
     )
     all_train_y = torch.as_strided(y_offset, size=window_shape_y, stride=strides_y)
 
-    X_test_start = X_tensor[train_window - context_len:]
+    X_test_start = X_tensor[train_window - context_len :]
     window_shape_test = (num_windows, 1, context_len)
     strides_test = (
         X_test_start.stride(0),
@@ -241,7 +237,12 @@ def _gpu_worker(gpu_id, window_indices, shared_data, config, result_dict):
 
         model_fresh = get_model(config["model"]).to(device)
         pred = _train_single_window(
-            model_fresh, train_X, train_y, test_X, config, device,
+            model_fresh,
+            train_X,
+            train_y,
+            test_X,
+            config,
+            device,
         )
         predictions[w_idx] = pred
 
@@ -267,9 +268,7 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
 
     logger.info(f"Using {gpu_count} GPU(s) for PatchTST backtest")
 
-    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(
-        X_tensor, y_tensor, config
-    )
+    all_train_X, all_train_y, all_test_X, num_windows = make_patchts_windows(X_tensor, y_tensor, config)
     logger.info(f"Created {num_windows} walk-forward windows")
 
     shared_data = {
@@ -318,13 +317,28 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
     return predictions
 
 
+def _seed_everything(seed: int = 42) -> None:
+    """Pin RNGs for reproducibility (numpy, torch, cuda, cudnn).
+
+    Call at the top of main() BEFORE any data loading or model construction.
+    """
+    import os
+    import random
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="PatchTST GPU walk-forward backtest"
-    )
+    parser = argparse.ArgumentParser(description="PatchTST GPU walk-forward backtest")
     parser.add_argument("--data-path", default="all30min")
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--gpu-count", type=int, default=1)
@@ -334,7 +348,9 @@ def main():
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+    _seed_everything(args.seed)
 
     config = json.loads(json.dumps(DEFAULT_CONFIG))
     config["gpu_count"] = args.gpu_count
@@ -349,7 +365,11 @@ def main():
     df = load_raw_data(args.data_path)
 
     adj_rv, baseline = robust_transform(
-        df, "RV", use_diurnal=True, winsor_window=240, is_target=True,
+        df,
+        "RV",
+        use_diurnal=True,
+        winsor_window=240,
+        is_target=True,
     )
     df["adj_RV"] = adj_rv
     df["baseline"] = baseline
@@ -379,9 +399,7 @@ def main():
 
     train_window = config["train_window"]
     if train_window >= len(X_chunk):
-        raise ValueError(
-            f"train_window ({train_window}) >= chunk size ({len(X_chunk)})"
-        )
+        raise ValueError(f"train_window ({train_window}) >= chunk size ({len(X_chunk)})")
 
     X_tensor = torch.tensor(X_chunk, dtype=torch.float32)
     y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
@@ -392,20 +410,22 @@ def main():
     logger.info(f"Backtest complete in {elapsed:.1f}s")
 
     num_windows = len(preds)
-    y_oos = y_chunk[train_window:train_window + num_windows]
-    dates_oos = dates_chunk.iloc[train_window:train_window + num_windows].values
-    baselines_oos = baselines_chunk[train_window:train_window + num_windows]
+    y_oos = y_chunk[train_window : train_window + num_windows]
+    dates_oos = dates_chunk.iloc[train_window : train_window + num_windows].values
+    baselines_oos = baselines_chunk[train_window : train_window + num_windows]
 
     pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
 
-    results = pd.DataFrame({
-        "date": dates_oos,
-        "horizon": args.horizon,
-        "true_adj": y_oos,
-        "pred_adj": preds,
-        "true_raw": true_raw,
-        "pred_raw": pred_raw,
-    })
+    results = pd.DataFrame(
+        {
+            "date": dates_oos,
+            "horizon": args.horizon,
+            "true_adj": y_oos,
+            "pred_adj": preds,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
 
     out_dir = os.path.dirname(args.output_file) or "."
     os.makedirs(out_dir, exist_ok=True)

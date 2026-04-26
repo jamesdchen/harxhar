@@ -1,0 +1,341 @@
+# Auto-generated from notebooks/05_executor.ipynb. Do not edit by hand.
+
+"""Shared executor scaffold for ML walk-forward volatility backtests.
+
+Lifts the ~90% duplicated `main()` body of the per-method executors
+(`src/ml_xgboost.py`, `src/ml_lightgbm.py`, `src/ml_random_forest.py`,
+`src/ml_ridge.py`) into one module. Per-method scripts supply only a
+`fit_predict(X_chunk, y_chunk, train_win_periods, hyperparams)`
+callable plus a default-hyperparam dict; everything else — CLI parsing,
+loading, transforms, horizon shift, chunk slicing, smearing, reduce
+JSON — is shared.
+
+The CLI contract is owned by :func:`parse_executor_args` and matches the
+flags that ``src/tune_tree.py`` (cmd_evaluate) passes via subprocess:
+``--params-file --output-file --start --end --data-path --train-window``
+``--horizon --exog-cols`` plus the Ridge-only ``--segment`` and
+``--lag-scope`` and the optional ``--refit-frequency`` / ``--seed``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+from collections.abc import Callable
+
+import numpy as np
+import pandas as pd
+
+from src.evaluation import apply_duan_smearing, save_chunk_reduce
+from src.loading import apply_overnight_fills, load_raw_data
+from src.transforms import (
+    PERIODS_PER_DAY,
+    SEGMENT_CHOICES,
+    SEGMENT_DEFINITIONS,
+    add_calendar_features,
+    apply_horizon_shift,
+    compute_segment_train_window,
+    generate_har_features,
+    resolve_har_lags,
+    robust_transform,
+    slice_to_segment,
+)
+
+FitPredict = Callable[[np.ndarray, np.ndarray, int, dict], np.ndarray]
+
+
+def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
+    """Build the canonical executor arg parser and parse argv.
+
+    Every per-method ``src/ml_*.py`` calls this. The flag set is the
+    union of flags that any executor or `tune_tree` cmd_evaluate uses;
+    methods that don't care about a given flag (e.g. ``--segment`` for
+    XGB/LGBM/RF) simply ignore it.
+
+    Notes
+    -----
+    ``--refit-frequency`` defaults to ``None`` (sentinel) so that each
+    method can fall back to its method-specific default. Concretely:
+    XGB=1, LGBM=1, RF=5, Ridge=1.
+    """
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--data-path", default="all30min")
+    parser.add_argument("--horizon", type=int, default=1)
+    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
+    parser.add_argument(
+        "--refit-frequency",
+        type=int,
+        default=None,
+        help="how often to refit during walk-forward; None falls back to per-method default",
+    )
+    parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--end", type=int, default=-1)
+    parser.add_argument(
+        "--exog-cols",
+        default=None,
+        help="Pipe-separated exog columns, e.g. vix|sentiment",
+    )
+    parser.add_argument("--output-file", required=True)
+    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
+    parser.add_argument(
+        "--segment",
+        default=None,
+        choices=SEGMENT_CHOICES,
+        help="Time-of-day segment (Ridge only)",
+    )
+    parser.add_argument(
+        "--lag-scope",
+        default="global",
+        choices=["global", "intra"],
+        help="Compute lags on full dataset or per-segment (Ridge only)",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    return parser.parse_args()
+
+
+def _backtest_and_save(
+    df: pd.DataFrame,
+    feature_names: list[str],
+    fit_predict: FitPredict,
+    hyperparams: dict,
+    train_win_periods: int,
+    horizon: int,
+    start: int,
+    end: int,
+    output_file: str,
+) -> None:
+    """Run a prepared DataFrame through the walk-forward backtest and save.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain ``adj_RV``, ``baseline``, ``t``, plus all
+        ``feature_names`` columns. The HAR-burn-in (``max_lag``) rows
+        are dropped here before any extraction.
+    feature_names : list[str]
+        Column names in ``df`` that form the feature matrix.
+    fit_predict : FitPredict
+        Callable ``(X_chunk, y_chunk, train_win_periods, hyperparams)
+        -> preds`` of shape ``(len(X_chunk) - train_win_periods,)``.
+    hyperparams : dict
+        Method-specific hyperparameters (typically a merge of method
+        defaults and tuned overrides from ``--params-file``).
+    train_win_periods : int
+        Training window in 30-min periods.
+    horizon : int
+        Forecast horizon in 30-min periods.
+    start, end : int
+        Inclusive/exclusive chunk bounds in *post horizon-shift* index
+        space. ``end == -1`` means "to the end".
+    output_file : str
+        Output CSV path. ``<basename>_reduce.json`` is written
+        alongside.
+    """
+    max_lag = resolve_har_lags()[-1]
+    df = df.iloc[max_lag:].reset_index(drop=True)
+
+    X = df[feature_names].values.astype(np.float64)
+    y = df["adj_RV"].values.astype(np.float64)
+    dates = df["t"]
+    baselines = df["baseline"].values.astype(np.float64)
+
+    X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, horizon)
+
+    actual_end = len(X) if end == -1 else end
+    X_chunk = X[start:actual_end]
+    y_chunk = y[start:actual_end]
+    dates_chunk = dates.iloc[start:actual_end].reset_index(drop=True)
+    baselines_chunk = baselines[start:actual_end]
+
+    if train_win_periods >= len(X_chunk):
+        raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
+
+    preds = fit_predict(X_chunk, y_chunk, train_win_periods, hyperparams)
+
+    oos_start = train_win_periods
+    y_oos = y_chunk[oos_start:]
+    dates_oos = dates_chunk.iloc[oos_start:].values
+    baselines_oos = baselines_chunk[oos_start:]
+
+    pred_raw, true_raw = apply_duan_smearing(preds, y_oos, baselines_oos)
+
+    results = pd.DataFrame(
+        {
+            "date": dates_oos,
+            "horizon": horizon,
+            "true_adj": y_oos,
+            "pred_adj": preds,
+            "true_raw": true_raw,
+            "pred_raw": pred_raw,
+        }
+    )
+
+    os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
+    results.to_csv(output_file, index=False)
+    save_chunk_reduce(results, output_file)
+    print(f"Saved {len(results)} rows -> {output_file}")
+
+
+def _load_and_transform(
+    data_path: str,
+    exog_cols: list[str],
+    *,
+    target_use_diurnal: bool,
+    target_winsor_window: int | None,
+    dropna_with_exog: bool,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Load raw data, apply RV + exog robust transforms, return (df, adj_exog).
+
+    Parameters
+    ----------
+    data_path : str
+        Forwarded to ``load_raw_data``.
+    exog_cols : list[str]
+        Raw exog column names (pre-transform). May be empty.
+    target_use_diurnal : bool
+        If True, apply diurnal adjustment to the RV target transform.
+        Tree methods: True. Ridge: False.
+    target_winsor_window : int | None
+        Winsorization window for the RV target. Tree methods: 240.
+        Ridge: None (no winsorization beyond ``robust_transform``
+        defaults).
+    dropna_with_exog : bool
+        If True, drop rows where ``RV`` *or any exog column* is NaN.
+        Ridge: True. Tree methods: False (RV-only dropna).
+        Note: Random Forest also uses True historically.
+    """
+    df = load_raw_data(data_path, allow_missing=True)
+    if exog_cols:
+        apply_overnight_fills(df, exog_cols)
+        if dropna_with_exog:
+            df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
+        else:
+            df = df.dropna(subset=["RV"]).reset_index(drop=True)
+
+    transform_kwargs: dict = {"is_target": True}
+    if target_use_diurnal:
+        transform_kwargs["use_diurnal"] = True
+    if target_winsor_window is not None:
+        transform_kwargs["winsor_window"] = target_winsor_window
+    adj_rv, baseline = robust_transform(df, "RV", **transform_kwargs)
+    df["adj_RV"] = adj_rv
+    df["baseline"] = baseline
+
+    adj_exog_cols: list[str] = []
+    for col in exog_cols:
+        adj_col = f"adj_{col}"
+        adj_series, _ = robust_transform(df, col, use_transform=True, use_diurnal=True)
+        df[adj_col] = adj_series
+        adj_exog_cols.append(adj_col)
+
+    return df, adj_exog_cols
+
+
+def run_executor(
+    method_name: str,
+    fit_predict: FitPredict,
+    hyperparams: dict,
+    *,
+    data_path: str,
+    output_file: str,
+    horizon: int,
+    train_window: int,
+    start: int,
+    end: int,
+    exog_cols: list[str],
+    segment: str | None,
+    lag_scope: str,
+    add_calendar: bool,
+    target_use_diurnal: bool,
+    target_winsor_window: int | None,
+    dropna_with_exog: bool,
+    seed: int = 42,
+) -> None:
+    """Top-level scaffold. Loads data, builds features, dispatches backtest.
+
+    Per-method scripts (`ml_xgboost.py`, etc.) call this from their
+    ``main()`` after parsing the canonical CLI and assembling the
+    method-specific ``fit_predict`` closure + merged hyperparams.
+
+    Notes
+    -----
+    * ``segment`` is None for tree methods (XGB/LGBM/RF). Ridge is the
+      only method that uses segments.
+    * ``add_calendar`` is True for tree methods, False for Ridge.
+    * ``method_name`` is informational — used in log lines only.
+    """
+    del seed  # reserved; per-method scripts can wire seed into model_fn directly
+
+    df, adj_exog_cols = _load_and_transform(
+        data_path,
+        exog_cols,
+        target_use_diurnal=target_use_diurnal,
+        target_winsor_window=target_winsor_window,
+        dropna_with_exog=dropna_with_exog,
+    )
+
+    # ---- No segment: single global backtest ----
+    if segment is None:
+        train_win_periods = train_window * PERIODS_PER_DAY
+        df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
+        if add_calendar:
+            cal_names = add_calendar_features(df)
+            feature_names = har_names + cal_names
+        else:
+            feature_names = har_names
+        _backtest_and_save(
+            df,
+            feature_names,
+            fit_predict,
+            hyperparams,
+            train_win_periods,
+            horizon,
+            start,
+            end,
+            output_file,
+        )
+        return
+
+    # ---- Segmented backtest (Ridge only) ----
+    segments = list(SEGMENT_DEFINITIONS) if segment == "all" else [segment]
+
+    if lag_scope == "global":
+        df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
+        if add_calendar:
+            cal_names = add_calendar_features(df)
+            feature_names: list[str] = har_names + cal_names
+        else:
+            feature_names = har_names
+
+    for seg_name in segments:
+        seg_df = slice_to_segment(df, seg_name)
+        if seg_df.empty:
+            print(f"No data for segment '{seg_name}'. Skipping.")
+            continue
+
+        if lag_scope == "intra":
+            seg_df, har_names = generate_har_features(seg_df, target_col="adj_RV", exog_cols=adj_exog_cols)
+            if add_calendar:
+                cal_names = add_calendar_features(seg_df)
+                feature_names = har_names + cal_names
+            else:
+                feature_names = har_names
+
+        train_win_periods = compute_segment_train_window(seg_df["t"], train_window)
+
+        base, ext = os.path.splitext(output_file)
+        seg_output = f"{base}_{seg_name}{ext}"
+
+        print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
+        print(f"Window: {train_win_periods} periods ({train_window} days)")
+        _backtest_and_save(
+            seg_df,
+            feature_names,
+            fit_predict,
+            hyperparams,
+            train_win_periods,
+            horizon,
+            start,
+            end,
+            seg_output,
+        )

@@ -35,6 +35,10 @@ directly comparable across unequal $N$.}
 \caption{Mincer--Zarnowitz regression of realized $RV$ on forecasts.
 Standard errors in parentheses. Global QLIKE on the same $N$.}
 \label{tab:mz}
+% Ridge row sourced from results/diagnostics/ridge_har_paper/mz_stats.json
+%   (canonical replacement for results/meeting_quickwins/mz_ridge_paper.json)
+% LGBM row sourced from results/diagnostics/lgbm_har_tuned/mz_stats.json
+%   (canonical replacement for results/meeting_quickwins/mz_regression.json)
 \begin{tabular}{lcccc}
 \toprule
 Model & $\hat\alpha$ & $\hat\beta$ & $R^2$ & QLIKE \\
@@ -72,6 +76,10 @@ $s(t) = \lfloor \text{hour}(t) \rfloor \cdot 2 + \mathbb{1}[\text{minute}(t) \ge
 denotes LightGBM minus Ridge; negative values indicate LightGBM is
 better at that slot. All other slots have $|\Delta| < 0.03$.}
 \label{tab:qlike_by_slot}
+% Ridge column sourced from results/diagnostics/ridge_har_paper/qlike_by_slot.csv
+%   (canonical replacement for results/meeting_quickwins/qlike_by_slot_ridge_paper.csv)
+% LGBM column sourced from results/diagnostics/lgbm_har_tuned/qlike_by_slot.csv
+%   (canonical replacement for results/meeting_quickwins/qlike_by_slot.csv)
 \begin{tabular}{ccccc}
 \toprule
 Slot & Time & Ridge QLIKE & LGBM QLIKE & $\Delta$ (LGBM $-$ Ridge) \\
@@ -121,6 +129,9 @@ over-reactiveness identified in Section~\ref{sec:mz_regression}.
 
 \begin{figure}[H]
 \centering
+% canonical source: results/diagnostics/ridge_har_paper/crash_2008.png
+% (writeup/figures/crash_2008_ridge.png is a stale local copy from
+%  results/meeting_quickwins/; refresh from diagnostics/ on next build)
 \includegraphics[width=\linewidth]{figures/crash_2008_ridge.png}
 \caption{Ridge HAR baseline forecast vs.\ realized $RV$, 30-minute
 bars, 2008-09-01 through 2008-11-30. Lehman collapse on 2008-09-15;
@@ -130,6 +141,9 @@ TARP; the October 10 equity-market bottom.}
 
 \begin{figure}[H]
 \centering
+% canonical source: results/diagnostics/ridge_har_paper/crash_2020.png
+% (writeup/figures/crash_2020_ridge.png is a stale local copy from
+%  results/meeting_quickwins/; refresh from diagnostics/ on next build)
 \includegraphics[width=\linewidth]{figures/crash_2020_ridge.png}
 \caption{Ridge HAR baseline forecast vs.\ realized $RV$, 30-minute
 bars, 2020-02-15 through 2020-04-30. COVID volatility peak around

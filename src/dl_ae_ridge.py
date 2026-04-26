@@ -15,12 +15,12 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.multiprocessing as mp
+import torch.nn as nn
 
-from src.loading import load_raw_data
-from src.transforms import robust_transform, apply_horizon_shift, PERIODS_PER_DAY
 from src.evaluation import apply_duan_smearing, calculate_metrics
+from src.loading import load_raw_data
+from src.transforms import apply_horizon_shift, robust_transform
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -339,6 +339,23 @@ def run_ae_ridge_backtest(X, y, config):
     return predictions
 
 
+def _seed_everything(seed: int = 42) -> None:
+    """Pin RNGs for reproducibility (numpy, torch, cuda, cudnn).
+
+    Call at the top of main() BEFORE any data loading or model construction.
+    """
+    import os
+    import random
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 
@@ -353,8 +370,10 @@ def main():
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=-1)
     parser.add_argument("--output-file", required=True)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n-components", type=int, default=None)
     args = parser.parse_args()
+    _seed_everything(args.seed)
 
     config = json.loads(json.dumps(DEFAULT_AE_CONFIG))  # deep copy
     config["gpu_count"] = args.gpu_count

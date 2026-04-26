@@ -28,8 +28,8 @@ from src.transforms import (
 class PCATransform:
     """Thin wrapper around sklearn PCA for the backtest loop."""
 
-    def __init__(self, n_components=5):
-        self.pca = PCA(n_components=n_components, svd_solver="randomized")
+    def __init__(self, n_components=5, random_state=42):
+        self.pca = PCA(n_components=n_components, svd_solver="randomized", random_state=random_state)
 
     def fit(self, X, y=None):
         self.pca.fit(X)
@@ -39,7 +39,7 @@ class PCATransform:
         return self.pca.transform(X)
 
 
-def run_pcr_backtest(X, y, train_window, n_components=5, refit_frequency=240, alpha=1.0):
+def run_pcr_backtest(X, y, train_window, n_components=5, refit_frequency=240, alpha=1.0, random_state=42):
     """Walk-forward PCA + Ridge backtest."""
     N, p = X.shape
     n_test = N - train_window
@@ -48,13 +48,13 @@ def run_pcr_backtest(X, y, train_window, n_components=5, refit_frequency=240, al
     scaler = RollingRobustScaler(train_window, p)
     scaler.initialize(X[:train_window])
 
-    pca = PCATransform(n_components=n_components)
+    pca = PCATransform(n_components=n_components, random_state=random_state)
     X_buf_scaled = scaler.transform_buffer()
     pca.fit(X_buf_scaled)
 
     X_buf_pca = pca.transform(X_buf_scaled)
     y_buf = y[:train_window]
-    ridge = Ridge(alpha=alpha, fit_intercept=True)
+    ridge = Ridge(alpha=alpha, fit_intercept=True, random_state=random_state)
     ridge.fit(X_buf_pca, y_buf)
 
     steps_since_refit = 0
@@ -91,6 +91,7 @@ def _run_backtest_and_save(
     end: int,
     output_file: str,
     n_components: int = 5,
+    random_state: int = 42,
 ) -> None:
     """Run PCR backtest on a prepared DataFrame and save results."""
     max_lag = resolve_pca_lags()[-1]
@@ -113,6 +114,7 @@ def _run_backtest_and_save(
         train_window=train_window,
         n_components=n_components,
         refit_frequency=240,
+        random_state=random_state,
     )
 
     y_test = y[train_window:]
@@ -153,6 +155,7 @@ def main() -> None:
         "--lag-scope", default="global", choices=["global", "intra"], help="Compute lags on full dataset or per-segment"
     )
     parser.add_argument("--n-components", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42, help="random_state for randomized PCA / Ridge")
     args = parser.parse_args()
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -179,7 +182,15 @@ def main() -> None:
         train_window = args.train_window * PERIODS_PER_DAY
         df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
         _run_backtest_and_save(
-            df, feature_names, train_window, args.horizon, args.start, args.end, args.output_file, args.n_components
+            df,
+            feature_names,
+            train_window,
+            args.horizon,
+            args.start,
+            args.end,
+            args.output_file,
+            args.n_components,
+            random_state=args.seed,
         )
         return
 
@@ -206,7 +217,15 @@ def main() -> None:
         print(f"{'=' * 20} SEGMENT: {seg_name.upper()} {'=' * 20}")
         print(f"Window: {train_window} periods ({args.train_window} days)")
         _run_backtest_and_save(
-            seg_df, feature_names, train_window, args.horizon, args.start, args.end, seg_output, args.n_components
+            seg_df,
+            feature_names,
+            train_window,
+            args.horizon,
+            args.start,
+            args.end,
+            seg_output,
+            args.n_components,
+            random_state=args.seed,
         )
 
 
