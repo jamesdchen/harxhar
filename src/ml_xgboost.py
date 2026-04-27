@@ -15,7 +15,7 @@ import json
 import numpy as np
 from xgboost import XGBRegressor
 
-from src.executor import parse_executor_args, run_executor
+from src.executor import CONFIGS, parse_executor_args, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -27,22 +27,6 @@ DEFAULT_XGB_PARAMS: dict = dict(
     learning_rate=0.1,
     tree_method="hist",
     n_jobs=-1,
-)
-
-# Method-specific refit-frequency default. The CLI ``--refit-frequency``
-# sentinel of None falls back to this; the original ml_xgboost.py used
-# 1 as its argparse default.
-DEFAULT_XGB_REFIT_FREQUENCY: int = 1
-
-# Method-specific data-prep flags forwarded to ``run_executor``. Tree
-# methods (XGB) historically use diurnal-adjusted, winsor-240 RV
-# targets and *RV-only* dropna (exog NaNs are tolerated since XGBoost
-# handles missing values natively).
-DEFAULT_XGB_DATA_PREP: dict = dict(
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=240,
-    dropna_with_exog=False,
 )
 
 
@@ -58,7 +42,7 @@ def fit_predict_xgb(
     settings (``use_scaling=False``; refit frequency from
     ``hyperparams['_refit_frequency']``).
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_XGB_REFIT_FREQUENCY))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["xgboost"].refit_frequency))
     # Strip our internal control key before passing to XGBRegressor.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
 
@@ -86,7 +70,7 @@ def main() -> None:
     # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
     hyperparams = dict(DEFAULT_XGB_PARAMS)
     hyperparams.update(tuned_params)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_XGB_REFIT_FREQUENCY
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIGS["xgboost"].refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -104,7 +88,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **DEFAULT_XGB_DATA_PREP,
+        **CONFIGS["xgboost"].as_data_prep_kwargs(),
         seed=args.seed,
     )
 

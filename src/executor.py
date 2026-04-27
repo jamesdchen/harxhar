@@ -44,7 +44,7 @@ from src.transforms import (
 FitPredict = Callable[[np.ndarray, np.ndarray, int, dict], np.ndarray]
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -71,11 +71,11 @@ class ExecutorConfig:
 
 
 CONFIGS: dict[str, ExecutorConfig] = {
-    "ridge":         ExecutorConfig("ridge",         add_calendar=False, target_use_diurnal=False, target_winsor_window=None, dropna_with_exog=True,  refit_frequency=1),
-    "xgboost":       ExecutorConfig("xgboost",       add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),
-    "lightgbm":      ExecutorConfig("lightgbm",      add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),
-    "random_forest": ExecutorConfig("random_forest", add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=True,  refit_frequency=5),
-    "pcr":           ExecutorConfig("pcr",           add_calendar=True,  target_use_diurnal=True,  target_winsor_window=None, dropna_with_exog=True,  refit_frequency=240),
+    "ridge":         ExecutorConfig("ridge",         add_calendar=False, target_use_diurnal=False, target_winsor_window=None, dropna_with_exog=True,  refit_frequency=1),  # noqa: E501
+    "xgboost":       ExecutorConfig("xgboost",       add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),  # noqa: E501
+    "lightgbm":      ExecutorConfig("lightgbm",      add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),  # noqa: E501
+    "random_forest": ExecutorConfig("random_forest", add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=True,  refit_frequency=5),  # noqa: E501
+    "pcr":           ExecutorConfig("pcr",           add_calendar=True,  target_use_diurnal=True,  target_winsor_window=None, dropna_with_exog=True,  refit_frequency=240),  # noqa: E501
 }
 # Excluded by design: dl_ae_ridge, dl_patchts (separate model-config shape),
 # tune_tree (hyperparameter tuner; doesn't call run_executor),

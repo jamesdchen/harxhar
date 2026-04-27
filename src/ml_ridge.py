@@ -15,30 +15,13 @@ import json
 import numpy as np
 from sklearn.linear_model import Ridge
 
-from src.executor import parse_executor_args, run_executor
+from src.executor import CONFIGS, parse_executor_args, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
 # Per-method default hyperparams. Tuned overrides from --params-file are
 # merged on top via dict.update().
 DEFAULT_RIDGE_PARAMS: dict = dict(alpha=1.0)
-
-# Method-specific refit-frequency default. The CLI ``--refit-frequency``
-# sentinel of None falls back to this; the original ml_ridge.py used
-# 1 as its argparse default (closed-form solver -> cheap to refit).
-DEFAULT_RIDGE_REFIT_FREQUENCY: int = 1
-
-# Method-specific data-prep flags forwarded to ``run_executor``. Ridge
-# is the linear baseline and historically does NOT use diurnal
-# adjustment, calendar features, or winsorization on the target;
-# intersection-N dropna is required because Ridge cannot tolerate NaN
-# features.
-DEFAULT_RIDGE_DATA_PREP: dict = dict(
-    add_calendar=False,
-    target_use_diurnal=False,
-    target_winsor_window=None,
-    dropna_with_exog=True,
-)
 
 
 def fit_predict_ridge(
@@ -60,7 +43,7 @@ def fit_predict_ridge(
     irrelevant for reproducibility. We strip any internal control keys
     (``_*``) before forwarding to ``Ridge(**...)``.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_RIDGE_REFIT_FREQUENCY))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["ridge"].refit_frequency))
     # Strip our internal control keys before passing to Ridge.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
 
@@ -88,7 +71,7 @@ def main() -> None:
     # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
     hyperparams = dict(DEFAULT_RIDGE_PARAMS)
     hyperparams.update(tuned_params)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_RIDGE_REFIT_FREQUENCY
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIGS["ridge"].refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -106,7 +89,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **DEFAULT_RIDGE_DATA_PREP,
+        **CONFIGS["ridge"].as_data_prep_kwargs(),
         seed=args.seed,
     )
 
