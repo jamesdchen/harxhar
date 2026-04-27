@@ -10,7 +10,7 @@ PYTHON ?= python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help table diagnostics diagnostics-quick audit pipeline-export strategy-eval lint type test clean-cache
+.PHONY: help table diagnostics diagnostics-quick audit pipeline-export strategy-eval lint type test clean-cache repro repro-fixture
 
 help:  ## Show available targets.
 	@echo "harxhar Makefile — available targets:"
@@ -66,3 +66,15 @@ clean-cache:  ## Remove __pycache__/, .pytest_cache/, .mypy_cache/, .ruff_cache/
 	@find . -type d -name .mypy_cache -prune -exec rm -rf {} +
 	@find . -type d -name .ruff_cache -prune -exec rm -rf {} +
 	@echo "cache directories removed."
+
+repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -> table -> audit. Required: RUN, METHOD. Optional: REPRO_ARGS.
+	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
+	$(PYTHON) -c "from src.executor import CONFIGS; assert '$(METHOD)' in CONFIGS, 'unknown method: $(METHOD) (registered: ' + ','.join(CONFIGS) + ')'"
+	@mkdir -p results/$(RUN)
+	$(PYTHON) src/ml_$(METHOD).py --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
+	$(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
+	$(MAKE) table
+	$(MAKE) audit
+
+repro-fixture:  ## Run a tiny CI-friendly Ridge repro (--train-window 10 --end 1000) for the audit gate.
+	$(MAKE) repro RUN=ci_fixture METHOD=ridge REPRO_ARGS="--train-window 10 --end 1000"

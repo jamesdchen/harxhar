@@ -15,7 +15,7 @@ import json
 import numpy as np
 from lightgbm import LGBMRegressor
 
-from src.executor import parse_executor_args, run_executor
+from src.executor import CONFIGS, parse_executor_args, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -27,22 +27,6 @@ DEFAULT_LGBM_PARAMS: dict = dict(
     learning_rate=0.1,
     n_jobs=-1,
     verbose=-1,
-)
-
-# Method-specific refit-frequency default. The CLI ``--refit-frequency``
-# sentinel of None falls back to this; the original ml_lightgbm.py used
-# 1 as its argparse default.
-DEFAULT_LGBM_REFIT_FREQUENCY: int = 1
-
-# Method-specific data-prep flags forwarded to ``run_executor``. Tree
-# methods (LGBM) historically use diurnal-adjusted, winsor-240 RV
-# targets and *RV-only* dropna (exog NaNs are tolerated since LightGBM
-# handles missing values natively).
-DEFAULT_LGBM_DATA_PREP: dict = dict(
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=240,
-    dropna_with_exog=False,
 )
 
 
@@ -60,7 +44,7 @@ def fit_predict_lgbm(
     with ``random_state=hyperparams.get("random_state", 42)`` for
     reproducibility.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_LGBM_REFIT_FREQUENCY))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["lightgbm"].refit_frequency))
     # Strip our internal control key before passing to LGBMRegressor.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
     model_kwargs.setdefault("random_state", 42)
@@ -90,7 +74,7 @@ def main() -> None:
     hyperparams = dict(DEFAULT_LGBM_PARAMS)
     hyperparams.update(tuned_params)
     hyperparams["random_state"] = args.seed
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_LGBM_REFIT_FREQUENCY
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIGS["lightgbm"].refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -108,7 +92,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **DEFAULT_LGBM_DATA_PREP,
+        **CONFIGS["lightgbm"].as_data_prep_kwargs(),
         seed=args.seed,
     )
 

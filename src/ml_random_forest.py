@@ -15,7 +15,7 @@ import json
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from src.executor import parse_executor_args, run_executor
+from src.executor import CONFIGS, parse_executor_args, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -26,21 +26,6 @@ DEFAULT_RF_PARAMS: dict = dict(
     max_depth=10,
     min_samples_leaf=5,
     n_jobs=-1,
-)
-
-# Method-specific refit-frequency default. The CLI ``--refit-frequency``
-# sentinel of None falls back to this; the original ml_random_forest.py
-# used 5 as its argparse default.
-DEFAULT_RF_REFIT_FREQUENCY: int = 5
-
-# Method-specific data-prep flags forwarded to ``run_executor``. RF uses
-# diurnal-adjusted, winsor-240 RV targets and intersection-N dropna
-# (``dropna_with_exog=True``) -- historical behavior for RF exog runs.
-DEFAULT_RF_DATA_PREP: dict = dict(
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=240,
-    dropna_with_exog=True,
 )
 
 
@@ -57,7 +42,7 @@ def fit_predict_rf(
     ``hyperparams['_refit_frequency']``). ``random_state`` defaults to
     42 and can be overridden via ``hyperparams['random_state']``.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", DEFAULT_RF_REFIT_FREQUENCY))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["random_forest"].refit_frequency))
     # Strip our internal control key before passing to RandomForestRegressor.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
     model_kwargs.setdefault("random_state", 42)
@@ -88,7 +73,11 @@ def main() -> None:
     hyperparams.update(tuned_params)
     # Wire seed through to RandomForestRegressor's random_state.
     hyperparams.setdefault("random_state", args.seed)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else DEFAULT_RF_REFIT_FREQUENCY
+    refit_frequency = (
+        args.refit_frequency
+        if args.refit_frequency is not None
+        else CONFIGS["random_forest"].refit_frequency
+    )
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -106,7 +95,7 @@ def main() -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **DEFAULT_RF_DATA_PREP,
+        **CONFIGS["random_forest"].as_data_prep_kwargs(),
         seed=args.seed,
     )
 
