@@ -11,7 +11,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from src.executor import load_and_transform
+from src.executor import CONFIGS, load_and_transform
 from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
 from src.transforms import (
@@ -113,7 +113,7 @@ def _run_backtest_and_save(
         y,
         train_window=train_window,
         n_components=n_components,
-        refit_frequency=240,
+        refit_frequency=CONFIGS["pcr"].refit_frequency,
         random_state=random_state,
     )
 
@@ -164,9 +164,9 @@ def main() -> None:
     df, adj_exog_cols = load_and_transform(
         args.data_path,
         exog_cols,
-        target_use_diurnal=True,
-        target_winsor_window=None,
-        dropna_with_exog=True,
+        target_use_diurnal=CONFIGS["pcr"].target_use_diurnal,
+        target_winsor_window=CONFIGS["pcr"].target_winsor_window,
+        dropna_with_exog=CONFIGS["pcr"].dropna_with_exog,
     )
 
     # --- No segment: global backtest ---
