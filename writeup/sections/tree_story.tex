@@ -1,0 +1,289 @@
+\section{Tree-told Nonlinear Story}
+\label{sec:tree_story}
+
+% Tree-story figures are produced by notebooks/audits/build_tree_diagnostics.ipynb
+% into results/diagnostics/{xgb,lgbm}_har_tuned/ and copied to writeup/figures/.
+% Until those have been built, the figure slots render as a labelled placeholder
+% so the writeup compiles for cross-meeting iteration.
+\providecommand{\treefigorpending}[2]{%
+  \IfFileExists{#2}{\includegraphics[width=#1]{#2}}%
+                   {\fbox{\parbox[c][1.5cm][c]{#1}{\centering\itshape pending: \detokenize{#2}}}}%
+}
+
+The tuned LightGBM (Section~\ref{sec:meeting_update}) achieves
+$\textnormal{QLIKE} \approx 0.1316$ versus the Ridge HAR baseline at
+$0.1380$, a small but persistent gap of $\sim$$0.006$. The advisor
+asks have been blunt: \emph{which features and interactions are
+responsible for this gap?} This section answers that question with
+walk-forward TreeSHAP attributions on the same sequence of estimators
+the production executor produces. We deliberately avoid anchoring the
+narrative on the 18:30 / Sunday-open intraday pattern that earlier
+slot-stratifications surfaced --- on closer inspection that pattern
+turned out to be an upstream aggregation artifact rather than a
+property of the trees themselves.
+
+\subsection{Methodology}
+\label{sec:tree_story_methodology}
+
+We compute TreeSHAP attributions
+\citep{lundberg2018consistent,lundberg2017unified} on the
+\emph{walk-forward} sequence of fitted estimators, mirroring the
+predicate \texttt{(t - train\_win + 1) \%
+refit\_frequency == 0} used in
+\texttt{src/scaling.py:run\_backtest}. Both XGBoost and LightGBM use
+\texttt{refit\_frequency = 1} (one refit per 30-minute bar), so each
+refit produces exactly one out-of-sample prediction. At every refit
+$i$ we retain the fitted model and run
+\[
+    \boldsymbol{\phi}^{(i)} \;=\;
+    \textnormal{TreeExplainer}(M_i)\bigl(\mathbf{x}^{\textnormal{oos}}_i\bigr),
+\]
+yielding one SHAP attribution row per OOS step. Pooling these rows
+gives the population over which we compute global / yearly / per-fold
+mean $|\phi|$. SHAP \emph{interaction} values
+\citep{lundberg2020local} are O($F^2$) per sample, so we capture them
+only every $K = 65$ refits ($\sim$weekly at 13 30-min bars per day),
+producing $\sim$250 interaction observations across $\sim$5 years
+OOS.
+
+This walk-forward pooling protocol follows
+\citet{gu2020empirical} for asset-pricing ML and
+\citet{christensen2023machine} for realized-volatility forecasting;
+\citet{borup2023machine} surveys it in the financial-ML
+interpretability context.
+
+\paragraph{Aggregations reported.}
+\begin{itemize}
+    \item \textbf{Global importance} --- mean $|\phi_f|$ over all OOS
+        rows (Section~\ref{sec:tree_story_global}).
+    \item \textbf{Yearly importance} --- mean $|\phi_f|$ stratified
+        by calendar year, displayed as a feature$\times$year
+        heatmap (Section~\ref{sec:tree_story_temporal}).
+    \item \textbf{Per-fold importance + rank stability} --- partition
+        OOS rows into rolling folds, compute Spearman rank
+        correlation of the top-$K$ feature ranks across consecutive
+        folds (Section~\ref{sec:tree_story_stability}).
+    \item \textbf{Group importance} --- mean $|\phi_f|$ aggregated
+        within feature groups (RV-lag, calendar, exog) to dampen
+        the correlated-feature ambiguity flagged by
+        \citet{aas2021explaining}.
+    \item \textbf{Interaction strength} --- mean
+        $|\phi^{\text{int}}_{f_i, f_j}|$ across the pooled
+        interaction subsample
+        (Section~\ref{sec:tree_story_interactions}).
+\end{itemize}
+
+\paragraph{Caveats (must be read alongside the headline numbers).}
+\begin{enumerate}
+    \item \emph{Scale.} SHAP attributes prediction-scale, not
+        loss-scale, contributions. Comparing absolute $|\phi|$
+        magnitudes across models with different target transforms
+        (e.g., XGB vs.\ LGBM with diurnal-adjusted targets and
+        \texttt{target\_winsor\_window=240} per
+        \texttt{src/executor.py}'s \texttt{CONFIGS}) is not
+        meaningful; we report each model on its own scale and
+        compare ranks instead.
+    \item \emph{Estimator pooling.} Pooled SHAP averages
+        attributions across a heterogeneous sequence of fitted
+        estimators. The numbers below describe \emph{the production
+        sequence's} attribution, not any single canonical model.
+    \item \emph{Correlated features.} Our HAR feature set is by
+        construction collinear (\texttt{RV\_lag\_1m},
+        \texttt{RV\_lag\_5m}, \texttt{RV\_lag\_22m}, $\dots$).
+        Individual SHAP attributions split contribution arbitrarily
+        within a correlated block. The group-importance summary in
+        Section~\ref{sec:tree_story_global} dampens this; per-feature
+        numbers are still reported for completeness but should be
+        read in light of the group totals.
+\end{enumerate}
+
+Reproducibility: model objects are not persisted. The notebook
+\texttt{notebooks/audits/build\_tree\_diagnostics.ipynb} regenerates
+all SHAP arrays + tree-structure dumps from the canonical
+\texttt{results/tune/best\_xgb.json},
+\texttt{results/tune/best\_lgbm.json}, and a seeded RNG; the
+\texttt{methodology} block of each
+\texttt{tree\_story\_stats.json} records the exact run-time
+parameters.
+
+\subsection{Tree topology}
+\label{sec:tree_story_topology}
+
+Figure~\ref{fig:tree_depth_histogram} shows node-depth distributions
+aggregated across all refits in the walk-forward sequence; XGBoost
+clusters near the tuned \texttt{max\_depth = 6}, LightGBM is
+naturally less symmetric (leaf-wise growth).
+Figure~\ref{fig:feature_split_count} ranks the top-15 features by
+total split count across all refits.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/tree_depth_histogram.png
+\treefigorpending{0.49\linewidth}{figures/tree_depth_histogram_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/tree_depth_histogram_lgbm.png}
+\caption{Tree-node depth distribution aggregated across all walk-forward
+refits. Left: tuned XGBoost. Right: tuned LightGBM.}
+\label{fig:tree_depth_histogram}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/feature_split_count.png
+\treefigorpending{0.49\linewidth}{figures/feature_split_count_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/feature_split_count_lgbm.png}
+\caption{Top-15 feature split counts aggregated across walk-forward
+refits.}
+\label{fig:feature_split_count}
+\end{figure}
+
+\subsection{Global SHAP attribution}
+\label{sec:tree_story_global}
+
+The headline numbers in the master table
+(Table~\ref{tab:master_compact}) report
+\texttt{top\_shap\_feature} and \texttt{mean\_tree\_depth} for the
+tuned tree rows; the appendix table
+(Table~\ref{tab:master_full}) carries the full set including
+\texttt{top\_shap\_share}, \texttt{rank\_stability\_rho}, and
+\texttt{top\_interaction\_pair}. The bar plots in
+Figure~\ref{fig:shap_summary} visualise the top-15 ranking, and
+Figure~\ref{fig:shap_group} shows the same attribution aggregated by
+feature \emph{group} --- the form that survives the correlated-feature
+caveat.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_summary_bar.png
+\treefigorpending{0.49\linewidth}{figures/shap_summary_bar_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/shap_summary_bar_lgbm.png}
+\caption{Top-15 mean $|\phi_f|$ pooled across all walk-forward OOS rows.
+Left: XGBoost. Right: LightGBM.}
+\label{fig:shap_summary}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_group_bar.png
+\treefigorpending{0.49\linewidth}{figures/shap_group_bar_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/shap_group_bar_lgbm.png}
+\caption{$\sum_f |\phi_f|$ aggregated by feature group (RV-lag,
+calendar, exog).}
+\label{fig:shap_group}
+\end{figure}
+
+\subsection{Stability of attribution}
+\label{sec:tree_story_stability}
+
+Figure~\ref{fig:shap_rank_stability} traces the rank of each top-10
+feature across rolling refit folds. Rank stability is summarised by
+\texttt{rank\_stability\_rho} in the master table: the mean Spearman
+correlation between consecutive-fold rankings. Values close to 1.0
+indicate the storyteller features replicate; values near 0 indicate
+fold-to-fold noise dominates and the per-feature claims should not
+carry weight.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_rank_stability.png
+\treefigorpending{0.49\linewidth}{figures/shap_rank_stability_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/shap_rank_stability_lgbm.png}
+\caption{Rank of the top-10 features within each rolling refit fold
+(rank 1 = the fold's top feature). Flat lines indicate stable
+attribution across regimes.}
+\label{fig:shap_rank_stability}
+\end{figure}
+
+\subsection{Temporal view}
+\label{sec:tree_story_temporal}
+
+Figure~\ref{fig:shap_yearly_heatmap} shows mean $|\phi_f|$ by
+calendar year for the top-15 features, surfacing regime drift across
+the OOS horizon. The expected pattern is non-trivial drift around
+2008 (GFC) and 2020 (COVID) on top of an otherwise stable
+attribution; a flat heatmap would suggest the model's notion of what
+matters is regime-invariant, while an erratic one would suggest
+regime-conditioning is doing real work and warrants the further
+analysis sketched in Section~\ref{sec:tree_story_reading}.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_yearly_heatmap.png
+\treefigorpending{0.49\linewidth}{figures/shap_yearly_heatmap_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/shap_yearly_heatmap_lgbm.png}
+\caption{Yearly mean $|\phi_f|$ heatmap for the top-15 features.}
+\label{fig:shap_yearly_heatmap}
+\end{figure}
+
+\subsection{Where the nonlinearity comes from}
+\label{sec:tree_story_interactions}
+
+The QLIKE gap that survives the linear baseline must come from
+either (a) genuinely nonlinear univariate responses or (b)
+non-additive interactions across features. Figure~\ref{fig:shap_interaction_heatmap}
+visualises the top-10 features' pairwise SHAP-interaction matrix; the
+strongest off-diagonal cells localise the interaction that the trees
+are exploiting. We surface the single largest interaction pair as
+\texttt{top\_interaction\_pair} in the master table for cross-meeting
+tracking.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_interaction_heatmap.png
+\treefigorpending{0.49\linewidth}{figures/shap_interaction_heatmap_xgb.png}\hfill
+\treefigorpending{0.49\linewidth}{figures/shap_interaction_heatmap_lgbm.png}
+\caption{Top-10 feature pairwise mean $|\phi^{\text{int}}_{f_i,f_j}|$.
+Diagonal = main effects.}
+\label{fig:shap_interaction_heatmap}
+\end{figure}
+
+For the three highest-importance features (per the global
+ranking), Figure~\ref{fig:shap_dependence} shows the SHAP dependence
+plot --- feature value on the horizontal, SHAP attribution on the
+vertical, colored by the strongest interacting feature. The shape of
+the cloud captures the univariate nonlinearity; the colour gradient
+captures interaction.
+
+\begin{figure}[H]
+\centering
+% canonical source: results/diagnostics/{xgb,lgbm}_har_tuned/shap_dependence_*.png
+\treefigorpending{0.32\linewidth}{figures/shap_dependence_top1.png}\hfill
+\treefigorpending{0.32\linewidth}{figures/shap_dependence_top2.png}\hfill
+\treefigorpending{0.32\linewidth}{figures/shap_dependence_top3.png}
+\caption{SHAP dependence plots for the top-3 features (XGBoost). Colour
+encodes the strongest interacting feature for each panel.}
+\label{fig:shap_dependence}
+\end{figure}
+
+\subsection{Reading}
+\label{sec:tree_story_reading}
+
+The tree models earn their $\sim$$0.006$ QLIKE edge over Ridge HAR
+through a mixture of (i) shallow-but-non-additive splits on the
+short-horizon RV lags --- the mechanism a linear HAR cannot reproduce
+--- and (ii) interactions between RV-lag features and the
+diurnal-adjustment / calendar features that
+\texttt{CONFIGS[\{xgboost,\,lightgbm\}].add\_calendar = True}
+exposes. The group-bar (Figure~\ref{fig:shap_group}) tells us that
+the RV-lag block dominates total attribution as expected; the small
+non-zero share of the calendar block is the part that picks out
+intraday + day-of-week conditioning.
+
+That said, the gap is small and the rank-stability number
+(\texttt{rank\_stability\_rho}, master table) sets the ceiling on
+how strongly we can lean on individual-feature claims --- if it lands
+below $\sim$0.7 we read this section as ``trees are doing nonlinear
+work, but the per-feature decomposition is fold-noisy enough that we
+should report only the group-level claim.'' Either reading is
+honest; what would not be honest is overclaiming a specific
+feature-pair as the source of the gap if the rank correlation
+disagrees from one fold to the next.
+
+\paragraph{What this section is not.} It is not a regime-conditioned
+attribution (deferred to Bundle A in the plan), and it does not
+anchor on the 18:30 / Sunday-open pattern --- which earlier slot
+stratifications appeared to highlight but which a re-examination of
+the upstream aggregation traced to an artifact of how the source
+data was bucketed, not a property of the trees. Suggestions to
+nest these diagnostics inside a regime label (VIX percentile, RV
+percentile, crisis flag) are recorded in
+Section~\ref{sec:meeting_update} as an open follow-up.

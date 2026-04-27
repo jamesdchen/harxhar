@@ -30,7 +30,9 @@ sys.path.insert(0, str(REPO))
 
 from src.evaluation import calculate_metrics, mz_regression  # noqa: E402
 
-# Canonical column order for the master CSV.
+# Canonical column order for the master CSV. Tree-story columns are populated
+# from results/diagnostics/<entry>/tree_story_stats.json when that file exists
+# (NaN / "—" otherwise). Provides cross-meeting comparability for tree internals.
 MASTER_COLUMNS = [
     "method",
     "feature_set",
@@ -48,8 +50,30 @@ MASTER_COLUMNS = [
     "mz_beta",
     "mz_t_beta_eq_1",
     "mz_r2",
+    "mean_tree_depth",
+    "top_shap_feature",
+    "top_shap_share",
+    "rank_stability_rho",
+    "top_interaction_pair",
     "results_dir",
 ]
+
+# Compact-LaTeX columns: keeps the body-table narrow.
+COMPACT_TEX_COLS = [
+    "method",
+    "feature_set",
+    "config",
+    "n",
+    "qlike",
+    "mse",
+    "mae",
+    "mz_alpha",
+    "mz_beta",
+    "top_shap_feature",
+    "mean_tree_depth",
+]
+# Full-LaTeX columns: appendix table picks up all tree-story extras.
+FULL_TEX_COLS = COMPACT_TEX_COLS + ["top_shap_share", "rank_stability_rho", "top_interaction_pair"]
 
 
 _NAN_METRICS = {
@@ -171,6 +195,42 @@ def _load_predictions(repo: Path, entry: dict) -> tuple[np.ndarray, np.ndarray] 
     return y[m], yhat[m]
 
 
+_NAN_TREE_STORY = {
+    "mean_tree_depth": float("nan"),
+    "top_shap_feature": "—",
+    "top_shap_share": float("nan"),
+    "rank_stability_rho": float("nan"),
+    "top_interaction_pair": "—",
+}
+
+
+def _entry_id(entry: dict) -> str:
+    return f"{entry['method']}_{entry['feature_set']}_{entry['config']}"
+
+
+def _load_tree_story_row(repo: Path, entry: dict) -> dict:
+    """Pull tree-story headline numbers from results/diagnostics/<entry>/tree_story_stats.json.
+
+    Returns NaN/"—" defaults when the file does not exist (i.e., non-tree models
+    or tree models we haven't built diagnostics for yet).
+    """
+    path = repo / "results" / "diagnostics" / _entry_id(entry) / "tree_story_stats.json"
+    if not path.exists():
+        return dict(_NAN_TREE_STORY)
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"  [warn] could not read {path}: {e}", file=sys.stderr)
+        return dict(_NAN_TREE_STORY)
+    return {
+        "mean_tree_depth": float(d.get("mean_tree_depth", float("nan"))),
+        "top_shap_feature": str(d.get("top_shap_feature", "—")),
+        "top_shap_share": float(d.get("top_shap_share", float("nan"))),
+        "rank_stability_rho": float(d.get("rank_stability_rho", float("nan"))),
+        "top_interaction_pair": str(d.get("top_interaction_pair", "—")),
+    }
+
+
 def build_rows(repo: Path, manifest: dict) -> pd.DataFrame:
     rows = []
     for entry in manifest["entries"]:
@@ -205,6 +265,8 @@ def build_rows(repo: Path, manifest: dict) -> pd.DataFrame:
                 if not np.isfinite(metrics.get("qlike", float("nan"))):
                     metrics.update(_metrics_from_predictions(y, yhat))
 
+        tree_story = _load_tree_story_row(repo, entry)
+
         rows.append(
             {
                 "method": method,
@@ -212,6 +274,7 @@ def build_rows(repo: Path, manifest: dict) -> pd.DataFrame:
                 "config": config,
                 **metrics,
                 **mz_stats,
+                **tree_story,
                 "results_dir": entry["results_dir"],
             }
         )
@@ -238,17 +301,26 @@ def write_compact_tex(df: pd.DataFrame, out_path: Path) -> None:
         out_path.write_text("% no rows\n", encoding="utf-8")
         return
     tab = pd.DataFrame(rows)
-    _write_tex(tab, out_path, caption="Headline: best feature set per method (by QLIKE).", label="tab:master_compact")
+    _write_tex(
+        tab,
+        out_path,
+        caption="Headline: best feature set per method (by QLIKE).",
+        label="tab:master_compact",
+        cols=COMPACT_TEX_COLS,
+    )
 
 
 def write_full_tex(df: pd.DataFrame, out_path: Path) -> None:
     _write_tex(
-        df, out_path, caption="Full master table across (method × feature set × config).", label="tab:master_full"
+        df,
+        out_path,
+        caption="Full master table across (method × feature set × config).",
+        label="tab:master_full",
+        cols=FULL_TEX_COLS,
     )
 
 
-def _write_tex(df: pd.DataFrame, out_path: Path, *, caption: str, label: str) -> None:
-    cols = ["method", "feature_set", "config", "n", "qlike", "mse", "mae", "mz_alpha", "mz_beta"]
+def _write_tex(df: pd.DataFrame, out_path: Path, *, caption: str, label: str, cols: list[str]) -> None:
     keep = [c for c in cols if c in df.columns]
     sub = df[keep].copy()
 
@@ -259,11 +331,14 @@ def _write_tex(df: pd.DataFrame, out_path: Path, *, caption: str, label: str) ->
         "mae": "{:.4f}",
         "mz_alpha": "{:+.3g}",
         "mz_beta": "{:.3f}",
+        "mean_tree_depth": "{:.2f}",
+        "top_shap_share": "{:.3f}",
+        "rank_stability_rho": "{:.3f}",
     }
     for col, fmt in fmts.items():
         if col in sub.columns:
             sub[col] = sub[col].apply(lambda v, f=fmt: f.format(v) if pd.notna(v) else "—")
-    for col in ("method", "feature_set", "config"):
+    for col in ("method", "feature_set", "config", "top_shap_feature", "top_interaction_pair"):
         if col in sub.columns:
             sub[col] = sub[col].astype(str).str.replace("_", r"\_", regex=False)
 

@@ -2,16 +2,16 @@
 \centering
 \caption{Headline: best feature set per method (by QLIKE).}
 \label{tab:master_compact}
-\begin{tabular}{lllllllll}
+\begin{tabular}{lllllllllll}
 \toprule
-method & feature\_set & config & n & qlike & mse & mae & mz\_alpha & mz\_beta \\
+method & feature\_set & config & n & qlike & mse & mae & mz\_alpha & mz\_beta & top\_shap\_feature & mean\_tree\_depth \\
 \midrule
-naive & har & default & 221,915 & 0.3518 & 0.2248 & 0.3431 & — & — \\
-ridge & all & paper & 12,890 & 0.1231 & 0.0587 & 0.1758 & — & — \\
-xgb & har & tuned & 218,909 & 0.1319 & 0.0000 & 0.0000 & +6.18e-07 & 0.742 \\
-lgbm & har & tuned & 218,909 & 0.1316 & 0.0000 & 0.0000 & +5.08e-07 & 0.778 \\
-rf & har & default & 143,540 & 0.2351 & 0.1492 & 0.2228 & — & — \\
-patchts & har & default & 221,579 & 0.4612 & 0.3156 & 0.3732 & — & — \\
+naive & har & default & 221,915 & 0.3518 & 0.2248 & 0.3431 & — & — & — & — \\
+ridge & all & paper & 12,890 & 0.1231 & 0.0587 & 0.1758 & — & — & — & — \\
+xgb & har & tuned & 218,909 & 0.1319 & 0.0000 & 0.0000 & +6.18e-07 & 0.742 & — & — \\
+lgbm & har & tuned & 218,909 & 0.1316 & 0.0000 & 0.0000 & +5.08e-07 & 0.778 & — & — \\
+rf & har & default & 143,540 & 0.2351 & 0.1492 & 0.2228 & — & — & — & — \\
+patchts & har & default & 221,579 & 0.4612 & 0.3156 & 0.3732 & — & — & — & — \\
 \bottomrule
 \end{tabular}
 \end{table}

@@ -407,3 +407,190 @@ def plot_qlike_by_slot(
     if title is not None:
         ax.set_title(title)
     ax.grid(True, axis="y", alpha=0.3)
+
+
+# --- Tree-internal diagnostic plots -------------------------------------------
+# Consume artifacts produced by notebooks/audits/build_tree_diagnostics.ipynb:
+#   - tree_structures.parquet  (xgb/lgbm trees_to_dataframe per refit)
+#   - shap_long.parquet        (per-OOS-row mean |SHAP|)
+#   - shap_interactions_long.parquet (mean |interaction_ij| on a stride subsample)
+# Convention matches the other plot helpers above: ax-based, caller savefig.
+
+
+def plot_tree_depth_histogram(trees_df: pd.DataFrame, ax, title: str | None = None) -> None:
+    """Histogram of node depths across all refits.
+
+    Expects xgb/lgbm `trees_to_dataframe()` columns; uses ``Depth`` (xgb) or
+    ``node_depth`` (lgbm), whichever is present.
+    """
+    col = "Depth" if "Depth" in trees_df.columns else "node_depth"
+    depths = trees_df[col].to_numpy()
+    bins = np.arange(depths.min(), depths.max() + 2) - 0.5
+    ax.hist(depths, bins=bins, color="steelblue", edgecolor="black", alpha=0.85)
+    ax.set_xlabel("node depth")
+    ax.set_ylabel("count (across all refits)")
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, axis="y", alpha=0.3)
+
+
+def plot_feature_split_count(
+    trees_df: pd.DataFrame,
+    ax,
+    top_n: int = 15,
+    title: str | None = None,
+) -> None:
+    """Top-N feature split counts aggregated across refits."""
+    col = "Feature" if "Feature" in trees_df.columns else "split_feature"
+    splits = trees_df[trees_df[col].notna() & (trees_df[col] != "Leaf")][col]
+    counts = splits.value_counts().head(top_n).iloc[::-1]
+    ax.barh(counts.index.astype(str), counts.values, color="steelblue")
+    ax.set_xlabel("split count (across all refits)")
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, axis="x", alpha=0.3)
+
+
+def plot_shap_summary_bar(
+    global_importance_df: pd.DataFrame,
+    ax,
+    top_n: int = 15,
+    title: str | None = None,
+) -> None:
+    """Top-N mean |SHAP| bar plot.
+
+    Expects columns ``[feature, mean_abs_shap]``.
+    """
+    sub = global_importance_df.sort_values("mean_abs_shap", ascending=False).head(top_n).iloc[::-1]
+    ax.barh(sub["feature"], sub["mean_abs_shap"], color="steelblue")
+    ax.set_xlabel("mean |SHAP| (pooled OOS)")
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, axis="x", alpha=0.3)
+
+
+def plot_shap_yearly_heatmap(
+    yearly_importance_df: pd.DataFrame,
+    ax,
+    top_n: int = 15,
+    title: str | None = None,
+) -> None:
+    """Features × year heatmap of mean |SHAP|.
+
+    Expects columns ``[feature, year, mean_abs_shap]``.
+    """
+    pivot = yearly_importance_df.pivot(index="feature", columns="year", values="mean_abs_shap")
+    pivot = pivot.loc[pivot.mean(axis=1).sort_values(ascending=False).head(top_n).index]
+    pivot = pivot.iloc[::-1]
+    im = ax.imshow(pivot.values, aspect="auto", cmap="viridis")
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(pivot.index)
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels([str(y) for y in pivot.columns], rotation=45, ha="right")
+    ax.set_xlabel("year")
+    if title is not None:
+        ax.set_title(title)
+    ax.figure.colorbar(im, ax=ax, label="mean |SHAP|")
+
+
+def plot_shap_rank_stability(
+    perfold_importance_df: pd.DataFrame,
+    ax,
+    top_n: int = 10,
+    title: str | None = None,
+) -> None:
+    """Per-fold rank of the top-N features.
+
+    Expects columns ``[refit_id, feature, mean_abs_shap]``. Lower rank = more
+    important (rank 1 is the top feature in that fold).
+    """
+    pooled = perfold_importance_df.groupby("feature")["mean_abs_shap"].mean()
+    top_features = pooled.sort_values(ascending=False).head(top_n).index.tolist()
+    df = perfold_importance_df[perfold_importance_df["feature"].isin(top_features)].copy()
+    df["rank"] = df.groupby("refit_id")["mean_abs_shap"].rank(ascending=False, method="min")
+    for feat in top_features:
+        sub = df[df["feature"] == feat].sort_values("refit_id")
+        ax.plot(sub["refit_id"], sub["rank"], lw=0.8, alpha=0.85, label=feat)
+    ax.invert_yaxis()
+    ax.set_xlabel("refit id")
+    ax.set_ylabel("feature rank (1 = top)")
+    if title is not None:
+        ax.set_title(title)
+    ax.legend(loc="upper right", fontsize=7, ncols=2)
+    ax.grid(True, alpha=0.3)
+
+
+def plot_shap_group_bar(
+    group_importance_df: pd.DataFrame,
+    ax,
+    title: str | None = None,
+) -> None:
+    """Stacked bar of feature-group SHAP totals.
+
+    Expects columns ``[group, mean_abs_shap]``.
+    """
+    sub = group_importance_df.sort_values("mean_abs_shap", ascending=False)
+    ax.bar(sub["group"], sub["mean_abs_shap"], color=["steelblue", "tab:orange", "gray", "tab:green"])
+    ax.set_ylabel("Σ mean |SHAP| within group")
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, axis="y", alpha=0.3)
+
+
+def plot_shap_interaction_heatmap(
+    top_interactions_df: pd.DataFrame,
+    ax,
+    top_n: int = 10,
+    title: str | None = None,
+) -> None:
+    """Feature × feature heatmap of mean |interaction|.
+
+    Expects columns ``[feat_i, feat_j, mean_abs_interaction]``. Picks top_n
+    features by total interaction strength and renders the symmetric matrix.
+    """
+    feats_by_strength = (
+        top_interactions_df.groupby("feat_i")["mean_abs_interaction"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index.tolist()
+    )
+    sub = top_interactions_df[
+        top_interactions_df["feat_i"].isin(feats_by_strength) & top_interactions_df["feat_j"].isin(feats_by_strength)
+    ]
+    mat = sub.pivot(index="feat_i", columns="feat_j", values="mean_abs_interaction").reindex(
+        index=feats_by_strength, columns=feats_by_strength
+    )
+    im = ax.imshow(mat.values, aspect="auto", cmap="magma")
+    ax.set_xticks(range(len(feats_by_strength)))
+    ax.set_yticks(range(len(feats_by_strength)))
+    ax.set_xticklabels(feats_by_strength, rotation=45, ha="right")
+    ax.set_yticklabels(feats_by_strength)
+    if title is not None:
+        ax.set_title(title)
+    ax.figure.colorbar(im, ax=ax, label="mean |interaction|")
+
+
+def plot_shap_dependence(
+    shap_long_df: pd.DataFrame,
+    X_df: pd.DataFrame,
+    feature: str,
+    interaction_feature: str,
+    ax,
+    title: str | None = None,
+) -> None:
+    """SHAP dependence plot: feature value (x) vs SHAP value (y), colored by interaction feature.
+
+    Expects ``shap_long_df`` to have one column per feature with the same names as ``X_df``.
+    """
+    x = X_df[feature].to_numpy()
+    s = shap_long_df[feature].to_numpy()
+    c = X_df[interaction_feature].to_numpy()
+    sc = ax.scatter(x, s, c=c, s=4, alpha=0.6, cmap="coolwarm", rasterized=True)
+    ax.axhline(0, color="black", lw=0.5, alpha=0.5)
+    ax.set_xlabel(feature)
+    ax.set_ylabel(f"SHAP value for {feature}")
+    ax.figure.colorbar(sc, ax=ax, label=interaction_feature)
+    if title is not None:
+        ax.set_title(title)
+    ax.grid(True, alpha=0.3)
