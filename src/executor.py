@@ -44,6 +44,44 @@ from src.transforms import (
 FitPredict = Callable[[np.ndarray, np.ndarray, int, dict], np.ndarray]
 
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ExecutorConfig:
+    """Per-method backtest invariants. Drift here was the proximate cause
+    of the 2026-04-23 alignment audit (intersection-N regression). The
+    registry below is the single source of truth; run_executor enforces
+    it at runtime.
+    """
+    method: str
+    add_calendar: bool
+    target_use_diurnal: bool
+    target_winsor_window: int | None
+    dropna_with_exog: bool
+    refit_frequency: int
+
+    def as_data_prep_kwargs(self) -> dict:
+        return {
+            "add_calendar": self.add_calendar,
+            "target_use_diurnal": self.target_use_diurnal,
+            "target_winsor_window": self.target_winsor_window,
+            "dropna_with_exog": self.dropna_with_exog,
+        }
+
+
+CONFIGS: dict[str, ExecutorConfig] = {
+    "ridge":         ExecutorConfig("ridge",         add_calendar=False, target_use_diurnal=False, target_winsor_window=None, dropna_with_exog=True,  refit_frequency=1),
+    "xgboost":       ExecutorConfig("xgboost",       add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),
+    "lightgbm":      ExecutorConfig("lightgbm",      add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),
+    "random_forest": ExecutorConfig("random_forest", add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=True,  refit_frequency=5),
+    "pcr":           ExecutorConfig("pcr",           add_calendar=True,  target_use_diurnal=True,  target_winsor_window=None, dropna_with_exog=True,  refit_frequency=240),
+}
+# Excluded by design: dl_ae_ridge, dl_patchts (separate model-config shape),
+# tune_tree (hyperparameter tuner; doesn't call run_executor),
+# ml_baseline (no exog path; doesn't reach these flags).
+
+
 def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
     """Build the canonical executor arg parser and parse argv.
 
@@ -302,6 +340,19 @@ def run_executor(
     * ``method_name`` is informational — used in log lines only.
     """
     del seed  # reserved; per-method scripts can wire seed into model_fn directly
+
+    if method_name in CONFIGS:
+        expected = CONFIGS[method_name].as_data_prep_kwargs()
+        actual = {
+            "add_calendar": add_calendar,
+            "target_use_diurnal": target_use_diurnal,
+            "target_winsor_window": target_winsor_window,
+            "dropna_with_exog": dropna_with_exog,
+        }
+        if actual != expected:
+            raise ValueError(
+                f"data-prep drift for {method_name}: {actual} != {expected}"
+            )
 
     df, adj_exog_cols = load_and_transform(
         data_path,

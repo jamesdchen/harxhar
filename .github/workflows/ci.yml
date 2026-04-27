@@ -36,3 +36,16 @@ jobs:
           python-version: "3.10"
       - run: pip install -r requirements.txt
       - run: pytest -m "not slow and not gpu" --tb=short -q
+
+  audit:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - run: make repro-fixture
+      - run: python scripts/audit_check.py --quick
+      - run: PYTHONPATH=. python scripts/validate_strategy_eval.py
