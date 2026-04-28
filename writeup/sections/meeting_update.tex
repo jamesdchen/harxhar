@@ -209,20 +209,8 @@ of the Optuna storage and per-trial wall times identifies the cause:
 
 Even at matched CPU budget, XGBoost remains faster per trial. Two
 library-level differences account for this on our problem:
-\begin{enumerate}
-    \item \textbf{Histogram parallelism.} XGBoost's
-      \texttt{tree\_method="hist"} parallelizes histogram construction
-      column-wise, and level-wise tree growth splits $2^{d-1}$
-      leaves in parallel at each depth. LightGBM's leaf-wise (best-first)
-      growth serializes split decisions, so effective parallelism is
-      lower per tree.
-    \item \textbf{Wasted split attempts on small training windows.}
-      With \texttt{num\_leaves} up to $60$ and a rolling training
-      window of only $500$ observations, LightGBM explores many
-      unfruitful splits before converging; XGBoost's level-wise
-      growth with \texttt{max\_depth} and \texttt{min\_child\_weight}
-      caps truncates these exploration costs earlier.
-\end{enumerate}
+
+XGBoost's \texttt{tree\_method="hist"} parallelizes histogram construction column-wise, and level-wise tree growth splits $2^{d-1}$ leaves in parallel at each depth. LightGBM's leaf-wise (best-first) growth serializes split decisions, so effective parallelism is lower per tree (leaf-wise vs level-wise parallelism).
 
 We will test whether tightening the LightGBM search space
 (\texttt{num\_leaves} $\le 31$, \texttt{max\_depth} $\le 8$,
