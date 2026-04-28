@@ -14,7 +14,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from src.evaluation import calculate_metrics  # noqa: E402
+from src.evaluation import calculate_metrics, mz_regression  # noqa: E402
 
 
 def _upsert_manifest_entry(manifest_path: Path, entry: dict) -> None:
@@ -49,10 +49,37 @@ def main() -> int:
     p.add_argument("--horizon", type=int, default=1)
     p.add_argument("--segment", default="global")
     p.add_argument("--summary-csv", default="metrics.json")
+    p.add_argument(
+        "--baseline-dir",
+        type=Path,
+        default=None,
+        help="Run dir of the naive baseline (with results.csv). When set, "
+        "writes oos_r2 = 1 - SS_model / SS_baseline (raw scale) into metrics.json.",
+    )
     args = p.parse_args()
 
     df = pd.read_csv(args.run_dir / "results.csv")
     metrics = calculate_metrics(df)
+
+    # Mincer-Zarnowitz on raw scale
+    mz = mz_regression(df["true_raw"].to_numpy(), df["pred_raw"].to_numpy())
+    metrics["mz_alpha"] = mz["alpha"]
+    metrics["mz_alpha_se"] = mz["alpha_se"]
+    metrics["mz_beta"] = mz["beta"]
+    metrics["mz_beta_se"] = mz["beta_se"]
+    metrics["mz_t_alpha_eq_0"] = mz["t_alpha_eq_0"]
+    metrics["mz_t_beta_eq_1"] = mz["t_beta_eq_1"]
+    metrics["mz_r2"] = mz["r2"]
+
+    # OOS R^2 vs naive baseline (QLIKE-based: 1 - QLIKE_model / QLIKE_naive)
+    if args.baseline_dir is not None:
+        base_df = pd.read_csv(args.baseline_dir / "results.csv")
+        if (df["date"].values == base_df["date"].values).all():
+            qlike_base = calculate_metrics(base_df)["qlike"]
+            metrics["oos_r2"] = 1.0 - metrics["qlike"] / qlike_base if qlike_base > 0 else float("nan")
+        else:
+            print(f"[warn] date mismatch with baseline {args.baseline_dir} — skipping oos_r2", file=sys.stderr)
+
     metrics_path = args.run_dir / "metrics.json"
     with metrics_path.open("w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2, sort_keys=True)

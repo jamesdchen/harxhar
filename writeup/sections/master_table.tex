@@ -2,16 +2,12 @@
 \centering
 \caption{Headline: best feature set per method (by QLIKE).}
 \label{tab:master_compact}
-\begin{tabular}{lllllllll}
+\begin{tabular}{llllllllllll}
 \toprule
-method & feature\_set & config & n & qlike & mse & mae & mz\_alpha & mz\_beta \\
+method & feature\_set & config & n & qlike & w\_qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
 \midrule
-naive & har & default & 221,915 & 0.3518 & 0.2248 & 0.3431 & — & — \\
-ridge & all & paper & 12,890 & 0.1231 & 0.0587 & 0.1758 & — & — \\
-xgb & har & tuned & 218,909 & 0.1319 & 0.0000 & 0.0000 & +6.18e-07 & 0.742 \\
-lgbm & har & tuned & 218,909 & 0.1316 & 0.0000 & 0.0000 & +5.08e-07 & 0.778 \\
-rf & har & default & 143,540 & 0.2351 & 0.1492 & 0.2228 & — & — \\
-patchts & har & default & 221,579 & 0.4612 & 0.3156 & 0.3732 & — & — \\
+naive & har & baseline & 218,934 & 0.1987 & 0.1797 & 0.1033 & — & +5.8e-07 & 0.7152 & -190.35 & 0.5107 \\
+ridge & har & baseline & 218,934 & 0.1373 & 0.1192 & 0.0629 & +0.3092 & +5.6e-07 & 0.7662 & -160.18 & 0.5573 \\
 \bottomrule
 \end{tabular}
 \end{table}
