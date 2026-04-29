@@ -286,7 +286,7 @@ def plot_mz_scatter(
 ) -> dict:
     """Mincer-Zarnowitz scatter with mainstream regression-axis convention.
 
-    Plots `ŷ` on horizontal, `y` on vertical (matches OLS `y = α + β·ŷ`).
+    Plots `y` on horizontal, `ŷ` on vertical (transposed from OLS convention).
     ALWAYS draws both the fitted MZ line AND the 45° perfect-forecast
     reference. Returns the MZ regression dict.
 
@@ -303,18 +303,23 @@ def plot_mz_scatter(
     yhat = np.asarray(yhat, dtype=np.float64)
     mz = mz_regression(y, yhat)
 
-    ax.scatter(yhat, y, s=point_size, alpha=point_alpha, rasterized=True, color="steelblue")
+    # Axes flipped from regression convention: y on horizontal, ŷ on vertical.
+    # The MZ regression is still y = α + β·ŷ (regressor unchanged); only the
+    # visualization is transposed.
+    ax.scatter(y, yhat, s=point_size, alpha=point_alpha, rasterized=True, color="steelblue")
 
     lo = float(min(y.min(), yhat.min()))
     hi = float(max(y.max(), yhat.max()))
     grid = np.array([lo, hi])
 
-    mz_line = mz["alpha"] + mz["beta"] * grid
-    ax.plot(grid, mz_line, color="red", lw=1.5, label=f"MZ fit: y = {mz['alpha']:.3g} + {mz['beta']:.3f}·ŷ")
+    # Line equation: y = α + β·ŷ  ⇒  ŷ = (y − α) / β.
+    # With y on x-axis and ŷ on y-axis: vertical = (horizontal − α) / β.
+    mz_line_inv = (grid - mz["alpha"]) / mz["beta"] if mz["beta"] != 0 else np.full_like(grid, np.nan)
+    ax.plot(grid, mz_line_inv, color="red", lw=1.5, label=f"MZ fit: y = {mz['alpha']:.3g} + {mz['beta']:.3f}·ŷ")
     ax.plot(grid, grid, color="gray", lw=1.0, ls="--", label="45° (perfect forecast)")
 
-    ax.set_xlabel("forecast ŷ (raw RV)")
-    ax.set_ylabel("realized y (raw RV)")
+    ax.set_xlabel("realized y (raw RV)")
+    ax.set_ylabel("forecast ŷ (raw RV)")
     if title is None:
         title = (
             f"MZ: α={mz['alpha']:.3g}, β={mz['beta']:.3f} "
