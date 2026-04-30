@@ -1,24 +1,26 @@
-\documentclass[11pt]{article}
-
+\documentclass{article}
 \usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{booktabs}
-\usepackage[margin=1in]{geometry}
-\usepackage{hyperref}
-\usepackage{caption}
-
-\title{Master Results Table}
-\author{}
-\date{\today}
+\usepackage{booktabs} 
+\usepackage{geometry} 
+% Added 'landscape' to the geometry options
+\geometry{a4paper, margin=1in, landscape} 
 
 \begin{document}
-\maketitle
 
-\section*{Headline}
-\input{sections/master_table}
+% \input{sections/master_table}
 
-\section*{Full Table}
-\label{app:master_table_full}
-\input{sections/master_table_full}
+\begin{table}[t]
+\centering
+\caption{Headline: best feature set per method (by QLIKE).}
+\label{tab:master_compact}
+\begin{tabular}{lllllllllll}
+\toprule
+method & feature\_set & config & n & qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
+\midrule
+naive & har & baseline & 218,934 & 0.1987 & 0.1033 & --- & +5.8e-07 & 0.7152 & -190.35 & 0.5107 \\
+ridge & har & baseline & 218,934 & 0.1373 & 0.0629 & +0.3092 & +5.6e-07 & 0.7662 & -160.18 & 0.5573 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \end{document}
