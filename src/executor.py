@@ -54,6 +54,7 @@ class ExecutorConfig:
     registry below is the single source of truth; run_executor enforces
     it at runtime.
     """
+
     method: str
     add_calendar: bool
     target_use_diurnal: bool
@@ -71,11 +72,46 @@ class ExecutorConfig:
 
 
 CONFIGS: dict[str, ExecutorConfig] = {
-    "ridge":         ExecutorConfig("ridge",         add_calendar=False, target_use_diurnal=False, target_winsor_window=None, dropna_with_exog=True,  refit_frequency=1),  # noqa: E501
-    "xgboost":       ExecutorConfig("xgboost",       add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),  # noqa: E501
-    "lightgbm":      ExecutorConfig("lightgbm",      add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=False, refit_frequency=1),  # noqa: E501
-    "random_forest": ExecutorConfig("random_forest", add_calendar=True,  target_use_diurnal=True,  target_winsor_window=240,  dropna_with_exog=True,  refit_frequency=5),  # noqa: E501
-    "pcr":           ExecutorConfig("pcr",           add_calendar=True,  target_use_diurnal=True,  target_winsor_window=None, dropna_with_exog=True,  refit_frequency=240),  # noqa: E501
+    "ridge": ExecutorConfig(
+        "ridge",
+        add_calendar=False,
+        target_use_diurnal=False,
+        target_winsor_window=None,
+        dropna_with_exog=True,
+        refit_frequency=1,
+    ),  # noqa: E501
+    "xgboost": ExecutorConfig(
+        "xgboost",
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=False,
+        refit_frequency=1,
+    ),  # noqa: E501
+    "lightgbm": ExecutorConfig(
+        "lightgbm",
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=False,
+        refit_frequency=1,
+    ),  # noqa: E501
+    "random_forest": ExecutorConfig(
+        "random_forest",
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=True,
+        refit_frequency=5,
+    ),  # noqa: E501
+    "pcr": ExecutorConfig(
+        "pcr",
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=None,
+        dropna_with_exog=True,
+        refit_frequency=240,
+    ),  # noqa: E501
 }
 # Excluded by design: dl_ae_ridge, dl_patchts (separate model-config shape),
 # tune_tree (hyperparameter tuner; doesn't call run_executor),
@@ -130,6 +166,7 @@ def build_executor_parser(description: str = "Walk-forward backtest") -> argpars
     )
     parser.add_argument("--seed", type=int, default=42)
     return parser
+
 
 def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
     """Build the canonical executor arg parser and parse argv.
@@ -265,10 +302,8 @@ def load_and_transform(
     df = load_raw_data(data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
-        if dropna_with_exog:
-            df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
-        else:
-            df = df.dropna(subset=["RV"]).reset_index(drop=True)
+    drop_subset = ["RV"] + (exog_cols if (exog_cols and dropna_with_exog) else [])
+    df = df.dropna(subset=drop_subset).reset_index(drop=True)
 
     transform_kwargs: dict = {"is_target": True}
     if target_use_diurnal:
@@ -290,7 +325,14 @@ def load_and_transform(
 
 
 def _iter_TOD_segment(
-    df, *, segment, lag_scope, train_window, output_file, exog_cols, add_calendar,
+    df,
+    *,
+    segment,
+    lag_scope,
+    train_window,
+    output_file,
+    exog_cols,
+    add_calendar,
 ):
     """Yield (seg_name, job_df, feature_names, train_win_periods, job_output_file)
     for each time-of-day segment we need to backtest. ``seg_name`` is None when
@@ -361,9 +403,7 @@ def run_executor(
             "dropna_with_exog": dropna_with_exog,
         }
         if actual != expected:
-            raise ValueError(
-                f"data-prep drift for {method_name}: {actual} != {expected}"
-            )
+            raise ValueError(f"data-prep drift for {method_name}: {actual} != {expected}")
 
     df, adj_exog_cols = load_and_transform(
         data_path,
@@ -375,14 +415,24 @@ def run_executor(
 
     for seg_name, job_df, feature_names, train_win, out_file in _iter_TOD_segment(
         df,
-        segment=segment, lag_scope=lag_scope,
-        train_window=train_window, output_file=output_file,
-        exog_cols=adj_exog_cols, add_calendar=add_calendar,
+        segment=segment,
+        lag_scope=lag_scope,
+        train_window=train_window,
+        output_file=output_file,
+        exog_cols=adj_exog_cols,
+        add_calendar=add_calendar,
     ):
         if seg_name is not None:
             print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
             print(f"Window: {train_win} periods ({train_window} days)")
         _backtest_and_save(
-            job_df, feature_names, fit_predict, hyperparams,
-            train_win, horizon, start, end, out_file,
+            job_df,
+            feature_names,
+            fit_predict,
+            hyperparams,
+            train_win,
+            horizon,
+            start,
+            end,
+            out_file,
         )

@@ -52,6 +52,10 @@ def get_total_rows(data_path: str = "all30min", horizon: int = 1) -> int:
     )
 
     df = load_raw_data(data_path, allow_missing=True)
+    # Match executor.load_and_transform: drop RV NaN. The diurnal-baseline
+    # zero case is now handled inside diurnal_adjust (smallest-nonzero
+    # fallback), so post-transform rows stay finite for the new vintage.
+    df = df.dropna(subset=["RV"]).reset_index(drop=True)
     adj_rv, baseline = robust_transform(
         df,
         "RV",
