@@ -8,17 +8,18 @@
 \begin{document}
 
 % \input{sections/master_table}
-
 \begin{table}[t]
 \centering
-\caption{Headline: best feature set per method (by QLIKE).}
+\caption{Sorted by worst to best Qlike.}
 \label{tab:master_compact}
-\begin{tabular}{lllllllllll}
+\begin{tabular}{llllllllll}
 \toprule
-method & feature\_set & config & n & qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
+method & feature\_set & n & qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
 \midrule
-naive & har & baseline & 218,934 & 0.1987 & 0.1033 & --- & +5.8e-07 & 0.7152 & -190.35 & 0.5107 \\
-ridge & har & baseline & 218,934 & 0.1373 & 0.0629 & +0.3092 & +5.6e-07 & 0.7662 & -160.18 & 0.5573 \\
+$naive$ & $MA_{125}$ & 218,934 & 0.1957 & 0.1018 & — & +5.47e-07 & 0.7268 & -196.36 & 0.5547 \\
+$ridge$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1330 & 0.0615 & +0.3959 & +3.5e-07 & 0.8400 & -122.06 & 0.6523 \\
+$xgb_{tuned}$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1290 & 0.0602 & +0.4086 & +4.97e-07 & 0.7894 & -165.08 & 0.6363 \\
+$lgbm_{tuned}$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1289 & 0.0603 & +0.4077 & +4.71e-07 & 0.7947 & -160.43 & 0.6380 \\
 \bottomrule
 \end{tabular}
 \end{table}
