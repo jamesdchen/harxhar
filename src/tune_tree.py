@@ -1,4 +1,4 @@
-# Auto-generated from notebooks/tune_tree.ipynb. Do not edit by hand.
+# Auto-generated from notebooks/07_tune_tree.ipynb. Do not edit by hand.
 
 """Optuna helpers for tree-model hyperparameter tuning.
 
@@ -338,7 +338,7 @@ def reduce_trials(
         out = trial_dir / "qlike.json"
         if out.exists() and not force:
             continue
-        tid = trial_dir.name[len(prefix) :]
+        tid = trial_dir.name[len(prefix):]
         qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
         if qlike is None:
             print(f"  Trial {tid}: insufficient chunks, skipping")
