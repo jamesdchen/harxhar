@@ -39,27 +39,6 @@ def seed_everything(seed: int = 42) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def build_dl_parser(description: str = "GPU walk-forward backtest") -> argparse.ArgumentParser:
-    """Build the canonical DL-executor arg parser without parsing argv.
-
-    Returns the parser so per-method scripts can extend with their own
-    flags before calling ``parser.parse_args()`` (e.g. AE-Ridge appends
-    ``--n-components``).
-    """
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--gpu-count", type=int, default=1)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--learning-rate", type=float, default=None)
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument("--output-file", required=True)
-    parser.add_argument("--seed", type=int, default=42)
-    return parser
-
-
 def save_dl_results(
     preds,
     y_chunk,

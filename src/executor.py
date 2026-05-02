@@ -10,8 +10,12 @@ callable plus a default-hyperparam dict; everything else — CLI parsing,
 loading, transforms, horizon shift, chunk slicing, smearing, reduce
 JSON — is shared.
 
-The CLI contract is owned by :func:`parse_executor_args` and matches the
-flags that ``src/tune_tree.py`` (cmd_evaluate) passes via subprocess:
+The CLI contract is now owned by ``.hpc/cli.py`` (the auto-generated
+dispatcher) and ``.hpc/tasks.py`` FLAGS dict — the per-executor flag
+list lives there, not in this module. ``run_executor`` and the
+backtest plumbing remain here. The flags expected on ``args`` match
+those declared in ``.hpc/tasks.py`` FLAGS for the calling executor's
+module key (e.g. ``FLAGS["src/tune_tree.py`` (cmd_evaluate) passes via subprocess:
 ``--params-file --output-file --start --end --data-path --train-window``
 ``--horizon --exog-cols`` plus the Ridge-only ``--segment`` and
 ``--lag-scope`` and the optional ``--refit-frequency`` / ``--seed``.
@@ -116,67 +120,6 @@ CONFIGS: dict[str, ExecutorConfig] = {
 # Excluded by design: dl_ae_ridge, dl_patchts (separate model-config shape),
 # tune_tree (hyperparameter tuner; doesn't call run_executor),
 # ml_baseline (no exog path; doesn't reach these flags).
-
-
-def build_executor_parser(description: str = "Walk-forward backtest") -> argparse.ArgumentParser:
-    """Build the canonical executor arg parser without parsing argv.
-
-    Returns the parser object so per-method scripts can extend it with
-    method-specific flags before calling ``parser.parse_args()``. The
-    flag set is the union used by any executor or `tune_tree`
-    cmd_evaluate; methods that don't care about a given flag (e.g.
-    ``--segment`` for XGB/LGBM/RF) simply ignore it.
-
-    Notes
-    -----
-    ``--refit-frequency`` defaults to ``None`` (sentinel) so that each
-    method can fall back to its method-specific default. Concretely:
-    XGB=1, LGBM=1, RF=5, Ridge=1.
-    """
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--data-path", default="all30min")
-    parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--train-window", type=int, default=500, help="training window in days")
-    parser.add_argument(
-        "--refit-frequency",
-        type=int,
-        default=None,
-        help="how often to refit during walk-forward; None falls back to per-method default",
-    )
-    parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--end", type=int, default=-1)
-    parser.add_argument(
-        "--exog-cols",
-        default=None,
-        help="Pipe-separated exog columns, e.g. vix|sentiment",
-    )
-    parser.add_argument("--output-file", required=True)
-    parser.add_argument("--params-file", default=None, help="JSON file with tuned hyperparams")
-    parser.add_argument(
-        "--segment",
-        default=None,
-        choices=SEGMENT_CHOICES,
-        help="Time-of-day segment (Ridge only)",
-    )
-    parser.add_argument(
-        "--lag-scope",
-        default="global",
-        choices=["global", "intra"],
-        help="Compute lags on full dataset or per-segment (Ridge only)",
-    )
-    parser.add_argument("--seed", type=int, default=42)
-    return parser
-
-
-def parse_executor_args(description: str = "Walk-forward backtest") -> argparse.Namespace:
-    """Build the canonical executor arg parser and parse argv.
-
-    Thin wrapper around :func:`build_executor_parser`. Every per-method
-    ``src/ml_*.py`` calls this when it doesn't need to add any custom
-    flags. Methods that need extras (PCR's ``--n-components``) call
-    ``build_executor_parser`` directly so they can extend the parser.
-    """
-    return build_executor_parser(description).parse_args()
 
 
 def _backtest_and_save(
@@ -302,8 +245,10 @@ def load_and_transform(
     df = load_raw_data(data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
-    drop_subset = ["RV"] + (exog_cols if (exog_cols and dropna_with_exog) else [])
-    df = df.dropna(subset=drop_subset).reset_index(drop=True)
+        if dropna_with_exog:
+            df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
+        else:
+            df = df.dropna(subset=["RV"]).reset_index(drop=True)
 
     transform_kwargs: dict = {"is_target": True}
     if target_use_diurnal:

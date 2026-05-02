@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from hpc_mapreduce.executor_cli import flag, generic_args, gpu_args
 
-# Time-of-day segments accepted by ml_*.py executors via src.executor.SEGMENT_CHOICES.
-# The choice list lives here (parallelization concern) rather than in the executor
-# files (substance concern).
-_SEGMENT_CHOICES = ("am", "pm", "all", "morning_close", "afternoon_close")
+# Time-of-day segments. Canonical source: src/transforms.py:SEGMENT_CHOICES
+# (defined in notebooks/pipeline/02_transforms.ipynb). Mirrored here as a
+# constant rather than imported because tasks.py is loaded at /submit-hpc
+# time before the experiment's deps are necessarily on path; an import
+# would force pandas/numpy to resolve before scaffolding can finish. Keep
+# in sync with src/transforms.py if those values ever change.
+_SEGMENT_CHOICES = ("all", "morning", "midday", "closing", "overnight")
 
 # Shared CPU-executor flag set used by ml_ridge / ml_xgboost / ml_lightgbm /
 # ml_random_forest / ml_pcr / ml_baseline. Method-specific extras (e.g.
