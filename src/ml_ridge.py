@@ -15,7 +15,7 @@ import json
 import numpy as np
 from sklearn.linear_model import Ridge
 
-from src.executor import CONFIGS, parse_executor_args, run_executor
+from src.executor import CONFIGS, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -60,8 +60,7 @@ def fit_predict_ridge(
     )
 
 
-def main() -> None:
-    args = parse_executor_args("Ridge walk-forward backtest")
+def compute(args) -> None:
 
     tuned_params: dict = {}
     if args.params_file:
@@ -92,7 +91,3 @@ def main() -> None:
         **CONFIGS["ridge"].as_data_prep_kwargs(),
         seed=args.seed,
     )
-
-
-if __name__ == "__main__":
-    main()
