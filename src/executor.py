@@ -23,7 +23,6 @@ module key (e.g. ``FLAGS["src/tune_tree.py`` (cmd_evaluate) passes via subproces
 
 from __future__ import annotations
 
-import argparse
 import os
 from collections.abc import Callable
 
@@ -34,7 +33,6 @@ from src.evaluation import apply_duan_smearing, save_chunk_reduce
 from src.loading import apply_overnight_fills, load_raw_data
 from src.transforms import (
     PERIODS_PER_DAY,
-    SEGMENT_CHOICES,
     SEGMENT_DEFINITIONS,
     add_calendar_features,
     apply_horizon_shift,

@@ -10,7 +10,6 @@ the model+training+backtest logic stays in the per-method files.
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
