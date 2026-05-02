@@ -1,21 +1,39 @@
 # Auto-generated from notebooks/tune_tree.ipynb. Do not edit by hand.
 
-"""Optuna hyperparameter tuning for tree-based volatility models.
+"""Optuna helpers for tree-model hyperparameter tuning.
 
-Subcommands (HPC-parallel workflow):
-  suggest  — generate a batch of candidate param sets (shotgun TPE)
-  evaluate — thin wrapper that delegates one trial to the right ml_*.py executor
-  reduce   — cluster-side: per-trial CSV concat -> QLIKE -> qlike.json
-  score    — read qlike.json (or CSVs), compute QLIKE, report back to Optuna
+Library module — used by .hpc/tasks.py inside a /campaign-hpc-style
+closed loop. The CLI subcommands (suggest/evaluate/score) that this
+module used to ship were retired 2026-05-02; their orchestration role
+now lives in /campaign-hpc + a campaign-aware tasks.py that reads
+prior(experiment_dir, campaign_id) to drive Optuna ask/tell.
+
+Public surface:
+    suggest_batch(model, batch_size, ...)        — Optuna ask + persist trials
+    score_trials(model, storage_path, ...)        — read per-trial outputs, tell()
+    _get_search_space(model)                       — TPE search-space dict
+    _compute_qlike(df)                             — QLIKE on a one-trial result frame
+    reduce_trials(...)                             — aggregate per-trial QLIKEs
+    _make_storage / _study_name / _load_or_create_study  — Optuna study mgmt
+
+A campaign-aware tasks.py example for tuning ml_xgboost over 100 trials
+in batches of 10:
+
+    from src.tune_tree import suggest_batch, _load_or_create_study
+    from hpc_mapreduce.reduce.history import prior
+    import os
+    _PRIOR = prior(".", os.environ["HPC_CAMPAIGN_ID"])
+    if len(_PRIOR) >= 10:                           # 10 batches done -> stop
+        _TASKS = []
+    else:
+        study = _load_or_create_study("xgboost", storage_path=".hpc/optuna.db")
+        _TASKS = [study.ask().params for _ in range(10)]
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -171,150 +189,6 @@ def _get_search_space(model: str) -> dict:
         raise ValueError(f"Unknown model: {model}")
 
 
-def cmd_suggest(args: argparse.Namespace) -> None:
-    suggest_batch(
-        model=args.model,
-        batch_size=args.batch_size,
-        storage_path=args.storage,
-        output_dir=args.output_dir,
-        study_name=args.study_name or _study_name(args.model, args.exog_bucket),
-    )
-
-
-# ── Subcommand: evaluate ─────────────────────────────────────────────────────
-
-
-def cmd_evaluate(args: argparse.Namespace) -> None:
-    """Delegate one trial evaluation to the appropriate ml_*.py executor."""
-    # Bucket-scoped layout: {params_dir}/{model}_{bucket}/trial_X.json when --exog-bucket is set.
-    # Otherwise: {params_dir}/{model}/trial_X.json, falling back to flat.
-    if args.exog_bucket is not None:
-        subdir = f"{args.model}_{args.exog_bucket}"
-        params_file = os.path.join(args.params_dir, subdir, f"trial_{args.trial_id}.json")
-    else:
-        params_file = os.path.join(args.params_dir, args.model, f"trial_{args.trial_id}.json")
-    if not os.path.isfile(params_file):
-        params_file = os.path.join(args.params_dir, f"trial_{args.trial_id}.json")
-    if not os.path.isfile(params_file):
-        print(f"ERROR: params file not found: {params_file}", file=sys.stderr)
-        sys.exit(1)
-
-    # Default output-file from HPC dispatch env vars
-    output_file = args.output_file
-    if output_file is None:
-        result_dir = os.environ.get("RESULT_DIR", ".")
-        chunk_id = os.environ.get("CHUNK_ID") or os.environ.get("TASK_ID") or "0"
-        output_file = os.path.join(result_dir, f"results_chunk_{chunk_id}.csv")
-
-    executor = _EXECUTOR_SCRIPTS[args.model]
-    cmd = [
-        sys.executable,
-        executor,
-        "--params-file",
-        params_file,
-        "--output-file",
-        output_file,
-    ]
-    if args.start is not None:
-        cmd += ["--start", str(args.start)]
-    if args.end is not None:
-        cmd += ["--end", str(args.end)]
-    if args.data_path:
-        cmd += ["--data-path", args.data_path]
-    if args.train_window:
-        cmd += ["--train-window", str(args.train_window)]
-    if args.horizon:
-        cmd += ["--horizon", str(args.horizon)]
-    if args.exog_bucket is not None:
-        from src.loading import get_bucket
-
-        cols = get_bucket(args.exog_bucket)
-        cmd += ["--exog-cols", "|".join(cols)]
-
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
-    sys.exit(result.returncode)
-
-
-# ── Subcommand: score ────────────────────────────────────────────────────────
-
-
-def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> float | None:
-    """Trial QLIKE from per-chunk partial reduce JSONs; fall back to CSV concat.
-
-    Executors write ``*_reduce.json`` next to each chunk CSV via
-    ``evaluation.save_chunk_reduce``. Aggregating the partials is O(chunks) of
-    tiny JSON reads vs O(chunks * rows) for CSV parsing.
-    """
-    partials = sorted(Path(trial_dir).glob("*_reduce.json"))
-    if partials and (require_chunks is None or len(partials) >= require_chunks):
-        total_count = 0
-        total_sum = 0.0
-        for p in partials:
-            with open(p) as f:
-                d = json.load(f)
-            total_count += d["qlike_count"]
-            total_sum += d["qlike_sum"]
-        if total_count == 0:
-            return None
-        return total_sum / total_count
-
-    # Fallback: concatenate CSVs (slow, for legacy trial dirs without partials)
-    csvs = sorted(Path(trial_dir).glob("*.csv"))
-    if not csvs or (require_chunks is not None and len(csvs) < require_chunks):
-        return None
-    chunks = [pd.read_csv(p) for p in csvs]
-    results_df = pd.concat(chunks, ignore_index=True)
-    return _compute_qlike(results_df)
-
-
-def reduce_trials(
-    model: str,
-    results_dir: str,
-    require_chunks: int | None = 100,
-    force: bool = False,
-    trial_prefix: str | None = None,
-) -> int:
-    """Cluster-side reduce: compute QLIKE per trial dir, write qlike.json.
-
-    Trial dirs are any subdirs of ``results_dir`` matching ``{trial_prefix}*``
-    (default ``{model}_``). The suffix is kept as a string, so arbitrary
-    naming like ``lgbm_jitter_rf1_0`` or ``lgbm_replay_libdef`` works.
-
-    Idempotent: skips dirs that already have qlike.json unless force=True.
-    Returns count of trials reduced.
-    """
-    prefix = trial_prefix if trial_prefix is not None else f"{model}_"
-    reduced = 0
-    for trial_dir in sorted(Path(results_dir).glob(f"{prefix}*")):
-        if not trial_dir.is_dir():
-            continue
-        out = trial_dir / "qlike.json"
-        if out.exists() and not force:
-            continue
-        tid = trial_dir.name[len(prefix) :]
-        qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
-        if qlike is None:
-            print(f"  Trial {tid}: insufficient chunks, skipping")
-            continue
-        with open(out, "w") as f:
-            json.dump({"trial_id": tid, "qlike": qlike}, f)
-        reduced += 1
-        print(f"  Trial {tid}: QLIKE = {qlike:.6f} -> {out}")
-    return reduced
-
-
-def cmd_reduce(args: argparse.Namespace) -> None:
-    n = reduce_trials(
-        model=args.model,
-        results_dir=args.results_dir,
-        require_chunks=args.require_chunks,
-        force=args.force,
-        trial_prefix=args.trial_prefix,
-    )
-    print(f"\nReduced {n} trials for model={args.model}")
-
-
 def score_trials(
     model: str,
     storage_path: str | None,
@@ -411,83 +285,66 @@ def score_trials(
     return dict(best.params)
 
 
-def cmd_score(args: argparse.Namespace) -> None:
-    score_trials(
-        model=args.model,
-        storage_path=args.storage,
-        params_dir=args.params_dir,
-        results_dir=args.results_dir,
-        output_file=args.output_file,
-        study_name=args.study_name or _study_name(args.model, args.exog_bucket),
-        exog_bucket=args.exog_bucket,
-        min_chunks=args.min_chunks,
-    )
+def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> float | None:
+    """Trial QLIKE from per-chunk partial reduce JSONs; fall back to CSV concat.
+
+    Executors write ``*_reduce.json`` next to each chunk CSV via
+    ``evaluation.save_chunk_reduce``. Aggregating the partials is O(chunks) of
+    tiny JSON reads vs O(chunks * rows) for CSV parsing.
+    """
+    partials = sorted(Path(trial_dir).glob("*_reduce.json"))
+    if partials and (require_chunks is None or len(partials) >= require_chunks):
+        total_count = 0
+        total_sum = 0.0
+        for p in partials:
+            with open(p) as f:
+                d = json.load(f)
+            total_count += d["qlike_count"]
+            total_sum += d["qlike_sum"]
+        if total_count == 0:
+            return None
+        return total_sum / total_count
+
+    # Fallback: concatenate CSVs (slow, for legacy trial dirs without partials)
+    csvs = sorted(Path(trial_dir).glob("*.csv"))
+    if not csvs or (require_chunks is not None and len(csvs) < require_chunks):
+        return None
+    chunks = [pd.read_csv(p) for p in csvs]
+    results_df = pd.concat(chunks, ignore_index=True)
+    return _compute_qlike(results_df)
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+def reduce_trials(
+    model: str,
+    results_dir: str,
+    require_chunks: int | None = 100,
+    force: bool = False,
+    trial_prefix: str | None = None,
+) -> int:
+    """Cluster-side reduce: compute QLIKE per trial dir, write qlike.json.
 
+    Trial dirs are any subdirs of ``results_dir`` matching ``{trial_prefix}*``
+    (default ``{model}_``). The suffix is kept as a string, so arbitrary
+    naming like ``lgbm_jitter_rf1_0`` or ``lgbm_replay_libdef`` works.
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Optuna hyperparameter tuning for tree-based volatility models")
-    sub = parser.add_subparsers(dest="command")
-
-    # ── suggest ──
-    p_suggest = sub.add_parser("suggest", help="Generate batch of candidate param sets")
-    p_suggest.add_argument("--model", required=True, choices=_MODELS)
-    p_suggest.add_argument("--batch-size", type=int, default=10)
-    p_suggest.add_argument("--storage", default=None)
-    p_suggest.add_argument("--study-name", default=None)
-    p_suggest.add_argument("--exog-bucket", default=None)
-    p_suggest.add_argument("--output-dir", required=True)
-    p_suggest.set_defaults(func=cmd_suggest)
-
-    # ── evaluate ──
-    p_eval = sub.add_parser("evaluate", help="Run one trial via ml_*.py executor")
-    p_eval.add_argument("--model", required=True, choices=_MODELS)
-    p_eval.add_argument("--trial-id", type=int, required=True)
-    p_eval.add_argument("--params-dir", required=True)
-    p_eval.add_argument("--output-file", default=None)
-    p_eval.add_argument("--start", type=int, default=None)
-    p_eval.add_argument("--end", type=int, default=None)
-    p_eval.add_argument("--data-path", default=None)
-    p_eval.add_argument("--train-window", type=int, default=None)
-    p_eval.add_argument("--horizon", type=int, default=None)
-    p_eval.add_argument("--exog-bucket", default=None)
-    p_eval.set_defaults(func=cmd_evaluate)
-
-    # ── score ──
-    p_reduce = sub.add_parser("reduce", help="Cluster-side: compute per-trial QLIKE into qlike.json")
-    p_reduce.add_argument("--model", required=True, choices=_MODELS)
-    p_reduce.add_argument("--results-dir", required=True)
-    p_reduce.add_argument("--require-chunks", type=int, default=100)
-    p_reduce.add_argument("--force", action="store_true")
-    p_reduce.add_argument(
-        "--trial-prefix",
-        default=None,
-        help="Glob prefix for trial dirs (default: '{model}_'). Use to scope reduce "
-        "to dirs with custom naming, e.g. 'lgbm_jitter_rf1_'.",
-    )
-    p_reduce.set_defaults(func=cmd_reduce)
-
-    p_score = sub.add_parser("score", help="Score trials and report to Optuna")
-    p_score.add_argument("--model", required=True, choices=_MODELS)
-    p_score.add_argument("--storage", default=None)
-    p_score.add_argument("--study-name", default=None)
-    p_score.add_argument("--exog-bucket", default=None)
-    p_score.add_argument("--params-dir", required=True)
-    p_score.add_argument("--results-dir", required=True)
-    p_score.add_argument("--output-file", required=True)
-    p_score.add_argument(
-        "--min-chunks", type=int, default=100, help="Skip trials with fewer than N completed chunks (default 100)."
-    )
-    p_score.set_defaults(func=cmd_score)
-
-    args = parser.parse_args()
-    if not hasattr(args, "func"):
-        parser.print_help()
-        sys.exit(1)
-    args.func(args)
-
-
-if __name__ == "__main__":
-    main()
+    Idempotent: skips dirs that already have qlike.json unless force=True.
+    Returns count of trials reduced.
+    """
+    prefix = trial_prefix if trial_prefix is not None else f"{model}_"
+    reduced = 0
+    for trial_dir in sorted(Path(results_dir).glob(f"{prefix}*")):
+        if not trial_dir.is_dir():
+            continue
+        out = trial_dir / "qlike.json"
+        if out.exists() and not force:
+            continue
+        tid = trial_dir.name[len(prefix) :]
+        qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
+        if qlike is None:
+            print(f"  Trial {tid}: insufficient chunks, skipping")
+            continue
+        with open(out, "w") as f:
+            json.dump({"trial_id": tid, "qlike": qlike}, f)
+        reduced += 1
+        print(f"  Trial {tid}: QLIKE = {qlike:.6f} -> {out}")
+    return reduced
