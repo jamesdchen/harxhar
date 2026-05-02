@@ -10,7 +10,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from src.executor import CONFIGS, build_executor_parser, load_and_transform
+from src.executor import CONFIGS, load_and_transform
 from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
 from src.transforms import (
@@ -139,11 +139,7 @@ def _run_backtest_and_save(
     print(f"Saved {len(results)} rows to {output_file}")
 
 
-def main() -> None:
-    parser = build_executor_parser("PCA + Ridge (PCR) volatility backtest")
-    parser.add_argument("--n-components", type=int, default=5)
-    args = parser.parse_args()
-
+def compute(args) -> None:
     exog_cols = parse_exog_cols(args.exog_cols)
 
     # --- Load and transform (shared with executor.run_executor) ---
@@ -205,7 +201,3 @@ def main() -> None:
             args.n_components,
             random_state=args.seed,
         )
-
-
-if __name__ == "__main__":
-    main()

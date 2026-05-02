@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation import apply_duan_smearing
-from src.executor import build_executor_parser, load_and_transform
+from src.executor import load_and_transform
 from src.transforms import (
     PERIODS_PER_DAY,
     apply_horizon_shift,
@@ -17,9 +17,7 @@ from src.transforms import (
 )
 
 
-def main() -> None:
-    args = build_executor_parser("Naive baseline backtest").parse_args()
-
+def compute(args) -> None:
     train_win_periods = args.train_window * PERIODS_PER_DAY
 
     df, _ = load_and_transform(
@@ -75,7 +73,3 @@ def main() -> None:
     os.makedirs(os.path.dirname(args.output_file) or ".", exist_ok=True)
     results.to_csv(args.output_file, index=False)
     print(f"Saved {len(results)} rows -> {args.output_file}")
-
-
-if __name__ == "__main__":
-    main()

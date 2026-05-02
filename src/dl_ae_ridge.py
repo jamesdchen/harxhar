@@ -15,7 +15,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
-from src.dl_executor import build_dl_parser, save_dl_results, seed_everything
+from src.dl_executor import save_dl_results, seed_everything
 from src.executor import load_and_transform
 from src.transforms import apply_horizon_shift
 
@@ -339,10 +339,7 @@ def run_ae_ridge_backtest(X, y, config):
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 
-def main():
-    parser = build_dl_parser("AE+Ridge GPU walk-forward backtest")
-    parser.add_argument("--n-components", type=int, default=None)
-    args = parser.parse_args()
+def compute(args) -> None:
     seed_everything(args.seed)
 
     config = json.loads(json.dumps(DEFAULT_AE_CONFIG))  # deep copy
@@ -408,7 +405,3 @@ def main():
 
     # 7. Save (Duan smearing + DataFrame + CSV + metrics.json + log)
     save_dl_results(preds, y_chunk, dates_chunk, baselines_chunk, train_window, args.horizon, args.output_file)
-
-
-if __name__ == "__main__":
-    main()

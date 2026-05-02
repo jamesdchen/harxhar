@@ -15,7 +15,7 @@ import json
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from src.executor import CONFIGS, parse_executor_args, run_executor
+from src.executor import CONFIGS, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -60,9 +60,7 @@ def fit_predict_rf(
     )
 
 
-def main() -> None:
-    args = parse_executor_args("Random Forest walk-forward backtest")
-
+def compute(args) -> None:
     tuned_params: dict = {}
     if args.params_file:
         with open(args.params_file) as f:
@@ -74,9 +72,7 @@ def main() -> None:
     # Wire seed through to RandomForestRegressor's random_state.
     hyperparams.setdefault("random_state", args.seed)
     refit_frequency = (
-        args.refit_frequency
-        if args.refit_frequency is not None
-        else CONFIGS["random_forest"].refit_frequency
+        args.refit_frequency if args.refit_frequency is not None else CONFIGS["random_forest"].refit_frequency
     )
     hyperparams["_refit_frequency"] = refit_frequency
 
@@ -98,7 +94,3 @@ def main() -> None:
         **CONFIGS["random_forest"].as_data_prep_kwargs(),
         seed=args.seed,
     )
-
-
-if __name__ == "__main__":
-    main()

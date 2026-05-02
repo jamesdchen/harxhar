@@ -15,7 +15,7 @@ import json
 import numpy as np
 from xgboost import XGBRegressor
 
-from src.executor import CONFIGS, parse_executor_args, run_executor
+from src.executor import CONFIGS, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -59,9 +59,7 @@ def fit_predict_xgb(
     )
 
 
-def main() -> None:
-    args = parse_executor_args("XGBoost walk-forward backtest")
-
+def compute(args) -> None:
     tuned_params: dict = {}
     if args.params_file:
         with open(args.params_file) as f:
@@ -91,7 +89,3 @@ def main() -> None:
         **CONFIGS["xgboost"].as_data_prep_kwargs(),
         seed=args.seed,
     )
-
-
-if __name__ == "__main__":
-    main()

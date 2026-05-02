@@ -16,7 +16,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from transformers import PatchTSTConfig, PatchTSTModel, PreTrainedModel
 
-from src.dl_executor import build_dl_parser, save_dl_results, seed_everything
+from src.dl_executor import save_dl_results, seed_everything
 from src.executor import load_and_transform
 
 # ── Logging ──────────────────────────────────────────────────────────────
@@ -313,8 +313,7 @@ def run_patchts_backtest(X_tensor, y_tensor, config):
     return predictions
 
 
-def main():
-    args = build_dl_parser("PatchTST GPU walk-forward backtest").parse_args()
+def compute(args) -> None:
     seed_everything(args.seed)
 
     config = json.loads(json.dumps(DEFAULT_CONFIG))
@@ -371,7 +370,3 @@ def main():
     logger.info(f"Backtest complete in {elapsed:.1f}s")
 
     save_dl_results(preds, y_chunk, dates_chunk, baselines_chunk, train_window, args.horizon, args.output_file)
-
-
-if __name__ == "__main__":
-    main()
