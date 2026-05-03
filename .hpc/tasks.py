@@ -8,7 +8,12 @@ module is invoked. resolve(task_id)/total() control task fan-out per
 
 from __future__ import annotations
 
+import json as _json
+import os as _os
+from pathlib import Path as _Path
+
 from hpc_mapreduce.executor_cli import flag, generic_args, gpu_args
+from hpc_mapreduce.reduce.history import prior as _prior
 
 # Time-of-day segments. Canonical source: src/transforms.py:SEGMENT_CHOICES
 # (defined in notebooks/pipeline/02_transforms.ipynb). Mirrored here as a
@@ -73,10 +78,69 @@ FLAGS: dict[str, list] = {
     ],
 }
 
-# ─── Tasks: starter sanity (a single task; replace with real grid axes) ────
-_TASKS: list[dict] = [
-    {"horizon": 1, "train_window": 500, "seed": 42},
-]
+# ─── Tasks ────────────────────────────────────────────────────────────────
+#
+# Open-loop default: one sanity task. Used when /submit-hpc is invoked
+# without --campaign-id (HPC_CAMPAIGN_ID unset).
+#
+# Closed-loop (campaign): when HPC_CAMPAIGN_ID is set, this module asks
+# Optuna for a batch of `_BATCH` trials per /submit-hpc iteration and
+# materializes one JSON params file per trial under
+# `params/<cid>/iter_<N>/`. resolve(task_id) returns the path so the
+# executor receives `--params-file params/.../trial_K.json` — no
+# changes to FLAGS or src/ml_xgboost.py needed. The campaign driver
+# (.hpc/campaigns/<cid>/score_iter.py) reads each iteration's manifest.json
+# and the per-task qlike.json after the array job lands, then calls
+# study.tell() to push results back into the Optuna study.
+_CAMPAIGN_ID = _os.environ.get("HPC_CAMPAIGN_ID")
+_TUNE_BATCH = 10  # trials per /submit-hpc iteration
+_TUNE_BUDGET = 100  # total trials before campaign stops
+_OPTUNA_STORAGE = ".hpc/optuna.db"
+_TUNE_MODEL = "xgb"
+
+
+def _build_xgb_optuna_batch() -> list[dict]:
+    """Ask Optuna for the next batch of XGB trials (idempotent on disk).
+
+    Re-running the same iteration (e.g. on resume) re-uses the existing
+    manifest.json + trial_*.json instead of asking Optuna again, which
+    would orphan trial numbers in the study.
+    """
+    from src.tune_tree import _get_search_space, _load_or_create_study
+
+    n_done = len(_prior(".", _CAMPAIGN_ID)) * _TUNE_BATCH
+    if n_done >= _TUNE_BUDGET:
+        return []
+
+    n_iter = n_done // _TUNE_BATCH
+    n_this_iter = min(_TUNE_BATCH, _TUNE_BUDGET - n_done)
+    iter_dir = _Path(f"params/{_CAMPAIGN_ID}/iter_{n_iter:03d}")
+    manifest_file = iter_dir / "manifest.json"
+
+    if not manifest_file.exists():
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        study = _load_or_create_study(_TUNE_MODEL, storage_path=_OPTUNA_STORAGE)
+        trials_info = []
+        for i in range(n_this_iter):
+            trial = study.ask(fixed_distributions=_get_search_space(_TUNE_MODEL))
+            (iter_dir / f"trial_{i}.json").write_text(_json.dumps(trial.params, indent=2))
+            trials_info.append({"id": i, "file": f"trial_{i}.json", "optuna_number": trial.number})
+        manifest_file.write_text(
+            _json.dumps(
+                {
+                    "model": _TUNE_MODEL,
+                    "study_name": study.study_name,
+                    "batch_size": n_this_iter,
+                    "trials": trials_info,
+                },
+                indent=2,
+            )
+        )
+
+    return [{"params_file": (iter_dir / f"trial_{i}.json").as_posix()} for i in range(n_this_iter)]
+
+
+_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else [{"horizon": 1, "train_window": 500, "seed": 42}]
 
 
 def total() -> int:

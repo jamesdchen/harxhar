@@ -36,8 +36,11 @@ import json
 import os
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+# numpy and pandas are imported lazily inside the functions that need them.
+# Keeping the module top-level cheap means .hpc/tasks.py can import the
+# Optuna helpers (`_get_search_space`, `_load_or_create_study`) on a laptop
+# venv that has only optuna installed — no need to ship pandas locally just
+# to drive the campaign loop.
 
 # ── Search spaces ────────────────────────────────────────────────────────────
 
@@ -74,6 +77,7 @@ def _load_or_create_study(
     storage_path: str | None,
     study_name: str | None = None,
 ):
+    import numpy as np
     import optuna
 
     storage = _make_storage(storage_path)
@@ -91,7 +95,9 @@ def _load_or_create_study(
     )
 
 
-def _compute_qlike(results_df: pd.DataFrame) -> float:
+def _compute_qlike(results_df) -> float:
+    import numpy as np
+
     true_raw = results_df["true_raw"].values
     pred_raw = results_df["pred_raw"].values
     mask = (true_raw > 0) & (pred_raw > 0)
@@ -309,6 +315,8 @@ def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> f
     csvs = sorted(Path(trial_dir).glob("*.csv"))
     if not csvs or (require_chunks is not None and len(csvs) < require_chunks):
         return None
+    import pandas as pd
+
     chunks = [pd.read_csv(p) for p in csvs]
     results_df = pd.concat(chunks, ignore_index=True)
     return _compute_qlike(results_df)
@@ -338,7 +346,7 @@ def reduce_trials(
         out = trial_dir / "qlike.json"
         if out.exists() and not force:
             continue
-        tid = trial_dir.name[len(prefix):]
+        tid = trial_dir.name[len(prefix) :]
         qlike = _compute_trial_qlike(str(trial_dir), require_chunks)
         if qlike is None:
             print(f"  Trial {tid}: insufficient chunks, skipping")
