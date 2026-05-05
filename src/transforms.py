@@ -104,7 +104,9 @@ def diurnal_adjust(
             lambda g: g.rolling(window, min_periods=min_periods).mean().shift(1)
         )
 
-    baseline = baseline.fillna(1.0)
+    # Treat 0 the same as NaN (e.g. flat ffilled segments produce zero rolling std/mean);
+    # passing through raw value (baseline=1.0) is safer than dividing by zero -> inf/NaN.
+    baseline = baseline.replace(0, 1.0).fillna(1.0)
     adjusted = series / baseline
     return adjusted, baseline
 
