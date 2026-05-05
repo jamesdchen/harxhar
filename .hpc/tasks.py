@@ -252,22 +252,42 @@ _BUCKET_COLS_LOOKUP: dict[str, tuple[str, ...]] = {
 }
 
 
+def _resolve_iter_idx() -> int:
+    """Pick the iteration index for this `tune_*` invocation.
+
+    Cluster-side: ``$HPC_ITER_IDX`` is set by the submitter (one value per
+    qsub/sbatch), so every task in the array sees the same iter and reads
+    the matching pre-materialized ``params/<cid>/iter_<N>/`` directory.
+    Importing ``claude_hpc.mapreduce.reduce.history.prior`` is unnecessary
+    (and would crash — that submodule isn't shipped by ``deploy_runtime``).
+
+    Local submit-time: ``HPC_ITER_IDX`` is unset, so count existing
+    on-disk ``iter_*`` dirs to pick the next one. No claude_hpc deps.
+    """
+    explicit = _os.environ.get("HPC_ITER_IDX")
+    if explicit is not None and explicit != "":
+        return int(explicit)
+    base = _Path(f"params/{_CAMPAIGN_ID}")
+    if not base.exists():
+        return 0
+    return sum(1 for d in base.iterdir() if d.is_dir() and d.name.startswith("iter_"))
+
+
 def _build_chunked_tune_batch(model: str, bucket: str) -> list[dict]:
     """K trials × _TOTAL_CHUNKS chunks for one tune_<model>_<bucket> iteration."""
-    from claude_hpc.mapreduce.reduce.history import prior as _prior
-
-    from src.tune_tree import _get_search_space, _load_or_create_study, _study_name
-
-    n_done_trials = len(_prior(".", _CAMPAIGN_ID)) * _TUNE_BATCH_CHUNKED
+    n_iter = _resolve_iter_idx()
+    n_done_trials = n_iter * _TUNE_BATCH_CHUNKED
     if n_done_trials >= _TUNE_BUDGET_CHUNKED:
         return []
-
-    n_iter = n_done_trials // _TUNE_BATCH_CHUNKED
     n_this = min(_TUNE_BATCH_CHUNKED, _TUNE_BUDGET_CHUNKED - n_done_trials)
     iter_dir = _Path(f"params/{_CAMPAIGN_ID}/iter_{n_iter:03d}")
     manifest_file = iter_dir / "manifest.json"
 
     if not manifest_file.exists():
+        # Submit-time path only — asks Optuna for trials, writes manifest.
+        # On-cluster path always sees an existing manifest (pushed before submit).
+        from src.tune_tree import _get_search_space, _load_or_create_study, _study_name
+
         iter_dir.mkdir(parents=True, exist_ok=True)
         study_name = _study_name(model, bucket)
         study = _load_or_create_study(model, storage_path=_OPTUNA_STORAGE, study_name=study_name)
