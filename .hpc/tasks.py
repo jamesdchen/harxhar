@@ -97,9 +97,12 @@ _TUNE_BUDGET = 100  # legacy
 _OPTUNA_STORAGE = ".hpc/optuna.db"
 _TUNE_MODEL = "xgb"  # legacy
 
-# tune_<model>_<bucket> campaign defaults
-_TUNE_BATCH_CHUNKED = 5  # trials per iteration when the campaign fans each trial out across chunks
-_TUNE_BUDGET_CHUNKED = 10  # total trials per (model, bucket) campaign
+# tune_<model>_<bucket> campaign defaults — sequential trials (K=1 per iteration)
+# so Optuna's TPE sees each completed trial's QLIKE before suggesting the next.
+# H2 throttles parallelism at ~100 concurrent slots/user anyway, so batched
+# trials run mostly sequentially in wall-clock terms but waste TPE feedback.
+_TUNE_BATCH_CHUNKED = 1  # trials per iteration
+_TUNE_BUDGET_CHUNKED = 10  # total trials per (model, bucket) campaign → 10 iterations
 
 # Bucket columns mirrored from src.loading.SUBGROUPS (cannot import — framework env lacks pandas).
 # Used by tune_<model>_<bucket> campaigns to set --exog-cols per task.
