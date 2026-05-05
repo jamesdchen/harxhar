@@ -13,7 +13,6 @@ import os as _os
 from pathlib import Path as _Path
 
 from claude_hpc.executor_cli import flag, generic_args, gpu_args
-from claude_hpc.mapreduce.reduce.history import prior as _prior
 
 # Time-of-day segments. Canonical source: src/transforms.py:SEGMENT_CHOICES
 # (defined in notebooks/pipeline/02_transforms.ipynb). Mirrored here as a
@@ -106,6 +105,8 @@ def _build_xgb_optuna_batch() -> list[dict]:
     manifest.json + trial_*.json instead of asking Optuna again, which
     would orphan trial numbers in the study.
     """
+    from claude_hpc.mapreduce.reduce.history import prior as _prior
+
     from src.tune_tree import _get_search_space, _load_or_create_study
 
     n_done = len(_prior(".", _CAMPAIGN_ID)) * _TUNE_BATCH
