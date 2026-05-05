@@ -141,68 +141,45 @@ def _build_xgb_optuna_batch() -> list[dict]:
     return [{"params_file": (iter_dir / f"trial_{i}.json").as_posix()} for i in range(n_this_iter)]
 
 
-# ─── Open-loop bucket sweep ───────────────────────────────────────────────
+# ─── Open-loop backtest chunking ──────────────────────────────────────────
 #
-# When HPC_CAMPAIGN_ID is unset, sweep `--exog-cols` over six subgroup
-# buckets. Mirrored here (rather than imported from src.loading.SUBGROUPS)
-# because tasks.py is loaded by /submit-hpc in the framework's own python
-# env, which does not have the experiment's pandas/numpy deps. Keep in
-# sync with src.loading.SUBGROUPS if those filters change. Sentiment,
-# implied_vol, and the all_features meta-bucket are intentionally excluded
-# pending a separate train-window-alignment fix (VVIX leading edge, 2012).
-_MOMENTS = ("sumret", "sumabsret", "sumret3", "sumret4", "sumpret2", "sumbipow", "sumautocov")
-_LIQUIDITY = (
-    "sumvolume",
-    "numobs",
-    "turnover_ewstock",
-    "buyturnover_ewstock",
-    "sellturnover_ewstock",
-    "effspread_ewstock",
-    "spread_ewstock",
-    "turnover_vwstock",
-    "buyturnover_vwstock",
-    "sellturnover_vwstock",
-    "effspread_vwstock",
-    "spread_vwstock",
-)
-_MARKET_EW = (
-    "sumret2_ewstock",
-    "sumret3_ewstock",
-    "sumret4_ewstock",
-    "sumabsret_ewstock",
-    "sumbipow_ewstock",
-    "sumpret2_ewstock",
-)
-_MARKET_VW = (
-    "sumret2_vwstock",
-    "sumret3_vwstock",
-    "sumret4_vwstock",
-    "sumabsret_vwstock",
-    "sumbipow_vwstock",
-    "sumpret2_vwstock",
-)
-_VOL_DEMAND = (
-    "voldemand_spx_open_and_close",
-    "voldemand_spx_open_only",
-    "voldemand_all_open_and_close",
-    "voldemand_all_open_only",
-)
-
-_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("baseline", ()),
-    ("moments", _MOMENTS),
-    ("liquidity", _LIQUIDITY),
-    ("market_ew", _MARKET_EW),
-    ("market_vw", _MARKET_VW),
-    ("vol_demand", _VOL_DEMAND),
-)
+# When HPC_CAMPAIGN_ID is unset, split the walk-forward backtest into
+# `_TOTAL_CHUNKS` chunks. Each task gets a (start, end) row-index slice
+# that includes a `_TRAIN_OVERLAP` warm-up prefix plus its share of OOS
+# predictions; the executor trains on the first overlap rows and predicts
+# the rest. Bucket and model are NOT axes here — they're baked into
+# per-(model, bucket) run sidecars at submit time, so 18 array submissions
+# (3 models × 6 buckets) all share this same chunked tasks.py.
+#
+# Constants mirrored from the experiment (cannot be imported because
+# tasks.py runs in the framework env without pandas/numpy):
+#   _TOTAL_ROWS    : src.hpc_backtest_shim.get_total_rows("all30min", 1)
+#   _TRAIN_OVERLAP : default --train-window (500) × src.transforms.PERIODS_PER_DAY (48)
+# Re-probe and update if the data vintage or HAR-lag set changes.
+_TOTAL_ROWS = 242934
+_TRAIN_OVERLAP = 24000
+_TOTAL_CHUNKS = 100
 
 
-def _build_bucket_tasks() -> list[dict]:
-    return [{"exog_cols": "|".join(cols)} for _, cols in _BUCKETS]
+def _range_split_overlap(total_rows: int, total_chunks: int, chunk_id: int, overlap: int) -> tuple[int, int]:
+    """Mirror of src.hpc_backtest_shim.range_split_overlap (stdlib-only)."""
+    oos_rows = total_rows - overlap
+    base = oos_rows // total_chunks
+    rem = oos_rows % total_chunks
+    oos_start = overlap + base * chunk_id + min(chunk_id, rem)
+    oos_end = oos_start + base + (1 if chunk_id < rem else 0)
+    return oos_start - overlap, oos_end
 
 
-_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else _build_bucket_tasks()
+def _build_chunk_tasks() -> list[dict]:
+    out: list[dict] = []
+    for c in range(_TOTAL_CHUNKS):
+        start, end = _range_split_overlap(_TOTAL_ROWS, _TOTAL_CHUNKS, c, _TRAIN_OVERLAP)
+        out.append({"start": start, "end": end})
+    return out
+
+
+_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else _build_chunk_tasks()
 
 
 def total() -> int:
