@@ -236,13 +236,16 @@ def load_and_transform(
         Ridge: None (no winsorization beyond ``robust_transform``
         defaults).
     dropna_with_exog : bool
-        If True, drop rows where ``RV`` *or any exog column* is NaN.
-        Ridge: True. Tree methods: False (RV-only dropna).
-        Note: Random Forest also uses True historically.
+        Exog columns are forward-filled before this branch, so the only
+        rows that can still have NaN exog are at the leading edge of the
+        dataset (before any valid value). If True, drop those rows.
+        Ridge: True (sklearn Ridge requires no NaN). Tree methods: False
+        (trees handle NaN natively).
     """
     df = load_raw_data(data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
+        df[exog_cols] = df[exog_cols].ffill()
         if dropna_with_exog:
             df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
         else:
