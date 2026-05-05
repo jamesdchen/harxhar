@@ -92,10 +92,54 @@ FLAGS: dict[str, list] = {
 # and the per-task qlike.json after the array job lands, then calls
 # study.tell() to push results back into the Optuna study.
 _CAMPAIGN_ID = _os.environ.get("HPC_CAMPAIGN_ID")
-_TUNE_BATCH = 10  # trials per /submit-hpc iteration
-_TUNE_BUDGET = 100  # total trials before campaign stops
+_TUNE_BATCH = 10  # legacy: trials per /submit-hpc iteration for xgb_optuna_2026_05
+_TUNE_BUDGET = 100  # legacy
 _OPTUNA_STORAGE = ".hpc/optuna.db"
-_TUNE_MODEL = "xgb"
+_TUNE_MODEL = "xgb"  # legacy
+
+# tune_<model>_<bucket> campaign defaults
+_TUNE_BATCH_CHUNKED = 5  # trials per iteration when the campaign fans each trial out across chunks
+_TUNE_BUDGET_CHUNKED = 10  # total trials per (model, bucket) campaign
+
+# Bucket columns mirrored from src.loading.SUBGROUPS (cannot import — framework env lacks pandas).
+# Used by tune_<model>_<bucket> campaigns to set --exog-cols per task.
+_MOMENTS = ("sumret", "sumabsret", "sumret3", "sumret4", "sumpret2", "sumbipow", "sumautocov")
+_LIQUIDITY = (
+    "sumvolume",
+    "numobs",
+    "turnover_ewstock",
+    "buyturnover_ewstock",
+    "sellturnover_ewstock",
+    "effspread_ewstock",
+    "spread_ewstock",
+    "turnover_vwstock",
+    "buyturnover_vwstock",
+    "sellturnover_vwstock",
+    "effspread_vwstock",
+    "spread_vwstock",
+)
+_MARKET_EW = (
+    "sumret2_ewstock",
+    "sumret3_ewstock",
+    "sumret4_ewstock",
+    "sumabsret_ewstock",
+    "sumbipow_ewstock",
+    "sumpret2_ewstock",
+)
+_MARKET_VW = (
+    "sumret2_vwstock",
+    "sumret3_vwstock",
+    "sumret4_vwstock",
+    "sumabsret_vwstock",
+    "sumbipow_vwstock",
+    "sumpret2_vwstock",
+)
+_VOL_DEMAND = (
+    "voldemand_spx_open_and_close",
+    "voldemand_spx_open_only",
+    "voldemand_all_open_and_close",
+    "voldemand_all_open_only",
+)
 
 
 def _build_xgb_optuna_batch() -> list[dict]:
@@ -179,7 +223,98 @@ def _build_chunk_tasks() -> list[dict]:
     return out
 
 
-_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else _build_chunk_tasks()
+def _parse_tune_campaign(cid: str | None) -> tuple[str, str] | None:
+    """Map ``tune_<model>_<bucket>`` -> (model, bucket); else None.
+
+    Bucket strings can themselves contain underscores (``market_ew``,
+    ``vol_demand``), so the parse pivots on a known model prefix rather
+    than a naive split.
+    """
+    if not cid or not cid.startswith("tune_"):
+        return None
+    rest = cid[len("tune_") :]
+    for m in ("xgb", "lgbm", "ridge", "rf", "pcr"):
+        if rest.startswith(m + "_"):
+            return m, rest[len(m) + 1 :]
+    return None
+
+
+_BUCKET_COLS_LOOKUP: dict[str, tuple[str, ...]] = {
+    "baseline": (),
+    "moments": _MOMENTS,
+    "liquidity": _LIQUIDITY,
+    "market_ew": _MARKET_EW,
+    "market_vw": _MARKET_VW,
+    "vol_demand": _VOL_DEMAND,
+}
+
+
+def _build_chunked_tune_batch(model: str, bucket: str) -> list[dict]:
+    """K trials × _TOTAL_CHUNKS chunks for one tune_<model>_<bucket> iteration."""
+    from claude_hpc.mapreduce.reduce.history import prior as _prior
+
+    from src.tune_tree import _get_search_space, _load_or_create_study, _study_name
+
+    n_done_trials = len(_prior(".", _CAMPAIGN_ID)) * _TUNE_BATCH_CHUNKED
+    if n_done_trials >= _TUNE_BUDGET_CHUNKED:
+        return []
+
+    n_iter = n_done_trials // _TUNE_BATCH_CHUNKED
+    n_this = min(_TUNE_BATCH_CHUNKED, _TUNE_BUDGET_CHUNKED - n_done_trials)
+    iter_dir = _Path(f"params/{_CAMPAIGN_ID}/iter_{n_iter:03d}")
+    manifest_file = iter_dir / "manifest.json"
+
+    if not manifest_file.exists():
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        study_name = _study_name(model, bucket)
+        study = _load_or_create_study(model, storage_path=_OPTUNA_STORAGE, study_name=study_name)
+        trials_info = []
+        for i in range(n_this):
+            trial = study.ask(fixed_distributions=_get_search_space(model))
+            (iter_dir / f"trial_{i}.json").write_text(_json.dumps(trial.params, indent=2))
+            trials_info.append({"id": i, "file": f"trial_{i}.json", "optuna_number": trial.number})
+        manifest_file.write_text(
+            _json.dumps(
+                {
+                    "model": model,
+                    "bucket": bucket,
+                    "study_name": study_name,
+                    "batch_size": n_this,
+                    "trials": trials_info,
+                },
+                indent=2,
+            )
+        )
+
+    bucket_cols = _BUCKET_COLS_LOOKUP[bucket]
+    exog_str = "|".join(bucket_cols)
+    out: list[dict] = []
+    for trial_idx in range(n_this):
+        params_file = (iter_dir / f"trial_{trial_idx}.json").as_posix()
+        for chunk_id in range(_TOTAL_CHUNKS):
+            start, end = _range_split_overlap(_TOTAL_ROWS, _TOTAL_CHUNKS, chunk_id, _TRAIN_OVERLAP)
+            out.append(
+                {
+                    "params_file": params_file,
+                    "exog_cols": exog_str,
+                    "start": start,
+                    "end": end,
+                    "trial_idx": trial_idx,
+                    "chunk_id": chunk_id,
+                    "iter_idx": n_iter,
+                }
+            )
+    return out
+
+
+_tune_parsed = _parse_tune_campaign(_CAMPAIGN_ID)
+if _tune_parsed is not None:
+    _TASKS: list[dict] = _build_chunked_tune_batch(*_tune_parsed)
+elif _CAMPAIGN_ID and _CAMPAIGN_ID.startswith("xgb_optuna"):
+    _TASKS = _build_xgb_optuna_batch()  # legacy xgb_optuna_2026_05 path
+else:
+    # CAMPAIGN_ID unset OR a pure tracking tag (e.g. exog_buckets_full) — same chunk axis.
+    _TASKS = _build_chunk_tasks()
 
 
 def total() -> int:
