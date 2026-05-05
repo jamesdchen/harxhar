@@ -12,8 +12,8 @@ import json as _json
 import os as _os
 from pathlib import Path as _Path
 
-from hpc_mapreduce.executor_cli import flag, generic_args, gpu_args
-from hpc_mapreduce.reduce.history import prior as _prior
+from claude_hpc.executor_cli import flag, generic_args, gpu_args
+from claude_hpc.mapreduce.reduce.history import prior as _prior
 
 # Time-of-day segments. Canonical source: src/transforms.py:SEGMENT_CHOICES
 # (defined in notebooks/pipeline/02_transforms.ipynb). Mirrored here as a
@@ -140,7 +140,68 @@ def _build_xgb_optuna_batch() -> list[dict]:
     return [{"params_file": (iter_dir / f"trial_{i}.json").as_posix()} for i in range(n_this_iter)]
 
 
-_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else [{"horizon": 1, "train_window": 500, "seed": 42}]
+# ─── Open-loop bucket sweep ───────────────────────────────────────────────
+#
+# When HPC_CAMPAIGN_ID is unset, sweep `--exog-cols` over six subgroup
+# buckets. Mirrored here (rather than imported from src.loading.SUBGROUPS)
+# because tasks.py is loaded by /submit-hpc in the framework's own python
+# env, which does not have the experiment's pandas/numpy deps. Keep in
+# sync with src.loading.SUBGROUPS if those filters change. Sentiment,
+# implied_vol, and the all_features meta-bucket are intentionally excluded
+# pending a separate train-window-alignment fix (VVIX leading edge, 2012).
+_MOMENTS = ("sumret", "sumabsret", "sumret3", "sumret4", "sumpret2", "sumbipow", "sumautocov")
+_LIQUIDITY = (
+    "sumvolume",
+    "numobs",
+    "turnover_ewstock",
+    "buyturnover_ewstock",
+    "sellturnover_ewstock",
+    "effspread_ewstock",
+    "spread_ewstock",
+    "turnover_vwstock",
+    "buyturnover_vwstock",
+    "sellturnover_vwstock",
+    "effspread_vwstock",
+    "spread_vwstock",
+)
+_MARKET_EW = (
+    "sumret2_ewstock",
+    "sumret3_ewstock",
+    "sumret4_ewstock",
+    "sumabsret_ewstock",
+    "sumbipow_ewstock",
+    "sumpret2_ewstock",
+)
+_MARKET_VW = (
+    "sumret2_vwstock",
+    "sumret3_vwstock",
+    "sumret4_vwstock",
+    "sumabsret_vwstock",
+    "sumbipow_vwstock",
+    "sumpret2_vwstock",
+)
+_VOL_DEMAND = (
+    "voldemand_spx_open_and_close",
+    "voldemand_spx_open_only",
+    "voldemand_all_open_and_close",
+    "voldemand_all_open_only",
+)
+
+_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("baseline", ()),
+    ("moments", _MOMENTS),
+    ("liquidity", _LIQUIDITY),
+    ("market_ew", _MARKET_EW),
+    ("market_vw", _MARKET_VW),
+    ("vol_demand", _VOL_DEMAND),
+)
+
+
+def _build_bucket_tasks() -> list[dict]:
+    return [{"exog_cols": "|".join(cols)} for _, cols in _BUCKETS]
+
+
+_TASKS: list[dict] = _build_xgb_optuna_batch() if _CAMPAIGN_ID else _build_bucket_tasks()
 
 
 def total() -> int:

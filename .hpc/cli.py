@@ -30,7 +30,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from hpc_mapreduce.executor_cli import build_parser_from_flags
+from claude_hpc.executor_cli import build_parser_from_flags
 
 
 def _load_tasks():
@@ -41,9 +41,7 @@ def _load_tasks():
     assumption that an unrelated top-level ``tasks`` module isn't
     shadowing the .hpc one.
     """
-    spec = importlib.util.spec_from_file_location(
-        "tasks", Path(__file__).parent / "tasks.py"
-    )
+    spec = importlib.util.spec_from_file_location("tasks", Path(__file__).parent / "tasks.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -58,15 +56,9 @@ def get_parser(executor_module: str, description: str = "") -> argparse.Argument
     tasks = _load_tasks()
     flags_dict = getattr(tasks, "FLAGS", None)
     if not isinstance(flags_dict, dict):
-        raise TypeError(
-            f"tasks.FLAGS must be a dict[str, list[Flag]]; "
-            f"got {type(flags_dict).__name__}"
-        )
+        raise TypeError(f"tasks.FLAGS must be a dict[str, list[Flag]]; got {type(flags_dict).__name__}")
     if executor_module not in flags_dict:
-        raise KeyError(
-            f"unknown executor module {executor_module!r}; "
-            f"available in tasks.FLAGS: {sorted(flags_dict)}"
-        )
+        raise KeyError(f"unknown executor module {executor_module!r}; available in tasks.FLAGS: {sorted(flags_dict)}")
     return build_parser_from_flags(
         flags_dict[executor_module],
         description=description or executor_module,
