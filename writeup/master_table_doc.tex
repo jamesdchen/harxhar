@@ -2,18 +2,56 @@
 \usepackage[utf8]{inputenc}
 \usepackage{booktabs}
 \usepackage{geometry}
+% Added 'landscape' to the geometry options
 \geometry{a4paper, margin=1in, landscape}
 
 \begin{document}
 
-\section*{Master Table (auto-generated from results/master\_table.csv)}
+% \input{sections/master_table}
+\begin{table}[t]
+\centering
+\caption{Sorted by worst to best Qlike.}
+\label{tab:master_compact}
+\begin{tabular}{llllllllll}
+\toprule
+method & feature\_set & n & qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
+\midrule
+$naive$ & $MA_{125}$ & 218,934 & 0.1957 & 0.1018 & — & +5.47e-07 & 0.7268 & -196.36 & 0.5547 \\
+$ridge$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1330 & 0.0615 & +0.3959 & +3.5e-07 & 0.8400 & -122.06 & 0.6523 \\
+$xgb_{tuned}$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1290 & 0.0602 & +0.4086 & +4.97e-07 & 0.7894 & -165.08 & 0.6363 \\
+$lgbm_{tuned}$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1289 & 0.0603 & +0.4077 & +4.71e-07 & 0.7947 & -160.43 & 0.6380 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Built with \texttt{python scripts/build\_master\_table.py} from
-\texttt{results/MANIFEST.json}. Compact view: best feature set per method by
-QLIKE. Full view: every (method $\times$ feature set $\times$ config) entry.
-
-\input{sections/master_table}
-
-\input{sections/master_table_full}
+\begin{table}[t]
+\centering
+\caption{2026-05-05 exog-bucket sweep (untuned ridge / xgb / lgbm). $MA_{1..3125}$ is the HAR baseline; $+\mathrm{bucket}$ adds the named exogenous bucket (forward-filled to keep $N$ aligned). Ordered by method, then bucket. $N$ drops to 218{,}930 only for ridge with bucket exogs that have rare unfillable NaNs.}
+\label{tab:master_exog_sweep}
+\begin{tabular}{llllllllll}
+\toprule
+method & feature\_set & n & qlike & mse & oos\_r2 & mz\_alpha & mz\_beta & mz\_t\_beta\_eq\_1 & mz\_r2 \\
+\midrule
+$ridge$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1324 & 0.0613 & +0.3228 & +5.33e-8 & 0.9381 & -49.79 & 0.7221 \\
+$ridge$ & $MA_{1..3125}+\mathrm{liquidity}$ & 218,930 & 0.1309 & 0.0610 & +0.3304 & +1.25e-7 & 0.9058 & -77.82 & 0.7189 \\
+$ridge$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 218,930 & 0.1327 & 0.0614 & +0.3214 & +4.95e-8 & 0.9383 & -49.59 & 0.7218 \\
+$ridge$ & $MA_{1..3125}+\mathrm{market\_vw}$ & 218,930 & 0.1326 & 0.0614 & +0.3215 & +6.62e-8 & 0.9333 & -53.70 & 0.7209 \\
+$ridge$ & $MA_{1..3125}+\mathrm{moments}$ & 218,934 & 0.1305 & 0.0598 & +0.3324 & +5.30e-8 & 0.9394 & -48.49 & 0.7206 \\
+$ridge$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 218,934 & 0.2456 & 4.1594 & -0.2565 & +3.02e-6 & 0.0000 & -151480.97 & 0.0000 \\
+$xgb$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1316 & 0.0623 & +0.3269 & +2.80e-7 & 0.8473 & -127.55 & 0.6958 \\
+$xgb$ & $MA_{1..3125}+\mathrm{liquidity}$ & 218,934 & 0.1287 & 0.0604 & +0.3416 & +1.84e-7 & 0.8802 & -101.72 & 0.7186 \\
+$xgb$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 218,934 & 0.1300 & 0.0613 & +0.3348 & +2.33e-7 & 0.8609 & -118.66 & 0.7113 \\
+$xgb$ & $MA_{1..3125}+\mathrm{market\_vw}$ & 218,934 & 0.1298 & 0.0611 & +0.3359 & +2.41e-7 & 0.8600 & -118.30 & 0.7068 \\
+$xgb$ & $MA_{1..3125}+\mathrm{moments}$ & 218,934 & 0.1279 & 0.0599 & +0.3456 & +1.76e-7 & 0.8822 & -101.96 & 0.7268 \\
+$xgb$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 218,934 & 0.1312 & 0.0623 & +0.3287 & +2.87e-7 & 0.8434 & -130.59 & 0.6932 \\
+$lgbm$ & $MA_{1,5,25,125,625,3125}$ & 218,934 & 0.1307 & 0.0616 & +0.3317 & +3.06e-7 & 0.8442 & -127.22 & 0.6847 \\
+$lgbm$ & $MA_{1..3125}+\mathrm{liquidity}$ & 218,934 & 0.1280 & 0.0600 & +0.3452 & +1.59e-7 & 0.8923 & -91.20 & 0.7226 \\
+$lgbm$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 218,934 & 0.1291 & 0.0608 & +0.3397 & +1.85e-7 & 0.8818 & -96.85 & 0.7045 \\
+$lgbm$ & $MA_{1..3125}+\mathrm{market\_vw}$ & 218,934 & 0.1294 & 0.0607 & +0.3379 & +2.05e-7 & 0.8746 & -104.33 & 0.7074 \\
+$lgbm$ & $MA_{1..3125}+\mathrm{moments}$ & 218,934 & 0.1278 & 0.0597 & +0.3463 & +1.74e-7 & 0.8858 & -98.75 & 0.7284 \\
+$lgbm$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 218,934 & 0.1305 & 0.0614 & +0.3327 & +2.43e-7 & 0.8645 & -108.86 & 0.6880 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \end{document}
