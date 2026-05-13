@@ -5,6 +5,7 @@ Mirrors the Makefile mapping (pipeline -> src/, executors -> src/, scripts ->
 scripts/). Fails the commit if anything in src/ or scripts/ ends up modified,
 forcing the contributor to `git add` the exported file alongside the notebook.
 """
+
 from __future__ import annotations
 
 import subprocess
