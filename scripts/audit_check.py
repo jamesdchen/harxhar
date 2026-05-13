@@ -211,10 +211,14 @@ def _entry_id(entry: dict) -> str:
     return f"{entry['method']}_{entry['feature_set']}_{entry['config']}"
 
 
-def check_diagnostics(manifest: dict) -> tuple[bool, bool]:
-    """Returns (files_ok, mz_recompute_ok)."""
+def check_diagnostics(manifest: dict, quick: bool = False) -> tuple[bool, bool]:
+    """Returns (files_ok, mz_recompute_ok). Skipped gracefully when quick=True
+    and diagnostics/ is absent (CI fixture path doesn't produce diagnostics)."""
     diag_root = REPO / "results" / "diagnostics"
     if not diag_root.exists():
+        if quick:
+            _ok("diagnostics check skipped (quick mode, dir absent) [skip]")
+            return True, True
         _fail(f"results/diagnostics/ missing at {diag_root}")
         return False, False
 
@@ -440,7 +444,7 @@ def main() -> int:
     if not check_master_table(manifest, args.quick):
         return 1
 
-    files_ok, mz_ok = check_diagnostics(manifest)
+    files_ok, mz_ok = check_diagnostics(manifest, args.quick)
     if not files_ok or not mz_ok:
         return 1
 
