@@ -90,10 +90,11 @@ repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -
 	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
 	$(PYTHON) -c "from src.executor import CONFIGS; assert '$(METHOD)' in CONFIGS, 'unknown method: $(METHOD) (registered: ' + ','.join(CONFIGS) + ')'"
 	@mkdir -p results/$(RUN)
-	# Per-method scripts (src/ml_*.py) don't have an `if __name__ == "__main__"`
-	# block — they expose a `compute(args)` function invoked via the canonical
-	# cli dispatcher at .hpc/cli.py.
-	PYTHONPATH=.hpc:. $(PYTHON) -m cli src.ml_$(METHOD) --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
+	# Per-method scripts (src/ml_*.py) expose a `compute(args)` function, no
+	# `__main__`. Use the stdlib-only dispatcher so CI (no claude_hpc) can run
+	# this; production HPC uses the equivalent `python -m cli ...` dispatcher
+	# via .hpc/cli.py (which depends on claude_hpc).
+	PYTHONPATH=. $(PYTHON) scripts/_repro_dispatch.py src.ml_$(METHOD) --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
 	PYTHONPATH=. $(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
 	$(MAKE) table
 	$(MAKE) audit
