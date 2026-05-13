@@ -58,6 +58,7 @@ class ExecutorConfig:
     below imports them at runtime for the drift-check inside
     ``run_executor``.
     """
+
     method: str
     add_calendar: bool
     target_use_diurnal: bool
@@ -82,7 +83,7 @@ class ExecutorConfig:
         }
 
 
-def _load_configs() -> dict[str, "ExecutorConfig"]:
+def _load_configs() -> dict[str, ExecutorConfig]:
     """Lazy registry — imports CONFIG from each method module so per-method
     specs live next to per-method model code (not centralized here).
 
@@ -93,21 +94,22 @@ def _load_configs() -> dict[str, "ExecutorConfig"]:
     Excluded by design: dl_ae_ridge, dl_patchts (separate config shape);
     tune_tree (no run_executor call); ml_baseline (no exog path).
     """
+    from src.ml_lightgbm import CONFIG as _lgbm
+    from src.ml_pcr import CONFIG as _pcr
+    from src.ml_random_forest import CONFIG as _rf
     from src.ml_ridge import CONFIG as _ridge
     from src.ml_xgboost import CONFIG as _xgb
-    from src.ml_lightgbm import CONFIG as _lgbm
-    from src.ml_random_forest import CONFIG as _rf
-    from src.ml_pcr import CONFIG as _pcr
+
     return {c.method: c for c in (_ridge, _xgb, _lgbm, _rf, _pcr)}
 
 
 # Lazy singleton — populated on first access via _get_configs(); CONFIGS
 # is exported as a module-level name so existing call sites that import
 # CONFIGS keep working unchanged.
-_CONFIGS_CACHE: dict[str, "ExecutorConfig"] | None = None
+_CONFIGS_CACHE: dict[str, ExecutorConfig] | None = None
 
 
-def _get_configs() -> dict[str, "ExecutorConfig"]:
+def _get_configs() -> dict[str, ExecutorConfig]:
     global _CONFIGS_CACHE
     if _CONFIGS_CACHE is None:
         _CONFIGS_CACHE = _load_configs()
@@ -116,16 +118,22 @@ def _get_configs() -> dict[str, "ExecutorConfig"]:
 
 class _ConfigsProxy:
     """Dict-like proxy that delegates to the lazy-loaded registry."""
+
     def __getitem__(self, k):
         return _get_configs()[k]
+
     def __contains__(self, k):
         return k in _get_configs()
+
     def __iter__(self):
         return iter(_get_configs())
+
     def keys(self):
         return _get_configs().keys()
+
     def items(self):
         return _get_configs().items()
+
     def values(self):
         return _get_configs().values()
 
@@ -284,7 +292,14 @@ def load_and_transform(
 
 
 def _iter_TOD_segment(
-    df, *, segment, lag_scope, train_window, output_file, exog_cols, add_calendar,
+    df,
+    *,
+    segment,
+    lag_scope,
+    train_window,
+    output_file,
+    exog_cols,
+    add_calendar,
     calendar_encoding="raw",
 ):
     """Yield (seg_name, job_df, feature_names, train_win_periods, job_output_file)
@@ -356,9 +371,7 @@ def run_executor(
             "dropna_with_exog": dropna_with_exog,
         }
         if actual != expected:
-            raise ValueError(
-                f"data-prep drift for {method_name}: {actual} != {expected}"
-            )
+            raise ValueError(f"data-prep drift for {method_name}: {actual} != {expected}")
 
     df, adj_exog_cols = load_and_transform(
         data_path,
@@ -371,15 +384,25 @@ def run_executor(
     calendar_encoding = CONFIGS[method_name].calendar_encoding if method_name in CONFIGS else "raw"
     for seg_name, job_df, feature_names, train_win, out_file in _iter_TOD_segment(
         df,
-        segment=segment, lag_scope=lag_scope,
-        train_window=train_window, output_file=output_file,
-        exog_cols=adj_exog_cols, add_calendar=add_calendar,
+        segment=segment,
+        lag_scope=lag_scope,
+        train_window=train_window,
+        output_file=output_file,
+        exog_cols=adj_exog_cols,
+        add_calendar=add_calendar,
         calendar_encoding=calendar_encoding,
     ):
         if seg_name is not None:
             print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
             print(f"Window: {train_win} periods ({train_window} days)")
         _backtest_and_save(
-            job_df, feature_names, fit_predict, hyperparams,
-            train_win, horizon, start, end, out_file,
+            job_df,
+            feature_names,
+            fit_predict,
+            hyperparams,
+            train_win,
+            horizon,
+            start,
+            end,
+            out_file,
         )

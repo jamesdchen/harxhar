@@ -18,9 +18,18 @@ DIURNAL_MIN_PERIODS: int = 5
 WINSOR_LOWER_Q: float = 0.05
 WINSOR_UPPER_Q: float = 0.95
 SKIP_VARS: set[str] = {
-    "hour", "DOW", "t", "date", "is_overnight",
-    "hour_sin", "hour_cos",
-    "DOW_0", "DOW_1", "DOW_2", "DOW_3", "DOW_4",
+    "hour",
+    "DOW",
+    "t",
+    "date",
+    "is_overnight",
+    "hour_sin",
+    "hour_cos",
+    "DOW_0",
+    "DOW_1",
+    "DOW_2",
+    "DOW_3",
+    "DOW_4",
 }
 DIURNAL_EXCLUDED: set[str] = SKIP_VARS | {"vix", "sentiment"}
 
@@ -308,9 +317,7 @@ def add_calendar_features(df: pd.DataFrame, encoding: str = "raw") -> list[str]:
     """
     df["DOW"] = df["t"].dt.dayofweek
     df["hour"] = df["t"].dt.hour
-    df["is_overnight"] = (
-        (df["hour"] < 9) | (df["hour"] >= 16) | (df["DOW"] >= 5)
-    ).astype(np.int8)
+    df["is_overnight"] = ((df["hour"] < 9) | (df["hour"] >= 16) | (df["DOW"] >= 5)).astype(np.int8)
 
     if encoding == "raw":
         return ["DOW", "hour", "is_overnight"]
