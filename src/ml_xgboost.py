@@ -16,6 +16,8 @@ import numpy as np
 from xgboost import XGBRegressor
 
 from src.executor import ExecutorConfig, run_executor
+from src.loading import parse_exog_cols
+from src.scaling import run_backtest
 
 # Method-specific data-prep config. Lives here (not in src.executor)
 # so the xgboost spec sits next to the xgboost model code.
@@ -28,8 +30,6 @@ CONFIG = ExecutorConfig(
     dropna_with_exog=False,
     refit_frequency=1,
 )
-from src.loading import parse_exog_cols
-from src.scaling import run_backtest
 
 # Per-method default hyperparams. Tuned overrides from --params-file are
 # merged on top via dict.update().
