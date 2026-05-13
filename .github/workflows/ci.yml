@@ -17,6 +17,22 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
 
+  notebook-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Re-export every notebook
+        run: make export
+      - name: Fail if any exported .py drifted from its notebook
+        run: |
+          if ! git diff --exit-code -- src/ scripts/; then
+            echo "::error::Exported .py files drifted from notebooks/. Run 'make export' locally and commit the result."
+            exit 1
+          fi
+
   typecheck:
     runs-on: ubuntu-latest
     steps:
