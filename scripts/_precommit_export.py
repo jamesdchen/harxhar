@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "notebooks"))
-from _exporter import export_notebook  # type: ignore[import-not-found]
+from _exporter import export_notebook  # type: ignore[import-not-found]  # noqa: E402
 
 PIPELINE_MAP = {
     "01_loading": "src/loading.py",
