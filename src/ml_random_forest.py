@@ -15,7 +15,19 @@ import json
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from src.executor import CONFIGS, run_executor
+from src.executor import ExecutorConfig, run_executor
+
+# Method-specific data-prep config. Lives here (not in src.executor)
+# so the random_forest spec sits next to the random_forest model code.
+# src.executor.CONFIGS imports this at runtime for the drift-check registry.
+CONFIG = ExecutorConfig(
+    method="random_forest",
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=240,
+    dropna_with_exog=True,
+    refit_frequency=5,
+)
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -42,7 +54,7 @@ def fit_predict_rf(
     ``hyperparams['_refit_frequency']``). ``random_state`` defaults to
     42 and can be overridden via ``hyperparams['random_state']``.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["random_forest"].refit_frequency))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIG.refit_frequency))
     # Strip our internal control key before passing to RandomForestRegressor.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
     model_kwargs.setdefault("random_state", 42)
@@ -72,7 +84,9 @@ def compute(args) -> None:
     # Wire seed through to RandomForestRegressor's random_state.
     hyperparams.setdefault("random_state", args.seed)
     refit_frequency = (
-        args.refit_frequency if args.refit_frequency is not None else CONFIGS["random_forest"].refit_frequency
+        args.refit_frequency
+        if args.refit_frequency is not None
+        else CONFIG.refit_frequency
     )
     hyperparams["_refit_frequency"] = refit_frequency
 
@@ -91,6 +105,6 @@ def compute(args) -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **CONFIGS["random_forest"].as_data_prep_kwargs(),
+        **CONFIG.as_data_prep_kwargs(),
         seed=args.seed,
     )

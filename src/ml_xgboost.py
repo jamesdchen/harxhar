@@ -15,7 +15,19 @@ import json
 import numpy as np
 from xgboost import XGBRegressor
 
-from src.executor import CONFIGS, run_executor
+from src.executor import ExecutorConfig, run_executor
+
+# Method-specific data-prep config. Lives here (not in src.executor)
+# so the xgboost spec sits next to the xgboost model code.
+# src.executor.CONFIGS imports this at runtime for the drift-check registry.
+CONFIG = ExecutorConfig(
+    method="xgboost",
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=240,
+    dropna_with_exog=False,
+    refit_frequency=1,
+)
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
@@ -42,7 +54,7 @@ def fit_predict_xgb(
     settings (``use_scaling=False``; refit frequency from
     ``hyperparams['_refit_frequency']``).
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["xgboost"].refit_frequency))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIG.refit_frequency))
     # Strip our internal control key before passing to XGBRegressor.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
 
@@ -68,7 +80,7 @@ def compute(args) -> None:
     # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
     hyperparams = dict(DEFAULT_XGB_PARAMS)
     hyperparams.update(tuned_params)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIGS["xgboost"].refit_frequency
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIG.refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -86,6 +98,6 @@ def compute(args) -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **CONFIGS["xgboost"].as_data_prep_kwargs(),
+        **CONFIG.as_data_prep_kwargs(),
         seed=args.seed,
     )

@@ -15,9 +15,22 @@ import json
 import numpy as np
 from sklearn.linear_model import Ridge
 
-from src.executor import CONFIGS, run_executor
+from src.executor import ExecutorConfig, run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
+
+# Method-specific data-prep config. Lives here (not in src.executor) so the
+# ridge spec sits next to the ridge model code. src.executor.CONFIGS imports
+# this at runtime to keep a method-name → config registry for drift checks.
+CONFIG = ExecutorConfig(
+    method="ridge",
+    add_calendar=True,
+    target_use_diurnal=False,
+    target_winsor_window=None,
+    dropna_with_exog=True,
+    refit_frequency=1,
+    calendar_encoding="rich",
+)
 
 # Per-method default hyperparams. Tuned overrides from --params-file are
 # merged on top via dict.update().
@@ -43,7 +56,7 @@ def fit_predict_ridge(
     irrelevant for reproducibility. We strip any internal control keys
     (``_*``) before forwarding to ``Ridge(**...)``.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIGS["ridge"].refit_frequency))
+    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIG.refit_frequency))
     # Strip our internal control keys before passing to Ridge.
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
 
@@ -70,7 +83,7 @@ def compute(args) -> None:
     # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
     hyperparams = dict(DEFAULT_RIDGE_PARAMS)
     hyperparams.update(tuned_params)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIGS["ridge"].refit_frequency
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIG.refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
@@ -88,6 +101,6 @@ def compute(args) -> None:
         exog_cols=exog_cols,
         segment=args.segment,
         lag_scope=args.lag_scope,
-        **CONFIGS["ridge"].as_data_prep_kwargs(),
+        **CONFIG.as_data_prep_kwargs(),
         seed=args.seed,
     )

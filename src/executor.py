@@ -52,11 +52,12 @@ from dataclasses import dataclass  # noqa: E402
 @dataclass(frozen=True)
 class ExecutorConfig:
     """Per-method backtest invariants. Drift here was the proximate cause
-    of the 2026-04-23 alignment audit (intersection-N regression). The
-    registry below is the single source of truth; run_executor enforces
-    it at runtime.
+    of the 2026-04-23 alignment audit (intersection-N regression). Each
+    per-method module (``src/ml_<method>.py``) defines its own
+    ``CONFIG = ExecutorConfig(...)`` constant; the CONFIGS registry
+    below imports them at runtime for the drift-check inside
+    ``run_executor``.
     """
-
     method: str
     add_calendar: bool
     target_use_diurnal: bool
@@ -81,52 +82,55 @@ class ExecutorConfig:
         }
 
 
-CONFIGS: dict[str, ExecutorConfig] = {
-    "ridge": ExecutorConfig(
-        "ridge",
-        add_calendar=True,
-        target_use_diurnal=False,
-        target_winsor_window=None,
-        dropna_with_exog=True,
-        refit_frequency=1,
-        calendar_encoding="rich",
-    ),  # noqa: E501
-    "xgboost": ExecutorConfig(
-        "xgboost",
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=False,
-        refit_frequency=1,
-    ),  # noqa: E501
-    "lightgbm": ExecutorConfig(
-        "lightgbm",
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=False,
-        refit_frequency=1,
-    ),  # noqa: E501
-    "random_forest": ExecutorConfig(
-        "random_forest",
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=240,
-        dropna_with_exog=True,
-        refit_frequency=5,
-    ),  # noqa: E501
-    "pcr": ExecutorConfig(
-        "pcr",
-        add_calendar=True,
-        target_use_diurnal=True,
-        target_winsor_window=None,
-        dropna_with_exog=True,
-        refit_frequency=240,
-    ),  # noqa: E501
-}
-# Excluded by design: dl_ae_ridge, dl_patchts (separate model-config shape),
-# tune_tree (hyperparameter tuner; doesn't call run_executor),
-# ml_baseline (no exog path; doesn't reach these flags).
+def _load_configs() -> dict[str, "ExecutorConfig"]:
+    """Lazy registry — imports CONFIG from each method module so per-method
+    specs live next to per-method model code (not centralized here).
+
+    Lazy because of the circular import: ``src.ml_<method>`` imports
+    ``ExecutorConfig`` from this module, so we can't import them at
+    module-import time. ``run_executor`` calls this once when needed.
+
+    Excluded by design: dl_ae_ridge, dl_patchts (separate config shape);
+    tune_tree (no run_executor call); ml_baseline (no exog path).
+    """
+    from src.ml_ridge import CONFIG as _ridge
+    from src.ml_xgboost import CONFIG as _xgb
+    from src.ml_lightgbm import CONFIG as _lgbm
+    from src.ml_random_forest import CONFIG as _rf
+    from src.ml_pcr import CONFIG as _pcr
+    return {c.method: c for c in (_ridge, _xgb, _lgbm, _rf, _pcr)}
+
+
+# Lazy singleton — populated on first access via _get_configs(); CONFIGS
+# is exported as a module-level name so existing call sites that import
+# CONFIGS keep working unchanged.
+_CONFIGS_CACHE: dict[str, "ExecutorConfig"] | None = None
+
+
+def _get_configs() -> dict[str, "ExecutorConfig"]:
+    global _CONFIGS_CACHE
+    if _CONFIGS_CACHE is None:
+        _CONFIGS_CACHE = _load_configs()
+    return _CONFIGS_CACHE
+
+
+class _ConfigsProxy:
+    """Dict-like proxy that delegates to the lazy-loaded registry."""
+    def __getitem__(self, k):
+        return _get_configs()[k]
+    def __contains__(self, k):
+        return k in _get_configs()
+    def __iter__(self):
+        return iter(_get_configs())
+    def keys(self):
+        return _get_configs().keys()
+    def items(self):
+        return _get_configs().items()
+    def values(self):
+        return _get_configs().values()
+
+
+CONFIGS = _ConfigsProxy()
 
 
 def _backtest_and_save(
@@ -254,8 +258,7 @@ def load_and_transform(
     df = load_raw_data(data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
-        if not os.environ.get("HARXHAR_NO_FFILL"):
-            df[exog_cols] = df[exog_cols].ffill()
+        df[exog_cols] = df[exog_cols].ffill()
         if dropna_with_exog:
             df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
         else:
@@ -281,14 +284,7 @@ def load_and_transform(
 
 
 def _iter_TOD_segment(
-    df,
-    *,
-    segment,
-    lag_scope,
-    train_window,
-    output_file,
-    exog_cols,
-    add_calendar,
+    df, *, segment, lag_scope, train_window, output_file, exog_cols, add_calendar,
     calendar_encoding="raw",
 ):
     """Yield (seg_name, job_df, feature_names, train_win_periods, job_output_file)
@@ -360,7 +356,9 @@ def run_executor(
             "dropna_with_exog": dropna_with_exog,
         }
         if actual != expected:
-            raise ValueError(f"data-prep drift for {method_name}: {actual} != {expected}")
+            raise ValueError(
+                f"data-prep drift for {method_name}: {actual} != {expected}"
+            )
 
     df, adj_exog_cols = load_and_transform(
         data_path,
@@ -373,25 +371,15 @@ def run_executor(
     calendar_encoding = CONFIGS[method_name].calendar_encoding if method_name in CONFIGS else "raw"
     for seg_name, job_df, feature_names, train_win, out_file in _iter_TOD_segment(
         df,
-        segment=segment,
-        lag_scope=lag_scope,
-        train_window=train_window,
-        output_file=output_file,
-        exog_cols=adj_exog_cols,
-        add_calendar=add_calendar,
+        segment=segment, lag_scope=lag_scope,
+        train_window=train_window, output_file=output_file,
+        exog_cols=adj_exog_cols, add_calendar=add_calendar,
         calendar_encoding=calendar_encoding,
     ):
         if seg_name is not None:
             print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
             print(f"Window: {train_win} periods ({train_window} days)")
         _backtest_and_save(
-            job_df,
-            feature_names,
-            fit_predict,
-            hyperparams,
-            train_win,
-            horizon,
-            start,
-            end,
-            out_file,
+            job_df, feature_names, fit_predict, hyperparams,
+            train_win, horizon, start, end, out_file,
         )
