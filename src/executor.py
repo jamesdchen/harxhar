@@ -63,8 +63,16 @@ class ExecutorConfig:
     target_winsor_window: int | None
     dropna_with_exog: bool
     refit_frequency: int
+    # Calendar encoding: "raw" for tree models (int DOW, int hour, binary
+    # is_overnight — trees split natively); "rich" for ridge (5 weekday
+    # dummies + sin/cos hour + binary is_overnight, so the linear model can
+    # represent the volatility U-shape and per-DOW intercepts).
+    calendar_encoding: str = "raw"
 
     def as_data_prep_kwargs(self) -> dict:
+        # NOTE: `calendar_encoding` is intentionally NOT included here —
+        # it's looked up directly from CONFIGS inside run_executor, not
+        # passed through the CLI. This keeps the CLI contract stable.
         return {
             "add_calendar": self.add_calendar,
             "target_use_diurnal": self.target_use_diurnal,
@@ -76,11 +84,12 @@ class ExecutorConfig:
 CONFIGS: dict[str, ExecutorConfig] = {
     "ridge": ExecutorConfig(
         "ridge",
-        add_calendar=False,
+        add_calendar=True,
         target_use_diurnal=False,
         target_winsor_window=None,
         dropna_with_exog=True,
         refit_frequency=1,
+        calendar_encoding="rich",
     ),  # noqa: E501
     "xgboost": ExecutorConfig(
         "xgboost",
@@ -203,10 +212,10 @@ def _backtest_and_save(
     print(f"Saved {len(results)} rows -> {output_file}")
 
 
-def _build_har_and_calendar(df, exog_cols, add_calendar):
+def _build_har_and_calendar(df, exog_cols, add_calendar, calendar_encoding="raw"):
     df, har_names = generate_har_features(df, target_col="adj_RV", exog_cols=exog_cols)
     if add_calendar:
-        feature_names = har_names + add_calendar_features(df)
+        feature_names = har_names + add_calendar_features(df, encoding=calendar_encoding)
     else:
         feature_names = har_names
     return df, feature_names
@@ -245,7 +254,8 @@ def load_and_transform(
     df = load_raw_data(data_path, allow_missing=True)
     if exog_cols:
         apply_overnight_fills(df, exog_cols)
-        df[exog_cols] = df[exog_cols].ffill()
+        if not os.environ.get("HARXHAR_NO_FFILL"):
+            df[exog_cols] = df[exog_cols].ffill()
         if dropna_with_exog:
             df = df.dropna(subset=["RV"] + exog_cols).reset_index(drop=True)
         else:
@@ -279,12 +289,13 @@ def _iter_TOD_segment(
     output_file,
     exog_cols,
     add_calendar,
+    calendar_encoding="raw",
 ):
     """Yield (seg_name, job_df, feature_names, train_win_periods, job_output_file)
     for each time-of-day segment we need to backtest. ``seg_name`` is None when
     no segmentation is requested."""
     if segment is None:
-        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar)
+        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar, calendar_encoding)
         yield None, df, feature_names, train_window * PERIODS_PER_DAY, output_file
         return
 
@@ -292,7 +303,7 @@ def _iter_TOD_segment(
     base, ext = os.path.splitext(output_file)
 
     if lag_scope == "global":
-        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar)
+        df, feature_names = _build_har_and_calendar(df, exog_cols, add_calendar, calendar_encoding)
 
     for seg_name in segments:
         seg_df = slice_to_segment(df, seg_name)
@@ -300,7 +311,7 @@ def _iter_TOD_segment(
             print(f"No data for segment '{seg_name}'. Skipping.")
             continue
         if lag_scope == "intra":
-            seg_df, feature_names = _build_har_and_calendar(seg_df, exog_cols, add_calendar)
+            seg_df, feature_names = _build_har_and_calendar(seg_df, exog_cols, add_calendar, calendar_encoding)
         train_win_periods = compute_segment_train_window(seg_df["t"], train_window)
         yield seg_name, seg_df, feature_names, train_win_periods, f"{base}_{seg_name}{ext}"
 
@@ -359,6 +370,7 @@ def run_executor(
         dropna_with_exog=dropna_with_exog,
     )
 
+    calendar_encoding = CONFIGS[method_name].calendar_encoding if method_name in CONFIGS else "raw"
     for seg_name, job_df, feature_names, train_win, out_file in _iter_TOD_segment(
         df,
         segment=segment,
@@ -367,6 +379,7 @@ def run_executor(
         output_file=output_file,
         exog_cols=adj_exog_cols,
         add_calendar=add_calendar,
+        calendar_encoding=calendar_encoding,
     ):
         if seg_name is not None:
             print(f"{'=' * 20} {method_name.upper()} SEGMENT: {seg_name.upper()} {'=' * 20}")
