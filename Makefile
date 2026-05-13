@@ -90,7 +90,10 @@ repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -
 	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
 	$(PYTHON) -c "from src.executor import CONFIGS; assert '$(METHOD)' in CONFIGS, 'unknown method: $(METHOD) (registered: ' + ','.join(CONFIGS) + ')'"
 	@mkdir -p results/$(RUN)
-	PYTHONPATH=. $(PYTHON) src/ml_$(METHOD).py --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
+	# Per-method scripts (src/ml_*.py) don't have an `if __name__ == "__main__"`
+	# block — they expose a `compute(args)` function invoked via the canonical
+	# cli dispatcher at .hpc/cli.py.
+	PYTHONPATH=.hpc:. $(PYTHON) -m cli src.ml_$(METHOD) --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
 	PYTHONPATH=. $(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
 	$(MAKE) table
 	$(MAKE) audit
