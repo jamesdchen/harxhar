@@ -11,16 +11,6 @@ from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
 from src.executor import ExecutorConfig, load_and_transform
-
-# Method-specific data-prep config (see comment in src.executor.CONFIGS).
-CONFIG = ExecutorConfig(
-    method="pcr",
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=None,
-    dropna_with_exog=True,
-    refit_frequency=240,
-)
 from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
 from src.transforms import (
@@ -30,6 +20,16 @@ from src.transforms import (
     generate_raw_lag_features,
     resolve_pca_lags,
     slice_to_segment,
+)
+
+# Method-specific data-prep config (see comment in src.executor.CONFIGS).
+CONFIG = ExecutorConfig(
+    method="pcr",
+    add_calendar=True,
+    target_use_diurnal=True,
+    target_winsor_window=None,
+    dropna_with_exog=True,
+    refit_frequency=240,
 )
 
 
