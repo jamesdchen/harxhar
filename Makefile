@@ -90,8 +90,8 @@ repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -
 	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
 	$(PYTHON) -c "from src.executor import CONFIGS; assert '$(METHOD)' in CONFIGS, 'unknown method: $(METHOD) (registered: ' + ','.join(CONFIGS) + ')'"
 	@mkdir -p results/$(RUN)
-	$(PYTHON) src/ml_$(METHOD).py --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
-	$(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
+	PYTHONPATH=. $(PYTHON) src/ml_$(METHOD).py --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
+	PYTHONPATH=. $(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
 	$(MAKE) table
 	$(MAKE) audit
 
