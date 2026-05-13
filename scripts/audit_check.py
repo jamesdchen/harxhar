@@ -381,8 +381,10 @@ def check_dl_seeding() -> bool:
             "torch.cuda.manual_seed_all(",
             "torch.backends.cudnn",
             "PYTHONHASHSEED",
-            "--seed",
         )
+        # The --seed CLI flag lives in .hpc/tasks.py FLAGS via generic_args(),
+        # not in dl_executor.py directly. Per-method scripts receive args.seed
+        # from the dispatcher and call seed_everything(args.seed) — checked above.
         missing = [r for r in required if r not in exec_text]
         if missing:
             failures.append(f"src/dl_executor.py missing seeding primitives: {missing}")
