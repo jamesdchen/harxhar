@@ -5,3 +5,12 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: notebook-export
+        name: re-export notebooks to src/ + scripts/
+        entry: scripts/_precommit_export.py
+        language: python
+        files: ^notebooks/(pipeline|executors|scripts)/.*\.ipynb$
+        pass_filenames: true
