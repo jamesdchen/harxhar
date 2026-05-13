@@ -83,11 +83,7 @@ def compute(args) -> None:
     hyperparams.update(tuned_params)
     # Wire seed through to RandomForestRegressor's random_state.
     hyperparams.setdefault("random_state", args.seed)
-    refit_frequency = (
-        args.refit_frequency
-        if args.refit_frequency is not None
-        else CONFIG.refit_frequency
-    )
+    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIG.refit_frequency
     hyperparams["_refit_frequency"] = refit_frequency
 
     exog_cols = parse_exog_cols(args.exog_cols)
