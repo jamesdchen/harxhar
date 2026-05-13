@@ -48,4 +48,6 @@ jobs:
       - run: pip install -r requirements.txt
       - run: make repro-fixture
       - run: python scripts/audit_check.py --quick
-      - run: PYTHONPATH=. python scripts/validate_strategy_eval.py
+      # validate_strategy_eval.py was removed in 7f8f9a45 (Apr 2026 restructure);
+      # its checks live in core/tests/test_strategy_eval.py now, which the test
+      # job already runs.
