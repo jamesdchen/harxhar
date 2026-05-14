@@ -273,9 +273,9 @@ def _resolve_iter_idx() -> int:
     # max(existing iter)+1 — robust to gaps from manual cleanup. Counting
     # would silently collide when an intermediate iter_N has been removed.
     indices = [
-        int(d.name[len("iter_"):])
+        int(d.name[len("iter_") :])
         for d in base.iterdir()
-        if d.is_dir() and d.name.startswith("iter_") and d.name[len("iter_"):].isdigit()
+        if d.is_dir() and d.name.startswith("iter_") and d.name[len("iter_") :].isdigit()
     ]
     return max(indices) + 1 if indices else 0
 

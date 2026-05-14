@@ -287,7 +287,8 @@ def submit_iter(campaign_id: str, *, cluster: str | None = None, dry_run: bool =
             from src.tune_tree import _load_or_create_study, _study_name
 
             study = _load_or_create_study(
-                model, storage_path=str(EXPERIMENT_DIR / ".hpc/optuna.db"),
+                model,
+                storage_path=str(EXPERIMENT_DIR / ".hpc/optuna.db"),
                 study_name=_study_name(model, bucket),
             )
             for t in study.trials:
