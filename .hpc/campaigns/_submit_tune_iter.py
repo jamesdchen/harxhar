@@ -278,11 +278,12 @@ def submit_iter(campaign_id: str, *, cluster: str | None = None, dry_run: bool =
     # delete the just-created iter_dir so a retry doesn't leave phantom
     # RUNNING trials in the study or holes in the iter sequence.
     def _rollback() -> None:
+        import contextlib
         import shutil
 
         try:
-            from src.tune_tree import _load_or_create_study, _study_name
             import optuna.trial
+            from src.tune_tree import _load_or_create_study, _study_name
 
             study = _load_or_create_study(
                 model, storage_path=str(EXPERIMENT_DIR / ".hpc/optuna.db"),
@@ -297,10 +298,8 @@ def submit_iter(campaign_id: str, *, cluster: str | None = None, dry_run: bool =
             shutil.rmtree(iter_dir_local)
         except Exception as e:
             print(f"  [rollback] could not delete {iter_dir_local}: {e}", file=sys.stderr)
-        try:
+        with contextlib.suppress(Exception):
             sidecar_local.unlink()
-        except Exception:
-            pass
 
     try:
         # Step 3: push tasks.py + sidecar + iter_dir to the cluster.
