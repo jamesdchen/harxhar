@@ -191,6 +191,10 @@ def _get_search_space(model: str) -> dict:
             "reg_alpha": optuna.distributions.FloatDistribution(1e-8, 10.0, log=True),
             "reg_lambda": optuna.distributions.FloatDistribution(1e-8, 10.0, log=True),
         }
+    elif model == "ridge":
+        return {
+            "alpha": optuna.distributions.FloatDistribution(1e-4, 1e4, log=True),
+        }
     else:
         raise ValueError(f"Unknown model: {model}")
 

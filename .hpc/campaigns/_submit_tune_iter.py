@@ -64,7 +64,7 @@ _CLUSTERS = {
         "ssh_opts": ["-o", "IdentitiesOnly=yes"],
     },
 }
-_DEFAULT_CLUSTER_BY_MODEL = {"xgb": "h2", "lgbm": "carc", "ridge": "h2", "rf": "h2", "pcr": "h2"}
+_DEFAULT_CLUSTER_BY_MODEL = {"xgb": "carc", "lgbm": "carc", "ridge": "h2", "rf": "h2", "pcr": "h2"}
 
 _MODEL_TO_MODULE = {
     "xgb": "src.ml_xgboost",
@@ -151,8 +151,9 @@ def _build_qsub_cmd(
     iter_idx: int,
     job_name: str,
     total_tasks: int,
-    walltime: str = "2:00:00",
-    mem: str = "16G",
+    walltime: str = "4:00:00",
+    mem: str = "32G",
+    cpus_per_task: int = 16,
 ) -> list[str]:
     pass_vars = ",".join(
         [
@@ -194,7 +195,7 @@ def _build_qsub_cmd(
             f"--account={cluster_cfg['account']}",
             f"--time={walltime}",
             f"--mem={mem}",
-            "--cpus-per-task=4",
+            f"--cpus-per-task={cpus_per_task}",
             f"--output={cluster_cfg['scratch']}/logs/%x_%A_%a.out",
             f"--error={cluster_cfg['scratch']}/logs/%x_%A_%a.err",
             f"--export=ALL,{pass_vars}",
@@ -272,38 +273,66 @@ def submit_iter(campaign_id: str, *, cluster: str | None = None, dry_run: bool =
             ),
         }
 
-    # Step 3: push tasks.py + sidecar + iter_dir to the cluster.
-    # tasks.py may have been edited; it's small so pushing every iter is fine.
-    # iter_dir contains the trial_*.json + manifest.json materialized by
-    # tasks.py at module load above.
-    for src, dst in [
-        (EXPERIMENT_DIR / ".hpc/tasks.py", ".hpc/tasks.py"),
-        (sidecar_local, f".hpc/runs/{run_id}.json"),
-    ]:
-        rc = _scp_to(cfg, src, dst)
-        if rc.returncode != 0:
-            raise RuntimeError(f"scp failed for {src}: {rc.stderr}")
-    # Mirror the iter dir under params/<cid>/. Make parent dirs first.
-    _ssh(cfg, f"mkdir -p {shlex.quote(cfg['scratch'])}/params/{shlex.quote(campaign_id)}")
-    rc = _scp_dir_to(cfg, iter_dir_local, f"params/{campaign_id}/")
-    if rc.returncode != 0:
-        raise RuntimeError(f"scp params dir failed: {rc.stderr}")
+    # Steps 3+4 wrapped in try/except: if SSH/scp/sbatch fails (transient
+    # DNS hiccup, fail2ban, etc), roll back the just-asked Optuna trial and
+    # delete the just-created iter_dir so a retry doesn't leave phantom
+    # RUNNING trials in the study or holes in the iter sequence.
+    def _rollback() -> None:
+        import shutil
 
-    # Step 4: submit
-    qsub_cmd = _build_qsub_cmd(
-        cfg,
-        run_id=run_id,
-        cmd_sha=cmd_sha,
-        campaign_id=campaign_id,
-        iter_idx=iter_idx,
-        job_name=f"tu_{model}_{bucket}",
-        total_tasks=n,
-    )
-    # Joined into a single shell command for SSH.
-    remote_cmd = " ".join(shlex.quote(a) for a in qsub_cmd)
-    submit_rc = _ssh(cfg, remote_cmd)
-    if submit_rc.returncode != 0:
-        raise RuntimeError(f"submit failed: {submit_rc.stderr}\n{submit_rc.stdout}")
+        try:
+            from src.tune_tree import _load_or_create_study, _study_name
+            import optuna.trial
+
+            study = _load_or_create_study(
+                model, storage_path=str(EXPERIMENT_DIR / ".hpc/optuna.db"),
+                study_name=_study_name(model, bucket),
+            )
+            for t in study.trials:
+                if t.state == optuna.trial.TrialState.RUNNING:
+                    study.tell(t.number, state=optuna.trial.TrialState.FAIL)
+        except Exception as e:
+            print(f"  [rollback] could not mark trials FAIL: {e}", file=sys.stderr)
+        try:
+            shutil.rmtree(iter_dir_local)
+        except Exception as e:
+            print(f"  [rollback] could not delete {iter_dir_local}: {e}", file=sys.stderr)
+        try:
+            sidecar_local.unlink()
+        except Exception:
+            pass
+
+    try:
+        # Step 3: push tasks.py + sidecar + iter_dir to the cluster.
+        for src, dst in [
+            (EXPERIMENT_DIR / ".hpc/tasks.py", ".hpc/tasks.py"),
+            (sidecar_local, f".hpc/runs/{run_id}.json"),
+        ]:
+            rc = _scp_to(cfg, src, dst)
+            if rc.returncode != 0:
+                raise RuntimeError(f"scp failed for {src}: {rc.stderr}")
+        _ssh(cfg, f"mkdir -p {shlex.quote(cfg['scratch'])}/params/{shlex.quote(campaign_id)}")
+        rc = _scp_dir_to(cfg, iter_dir_local, f"params/{campaign_id}/")
+        if rc.returncode != 0:
+            raise RuntimeError(f"scp params dir failed: {rc.stderr}")
+
+        # Step 4: submit
+        qsub_cmd = _build_qsub_cmd(
+            cfg,
+            run_id=run_id,
+            cmd_sha=cmd_sha,
+            campaign_id=campaign_id,
+            iter_idx=iter_idx,
+            job_name=f"tu_{model}_{bucket}",
+            total_tasks=n,
+        )
+        remote_cmd = " ".join(shlex.quote(a) for a in qsub_cmd)
+        submit_rc = _ssh(cfg, remote_cmd)
+        if submit_rc.returncode != 0:
+            raise RuntimeError(f"submit failed: {submit_rc.stderr}\n{submit_rc.stdout}")
+    except Exception:
+        _rollback()
+        raise
 
     return {
         "run_id": run_id,

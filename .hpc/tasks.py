@@ -270,7 +270,14 @@ def _resolve_iter_idx() -> int:
     base = _Path(f"params/{_CAMPAIGN_ID}")
     if not base.exists():
         return 0
-    return sum(1 for d in base.iterdir() if d.is_dir() and d.name.startswith("iter_"))
+    # max(existing iter)+1 — robust to gaps from manual cleanup. Counting
+    # would silently collide when an intermediate iter_N has been removed.
+    indices = [
+        int(d.name[len("iter_"):])
+        for d in base.iterdir()
+        if d.is_dir() and d.name.startswith("iter_") and d.name[len("iter_"):].isdigit()
+    ]
+    return max(indices) + 1 if indices else 0
 
 
 def _build_chunked_tune_batch(model: str, bucket: str) -> list[dict]:

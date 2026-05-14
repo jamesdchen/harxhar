@@ -56,47 +56,48 @@ $lgbm$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 218,934 & 0.1305 & 0.0614 & +0.33
 
 \begin{table}[t]
 \centering
-\caption{2026-05-07 tuned exog-bucket sweep (Optuna TPE, K=1 trial/iter, target 10 iters/campaign). QLIKE is best-trial value across completed iters; ``trials'' shows completed/target. Tuning campaigns for $lgbm_{moments}$ and $lgbm_{vol\_demand}$ deprioritized at the meeting deadline.}
+\caption{2026-05-10 tuned exog-bucket sweep (Optuna TPE, K=1 trial/iter, 10 iters/campaign). QLIKE is best-trial value across completed iters.}
 \label{tab:master_exog_sweep_tuned}
 \begin{tabular}{lllll}
 \toprule
 method & feature\_set & qlike (best) & best iter & trials \\
 \midrule
-$xgb_{tuned}$ & $MA_{1..3125}$ (baseline) & 0.13071 & iter\_005 & 9/10 \\
-$xgb_{tuned}$ & $MA_{1..3125}+\mathrm{liquidity}$ & 0.12904 & iter\_005 & 9/10 \\
-$xgb_{tuned}$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 0.13026 & iter\_003 & 8/10 \\
+$xgb_{tuned}$ & $MA_{1..3125}$ (baseline) & 0.13071 & iter\_005 & 10/10 \\
+$xgb_{tuned}$ & $MA_{1..3125}+\mathrm{liquidity}$ & 0.12904 & iter\_005 & 10/10 \\
+$xgb_{tuned}$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 0.13026 & iter\_003 & 10/10 \\
 $xgb_{tuned}$ & $MA_{1..3125}+\mathrm{market\_vw}$ & 0.13070 & iter\_008 & 10/10 \\
 $xgb_{tuned}$ & $MA_{1..3125}+\mathrm{moments}$ \textbf{(best)} & \textbf{0.12577} & iter\_000 & 9/10 \\
 $xgb_{tuned}$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 0.13083 & iter\_007 & 10/10 \\
 \midrule
-$lgbm_{tuned}$ & $MA_{1..3125}$ (baseline) & 0.12839 & iter\_001 & 8/10 \\
-$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{liquidity}$ & 0.12744 & iter\_003 & 7/10 \\
-$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 0.12735 & iter\_003 & 7/10 \\
+$lgbm_{tuned}$ & $MA_{1..3125}$ (baseline) & 0.12839 & iter\_001 & 10/10 \\
+$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{liquidity}$ & 0.12643 & iter\_009 & 10/10 \\
+$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{market\_ew}$ & 0.12735 & iter\_003 & 10/10 \\
 $lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{market\_vw}$ & 0.12689 & iter\_007 & 9/10 \\
-$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{moments}$ \textbf{(best)} & \textbf{0.12583} & iter\_000 & 6/10 \\
-$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 0.12857 & iter\_001 & 5/10 \\
+$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{moments}$ \textbf{(best)} & \textbf{0.12502} & iter\_009 & 10/10 \\
+$lgbm_{tuned}$ & $MA_{1..3125}+\mathrm{vol\_demand}$ & 0.12732 & iter\_006 & 10/10 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{table}[t]
 \centering
-\caption{2026-05-07 filtered QLIKE: tuned with-exog vs tuned baseline (without exog), evaluated only on test rows where $\geq 1$ variable in the bucket is observed (non-NaN). Negative $\Delta$ means the exog helps when present. Computed against the campaign's best trial for each (model, bucket).}
+\caption{2026-05-10 filtered QLIKE: tuned with-exog vs tuned baseline (without exog), evaluated only on test rows where $\geq 1$ variable in the bucket is observed (non-NaN). Negative $\Delta$ means the exog helps when present. Computed against the campaign's best trial for each (model, bucket).}
 \label{tab:filtered_qlike}
 \begin{tabular}{llrrrrr}
 \toprule
 model & bucket & n\_present & frac present & QLIKE w/ exog & QLIKE baseline & $\Delta$ \\
 \midrule
-xgb  & moments    & 214{,}826 & 100.0\% & 0.12388 & 0.13220 & $-0.00832$ \\
-xgb  & liquidity  & 214{,}920 & 100.0\% & 0.12773 & 0.13232 & $-0.00459$ \\
-xgb  & market\_ew & 138{,}357 & ~64.4\% & 0.13418 & 0.13772 & $-0.00354$ \\
-xgb  & market\_vw & 138{,}357 & ~64.4\% & 0.13433 & 0.13772 & $-0.00339$ \\
-xgb  & vol\_demand & ~54{,}062 & ~25.2\% & 0.13098 & 0.13178 & $-0.00080$ \\
+xgb  & moments    & 214{,}826 & 100.0\% & 0.12388 & 0.12812 & $-0.00424$ \\
+xgb  & liquidity  & 214{,}920 & 100.0\% & 0.12773 & 0.12819 & $-0.00046$ \\
+xgb  & market\_ew & 138{,}357 & ~64.4\% & 0.13418 & 0.13419 & $-0.00001$ \\
+xgb  & market\_vw & 138{,}357 & ~64.4\% & 0.13433 & 0.13419 & $+0.00014$ \\
+xgb  & vol\_demand & ~54{,}062 & ~25.2\% & 0.13098 & 0.12746 & $+0.00352$ \\
 \midrule
-lgbm & moments    & 214{,}826 & 100.0\% & 0.12399 & 0.12654 & $-0.00255$ \\
-lgbm & liquidity  & 214{,}920 & 100.0\% & 0.12584 & 0.12659 & $-0.00075$ \\
-lgbm & market\_ew & 138{,}357 & ~64.4\% & 0.14088 & 0.13254 & $+0.00834$ \\
-lgbm & vol\_demand & ~54{,}062 & ~25.2\% & 0.12726 & 0.12562 & $+0.00164$ \\
+lgbm & moments    & 214{,}826 & 100.0\% & 0.12305 & 0.12654 & $-0.00350$ \\
+lgbm & liquidity  & 214{,}920 & 100.0\% & 0.12527 & 0.12659 & $-0.00132$ \\
+lgbm & market\_ew & 138{,}357 & ~64.4\% & 0.13250 & 0.13254 & $-0.00004$ \\
+lgbm & market\_vw & 138{,}357 & ~64.4\% & 0.13165 & 0.13254 & $-0.00089$ \\
+lgbm & vol\_demand & ~54{,}062 & ~25.2\% & 0.12504 & 0.12562 & $-0.00058$ \\
 \bottomrule
 \end{tabular}
 \end{table}

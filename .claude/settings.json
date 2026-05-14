@@ -1,5 +1,18 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if git diff --quiet HEAD 2>/dev/null && [ \"$(git symbolic-ref --short HEAD 2>/dev/null)\" = \"main\" ]; then out=$(git pull origin main --ff-only 2>&1); if [ $? -eq 0 ] && ! echo \"$out\" | grep -q \"Already up to date\"; then printf '{\"systemMessage\":\"Auto-pulled origin/main (Overleaf updates available)\"}'; fi; fi; exit 0",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
   }
 }
