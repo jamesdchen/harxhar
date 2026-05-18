@@ -25,11 +25,10 @@ from src.scaling import run_backtest
 CONFIG = ExecutorConfig(
     method="ridge",
     add_calendar=True,
-    target_use_diurnal=False,
-    target_winsor_window=None,
+    target_use_diurnal=True,
+    target_winsor_window=240,
     dropna_with_exog=True,
     refit_frequency=1,
-    calendar_encoding="rich",
 )
 
 # Per-method default hyperparams. Tuned overrides from --params-file are
