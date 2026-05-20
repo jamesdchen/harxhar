@@ -10,7 +10,7 @@ PYTHON ?= python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help table diagnostics diagnostics-quick audit pipeline-export scripts-export executors-export export strategy-eval lint type test clean-cache repro repro-fixture
+.PHONY: help table diagnostics diagnostics-quick audit pipeline-export scripts-export executors-export export strategy-eval lint type test clean-cache repro repro-fixture new-experiment template-test
 
 help:  ## Show available targets.
 	@echo "harxhar Makefile — available targets:"
@@ -101,3 +101,10 @@ repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -
 
 repro-fixture:  ## Run a tiny CI-friendly Ridge repro (--train-window 10 --end 1000) for the audit gate.
 	$(MAKE) repro RUN=ci_fixture METHOD=ridge REPRO_ARGS="--train-window 10 --end 1000"
+
+new-experiment:  ## Scaffold a new experiment notebook. Required: NAME.
+	@: $${NAME:?must set NAME=<name>}
+	$(PYTHON) scripts/_scaffold_experiment.py $(NAME)
+
+template-test:  ## Run the experiment-template (src/_template.py) unit tests.
+	pytest core/tests/test_template.py -q
