@@ -91,7 +91,10 @@ Each notebook is the single human-readable source of truth for its matching modu
 - `dl_patchts` — PatchTST transformer with QLIKE loss, GPU multi-worker
 - `dl_ae_ridge` — Hybrid autoencoder + closed-form Ridge, GPU multi-worker
 
-`src/hpc_backtest_shim.py` has no owning notebook and is hand-maintained.
+`.hpc/tasks.py` has no owning notebook. Its `FLAGS` dict and the
+open-loop `_OPEN_LOOP_TASKS` chunk plan are baked by `.hpc/_build_tasks.py`
+(probes the post-feature series length, runs `discover_runs` + `plan_tasks`);
+re-run that script after a data-vintage, HAR-lag, or `run()`-signature change.
 
 ## Runtime Requirements
 

@@ -1,8 +1,22 @@
-"""Generic per-iteration scorer for `tune_<model>_<bucket>` campaigns.
+"""Score driver: the *tell* half of one Sequential trial-loop step.
 
-Closes the loop after one iteration of a tune campaign lands: aggregates the
-iteration's per-trial chunked outputs into one QLIKE/trial via
-``src.tune_tree.score_trials``, then ``study.tell``s the right Optuna study.
+A ``tune_<model>_<bucket>`` campaign is a **Sequential axis** over Optuna
+trials — ask, submit, score, tell, repeat. This module is the score+tell
+half of one step; ``_submit_tune_iter.py`` is the ask+submit half.
+
+The per-trial chunk fan-out is **not** this module's concern: the time
+axis was split into 100 chunks by the planner (``.hpc/tasks.py`` ×
+``_OPEN_LOOP_TASKS``) at submit time. Here we only reduce each trial's
+chunk outputs back to one scalar and report it to the study:
+
+* QLIKE is a mean of per-row terms, so the chunk axis is `Associative`.
+  ``src.tune_tree._compute_trial_qlike`` folds the per-chunk
+  ``(qlike_count, qlike_sum)`` partials with an additive monoid
+  (``hpc_agent.template.reduce_monoid``) — the fold equals a serial run.
+* ``score_trials`` then ``study.tell``s each trial's QLIKE.
+
+This module re-implements no chunk splitting and no monoid math itself —
+it delegates the whole reduce to ``score_trials``.
 
 Usage::
 
@@ -12,7 +26,7 @@ Reads (relative to repo root)::
 
     params/<cid>/iter_<N>/manifest.json
     params/<cid>/iter_<N>/trial_<id>.json
-    results/tune/<cid>/iter_<N>/<model>_<bucket>_<trial_id>/results_chunk_*.csv
+    results/tune/<cid>/iter_<N>/<model>_<bucket>_<trial_id>/{*_reduce.json, results_chunk_*.csv}
 
 Writes::
 

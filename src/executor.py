@@ -31,6 +31,7 @@ import pandas as pd
 
 from src.evaluation import apply_duan_smearing, save_chunk_reduce
 from src.loading import apply_overnight_fills, load_raw_data
+from src.scaling import rolling_robust_scale
 from src.transforms import (
     PERIODS_PER_DAY,
     SEGMENT_DEFINITIONS,
@@ -46,93 +47,6 @@ from src.transforms import (
 FitPredict = Callable[[np.ndarray, np.ndarray, int, dict], np.ndarray]
 
 
-from dataclasses import dataclass  # noqa: E402
-
-
-@dataclass(frozen=True)
-class ExecutorConfig:
-    """Per-method backtest invariants. Drift here was the proximate cause
-    of the 2026-04-23 alignment audit (intersection-N regression). Each
-    per-method module (``src/ml_<method>.py``) defines its own
-    ``CONFIG = ExecutorConfig(...)`` constant; the CONFIGS registry
-    below imports them at runtime for the drift-check inside
-    ``run_executor``.
-    """
-
-    method: str
-    add_calendar: bool
-    target_use_diurnal: bool
-    target_winsor_window: int | None
-    dropna_with_exog: bool
-    refit_frequency: int
-
-    def as_data_prep_kwargs(self) -> dict:
-        return {
-            "add_calendar": self.add_calendar,
-            "target_use_diurnal": self.target_use_diurnal,
-            "target_winsor_window": self.target_winsor_window,
-            "dropna_with_exog": self.dropna_with_exog,
-        }
-
-
-def _load_configs() -> dict[str, ExecutorConfig]:
-    """Lazy registry — imports CONFIG from each method module so per-method
-    specs live next to per-method model code (not centralized here).
-
-    Lazy because of the circular import: ``src.ml_<method>`` imports
-    ``ExecutorConfig`` from this module, so we can't import them at
-    module-import time. ``run_executor`` calls this once when needed.
-
-    Excluded by design: dl_ae_ridge, dl_patchts (separate config shape);
-    tune_tree (no run_executor call); ml_baseline (no exog path).
-    """
-    from src.ml_lightgbm import CONFIG as _lgbm
-    from src.ml_pcr import CONFIG as _pcr
-    from src.ml_random_forest import CONFIG as _rf
-    from src.ml_ridge import CONFIG as _ridge
-    from src.ml_xgboost import CONFIG as _xgb
-
-    return {c.method: c for c in (_ridge, _xgb, _lgbm, _rf, _pcr)}
-
-
-# Lazy singleton — populated on first access via _get_configs(); CONFIGS
-# is exported as a module-level name so existing call sites that import
-# CONFIGS keep working unchanged.
-_CONFIGS_CACHE: dict[str, ExecutorConfig] | None = None
-
-
-def _get_configs() -> dict[str, ExecutorConfig]:
-    global _CONFIGS_CACHE
-    if _CONFIGS_CACHE is None:
-        _CONFIGS_CACHE = _load_configs()
-    return _CONFIGS_CACHE
-
-
-class _ConfigsProxy:
-    """Dict-like proxy that delegates to the lazy-loaded registry."""
-
-    def __getitem__(self, k):
-        return _get_configs()[k]
-
-    def __contains__(self, k):
-        return k in _get_configs()
-
-    def __iter__(self):
-        return iter(_get_configs())
-
-    def keys(self):
-        return _get_configs().keys()
-
-    def items(self):
-        return _get_configs().items()
-
-    def values(self):
-        return _get_configs().values()
-
-
-CONFIGS = _ConfigsProxy()
-
-
 def _backtest_and_save(
     df: pd.DataFrame,
     feature_names: list[str],
@@ -142,7 +56,9 @@ def _backtest_and_save(
     horizon: int,
     start: int,
     end: int,
+    halo: int,
     output_file: str,
+    prescale: bool = False,
 ) -> None:
     """Run a prepared DataFrame through the walk-forward backtest and save.
 
@@ -164,12 +80,26 @@ def _backtest_and_save(
         Training window in 30-min periods.
     horizon : int
         Forecast horizon in 30-min periods.
-    start, end : int
-        Inclusive/exclusive chunk bounds in *post horizon-shift* index
-        space. ``end == -1`` means "to the end".
+    start, end, halo : int
+        The framework slice for this task, in *post horizon-shift* index
+        space (the fields of ``hpc_agent.template.SliceSpec``). ``[start,
+        end)`` is the emit range; ``halo`` is the count of warm-up rows
+        replayed before it, so the chunk processed is
+        ``X[start - halo : end]`` and its first ``halo`` rows train the
+        model without emitting predictions (``halo`` is sized to the
+        training window). ``end < 0`` means "to the end"; a whole-series
+        run is ``start=0, end=-1, halo=0``.
     output_file : str
         Output CSV path. ``<basename>_reduce.json`` is written
         alongside.
+    prescale : bool, default False
+        If True, rolling-robust-scale the whole feature matrix
+        (``rolling_robust_scale``) *before* the chunk slice — the linear
+        methods (Ridge) need feature standardization, and doing it
+        whole-series keeps the scaler's look-back out of the backtest so a
+        ``halo == train_win`` chunk is fungible. The matching ``fit_predict``
+        must then call ``run_backtest`` with ``use_scaling=False``. Tree
+        methods leave this False (they neither scale nor prescale).
     """
     max_lag = resolve_har_lags()[-1]
     df = df.iloc[max_lag:].reset_index(drop=True)
@@ -181,11 +111,18 @@ def _backtest_and_save(
 
     X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, horizon)
 
-    actual_end = len(X) if end == -1 else end
-    X_chunk = X[start:actual_end]
-    y_chunk = y[start:actual_end]
-    dates_chunk = dates.iloc[start:actual_end].reset_index(drop=True)
-    baselines_chunk = baselines[start:actual_end]
+    # Rolling robust scaling is a bounded-window transform; doing it here,
+    # whole-series, keeps its look-back out of the per-chunk backtest (see
+    # rolling_robust_scale). The slice below then cuts the pre-scaled array.
+    if prescale:
+        X = rolling_robust_scale(X, train_win_periods)
+
+    load_start = max(0, start - halo)
+    actual_end = len(X) if end < 0 else end
+    X_chunk = X[load_start:actual_end]
+    y_chunk = y[load_start:actual_end]
+    dates_chunk = dates.iloc[load_start:actual_end].reset_index(drop=True)
+    baselines_chunk = baselines[load_start:actual_end]
 
     if train_win_periods >= len(X_chunk):
         raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")
@@ -329,6 +266,7 @@ def run_executor(
     train_window: int,
     start: int,
     end: int,
+    halo: int,
     exog_cols: list[str],
     segment: str | None,
     lag_scope: str,
@@ -336,33 +274,31 @@ def run_executor(
     target_use_diurnal: bool,
     target_winsor_window: int | None,
     dropna_with_exog: bool,
+    prescale: bool = False,
     seed: int = 42,
 ) -> None:
     """Top-level scaffold. Loads data, builds features, dispatches backtest.
 
     Per-method scripts (`ml_xgboost.py`, etc.) call this from their
-    ``main()`` after parsing the canonical CLI and assembling the
-    method-specific ``fit_predict`` closure + merged hyperparams.
+    ``run()`` after reading the framework slice. ``start`` / ``end`` /
+    ``halo`` are the plain-int fields of the active
+    ``hpc_agent.template.SliceSpec`` (the chunked-axis seam) — see
+    ``_backtest_and_save`` for their meaning; a whole-series run passes
+    ``start=0, end=-1, halo=0``.
 
     Notes
     -----
     * ``segment`` is None for tree methods (XGB/LGBM/RF). Ridge is the
       only method that uses segments.
     * ``add_calendar`` is True for tree methods, False for Ridge.
-    * ``method_name`` is informational — used in log lines only.
+    * ``prescale`` is True only for the linear methods (Ridge): it
+      rolling-robust-scales the feature matrix whole-series so a chunked
+      backtest needs only a train-window halo. Tree methods leave it False.
+    * ``method_name`` is informational — used in log lines only. The
+      per-method data-prep invariants it once keyed a drift-check on are
+      now inline literals in each executor's ``run()`` (B2).
     """
     del seed  # reserved; per-method scripts can wire seed into model_fn directly
-
-    if method_name in CONFIGS:
-        expected = CONFIGS[method_name].as_data_prep_kwargs()
-        actual = {
-            "add_calendar": add_calendar,
-            "target_use_diurnal": target_use_diurnal,
-            "target_winsor_window": target_winsor_window,
-            "dropna_with_exog": dropna_with_exog,
-        }
-        if actual != expected:
-            raise ValueError(f"data-prep drift for {method_name}: {actual} != {expected}")
 
     df, adj_exog_cols = load_and_transform(
         data_path,
@@ -393,5 +329,7 @@ def run_executor(
             horizon,
             start,
             end,
+            halo,
             out_file,
+            prescale,
         )

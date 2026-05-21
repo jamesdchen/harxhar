@@ -35,7 +35,7 @@ def scaffold(name: str) -> int:
             "Fill in `run()`. Smoke-test in the cells below — only structural\n",
             "definitions (imports, defs, classes, UPPERCASE constants) are exported.",
         ),
-        _code("# imports\n", "from src._template import register_run, save_artifact, load_series\n"),
+        _code("# imports\n", "from hpc_agent.template import register_run, save_artifact, load_series\n"),
         _code(
             "@register_run\n",
             "def run(seed: int = 42) -> dict:\n",

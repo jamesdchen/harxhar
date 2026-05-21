@@ -1,18 +1,44 @@
-"""Submit one iteration of a `tune_<model>_<bucket>` campaign.
+"""Submit driver: the *ask* half of one Sequential trial-loop step.
 
-Driver for the tune-campaign closed-loop. Each invocation:
+A ``tune_<model>_<bucket>`` campaign is a **Sequential axis** over Optuna
+trials: ask → submit that trial's chunks → score → tell, repeat. The
+trial axis is never split — one trial is one sweep point — because TPE
+needs each completed trial's QLIKE before suggesting the next. This
+module is the ask+submit half of one step; ``_score_iter.py`` is the
+score+tell half.
+
+This campaign code owns **only** the trial loop. The per-trial chunk
+fan-out is the *planner's* job: importing ``.hpc/tasks.py`` with
+``HPC_CAMPAIGN_ID`` set fires its campaign branch (``_build_chunked_tune_batch``),
+which asks Optuna for the trial and fans it over the baked
+``_OPEN_LOOP_TASKS`` 100-chunk split. This module never re-implements
+chunk splitting — it reads ``tasks.total()`` for the array size.
+
+Each invocation:
 
 1. Parses ``campaign_id`` into (model, bucket).
-2. Imports the local ``.hpc/tasks.py`` with ``HPC_CAMPAIGN_ID`` set so the
-   campaign branch fires Optuna.ask + materializes
-   ``params/<cid>/iter_<N>/{trial_*.json, manifest.json}``.
+2. Imports ``.hpc/tasks.py`` with ``HPC_CAMPAIGN_ID`` set — the planner
+   does Optuna.ask + materializes
+   ``params/<cid>/iter_<N>/{trial_*.json, manifest.json}`` and emits the
+   1-trial × 100-chunk task list.
 3. Computes the iteration's ``run_id``, builds the per-iteration sidecar,
    pushes ``tasks.py`` + sidecar + the new params dir to the cluster.
-4. Submits an SGE/SLURM array job (100 tasks = K=1 trial × 100 chunks).
+4. Submits an SGE/SLURM array job (``tasks.total()`` tasks =
+   K=1 trial × 100 chunks).
 
 Caller invokes this once per iteration. The next iteration is submitted
 **after** ``_score_iter.py`` has scored the previous one (so the next
-``study.ask`` sees the new QLIKE).
+``study.ask`` sees the new QLIKE) — i.e. the trial loop advances one
+Sequential step per submit/score pair.
+
+Note — coordinator API: ``hpc_agent`` ships no study-coordinator /
+``run_campaign`` callable (see ``hpc_agent.campaign``'s docstring: "no
+asyncio driver, no run_campaign callable"). The campaign surface is just
+``HPC_CAMPAIGN_ID``, the sidecar ``campaign_id`` field, and
+``campaign_dir`` for state placement. So the trial loop is a sanctioned
+repo-side wrapper around the planner (``plan_tasks`` via
+``_OPEN_LOOP_TASKS``) + Optuna ask/tell — this module and
+``_score_iter.py`` are that wrapper.
 
 Usage::
 
@@ -211,8 +237,12 @@ def submit_iter(campaign_id: str, *, cluster: str | None = None, dry_run: bool =
     cluster_key = cluster or _DEFAULT_CLUSTER_BY_MODEL[model]
     cfg = _CLUSTERS[cluster_key]
 
-    # Step 1: import tasks.py with the campaign env set — fires Optuna ask
-    # for this iteration and materializes params/<cid>/iter_<N>/.
+    # Step 1: import tasks.py with the campaign env set. The planner's
+    # campaign branch fires Optuna ask for this Sequential trial step,
+    # materializes params/<cid>/iter_<N>/, and fans the 1 trial over the
+    # baked 100-chunk split — so tasks.total() == 1 trial × 100 chunks.
+    # The campaign driver does not split chunks itself; it only reads the
+    # planner's task count for the array job size.
     tasks = _load_tasks_with_campaign(campaign_id)
     n = tasks.total()
     if n == 0:

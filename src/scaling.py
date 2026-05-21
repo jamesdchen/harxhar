@@ -197,6 +197,8 @@ def run_backtest(
     use_scaling : bool, default=True
         If True, apply ``RollingRobustScaler`` (median / IQR) to features
         using statistics computed only over the trailing ``train_win`` window.
+        When the feature matrix has been pre-scaled whole-series by
+        :func:`rolling_robust_scale` (the chunking-safe path), pass False.
 
     Returns
     -------
@@ -224,6 +226,13 @@ def run_backtest(
     Scaling, when enabled, uses ``RollingRobustScaler`` -- a rolling median
     and inter-quartile range computed over the trailing ``train_win``
     window via numba-accelerated sorted-matrix tracking.
+
+    **Chunking note.** With ``use_scaling=True`` the training buffer stores
+    *already-scaled* rows, and the scaler itself looks back ``train_win``
+    rows -- so the buffer's effective look-back is ``2 * train_win`` and a
+    chunked walk-forward would need a ``2 * train_win`` halo. Pre-scaling
+    the whole series with :func:`rolling_robust_scale` and passing
+    ``use_scaling=False`` collapses that back to a ``train_win`` halo.
     """
     n_samples, n_features = X.shape
     predictions = np.full(n_samples - train_win, np.nan)
@@ -281,3 +290,40 @@ def run_backtest(
             model.fit(X_buf, y_buf.ravel())
 
     return predictions
+
+
+def rolling_robust_scale(X: np.ndarray, train_win: int) -> np.ndarray:
+    """Per-row rolling robust scaling, computed whole-series.
+
+    Returns ``X`` rescaled exactly as ``run_backtest(..., use_scaling=True)``
+    scales it internally: rows ``[0, train_win)`` by the initial window's
+    median / IQR, and each row ``t >= train_win`` by the trailing
+    ``[t - train_win : t)`` window. It simply replays
+    :class:`RollingRobustScaler` over the whole series, so
+
+        run_backtest(rolling_robust_scale(X, w), y, w, rf, use_scaling=False)
+        == run_backtest(X, y, w, rf, use_scaling=True)
+
+    bit-for-bit.
+
+    The point is *chunking*. With the in-loop scaler the training buffer
+    holds already-scaled rows and the scaler looks back ``train_win`` -- so
+    the buffer depends on ``2 * train_win`` rows of history. Pre-scaling
+    here moves that look-back into a whole-series transform (alongside HAR /
+    winsor / diurnal), so a chunked walk-forward over the pre-scaled matrix
+    is fungible with just a ``train_win`` halo.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    n_samples = len(X)
+    if train_win > n_samples:
+        raise ValueError(f"train_win ({train_win}) exceeds series length ({n_samples})")
+    scaler = RollingRobustScaler(train_win, X.shape[1])
+    scaler.initialize(X[:train_win])
+    out = np.empty_like(X)
+    med, iqr = scaler.get_scaler()
+    out[:train_win] = (X[:train_win] - med) / iqr
+    for t in range(train_win, n_samples):
+        med, iqr = scaler.get_scaler()
+        out[t] = (X[t] - med) / iqr
+        scaler.update(X[t])
+    return out

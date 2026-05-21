@@ -1,9 +1,17 @@
-"""harxhar tasks declaration — generated for the new compute(args) contract.
+"""harxhar tasks declaration — the ``total()`` / ``resolve()`` contract.
 
-Per-executor FLAGS dict declares the CLI shape; the matching .hpc/cli.py
-dispatcher reads it at runtime and parses argv for whichever executor
-module is invoked. resolve(task_id)/total() control task fan-out per
-/submit-hpc submission.
+Per-executor ``FLAGS`` declares each executor's CLI shape; the matching
+``.hpc/cli.py`` dispatcher reads it at runtime and parses argv for
+whichever executor module is invoked. ``resolve(task_id)`` / ``total()``
+control task fan-out per ``/submit-hpc`` submission.
+
+**Generated, not hand-edited (the two ``# <build:...>`` regions).**
+``FLAGS`` and the open-loop ``_OPEN_LOOP_TASKS`` literal are baked by
+``.hpc/_build_tasks.py`` — run it after a data-vintage, HAR-lag, or
+``run()``-signature change. Baking keeps *this* module stdlib-only: it
+imports no pandas/numpy and no ``hpc_agent.template`` planner, so it is
+safe to import on a stdlib-only cluster runtime. The only third-party
+import is ``flag`` (the ``Flag`` constructor) for the ``FLAGS`` values.
 """
 
 from __future__ import annotations
@@ -12,85 +20,128 @@ import json as _json
 import os as _os
 from pathlib import Path as _Path
 
-from claude_hpc.executor_cli import flag, generic_args, gpu_args
+# ``flag`` builds the per-executor CLI ``Flag`` specs in FLAGS. On the
+# cluster the deployed runtime is ``claude_hpc``; locally / in CI it is
+# ``hpc_agent``. Both ship an identical, stdlib-only ``executor_cli``.
+try:  # pragma: no cover - import shim, exercised by whichever env is live
+    from claude_hpc.executor_cli import flag
+except ModuleNotFoundError:  # pragma: no cover
+    from hpc_agent.executor_cli import flag
 
-# Time-of-day segments. Canonical source: src/transforms.py:SEGMENT_CHOICES
-# (defined in notebooks/pipeline/02_transforms.ipynb). Mirrored here as a
-# constant rather than imported because tasks.py is loaded at /submit-hpc
-# time before the experiment's deps are necessarily on path; an import
-# would force pandas/numpy to resolve before scaffolding can finish. Keep
-# in sync with src/transforms.py if those values ever change.
-_SEGMENT_CHOICES = ("all", "morning", "midday", "closing", "overnight")
-
-# Shared CPU-executor flag set used by ml_ridge / ml_xgboost / ml_lightgbm /
-# ml_random_forest / ml_pcr / ml_baseline. Method-specific extras (e.g.
-# --n-components for ml_pcr) are appended per-key below.
-_CPU_BASE = [
-    *generic_args(),
-    flag("horizon", int, default=1),
-    flag("train_window", int, default=500, help="training window in days"),
-    flag(
-        "refit_frequency",
-        int,
-        default=None,
-        help="how often to refit during walk-forward; None falls back to per-method default",
-    ),
-    flag("exog_cols", str, default=None, help="pipe-separated exog columns, e.g. vix|sentiment"),
-    flag("params_file", str, default=None, help="JSON file with tuned hyperparams"),
-    flag("segment", str, default=None, choices=_SEGMENT_CHOICES, help="time-of-day segment"),
-    flag(
-        "lag_scope",
-        str,
-        default="global",
-        choices=("global", "intra"),
-        help="compute lags on full dataset or per-segment",
-    ),
-]
-
-# Shared DL-executor flag set used by dl_patchts / dl_ae_ridge.
-_DL_BASE = [
-    *generic_args(),
-    *gpu_args(),
-    flag("horizon", int, default=1),
-]
-
-
+# ─── FLAGS ────────────────────────────────────────────────────────────────
+#
+# Per-executor CLI flag set. BAKED by .hpc/_build_tasks.py from an AST
+# walk of notebooks/executors (hpc_agent.template.discover_runs) — do
+# not hand-edit between the build markers. Each list is the executor's
+# full CLI surface: generic_args() (minus signature collisions) + the
+# planner --halo flag + the run() signature flags.
+# <build:FLAGS>
 FLAGS: dict[str, list] = {
-    "src.ml_ridge": _CPU_BASE,
-    "src.ml_xgboost": _CPU_BASE,
-    "src.ml_lightgbm": _CPU_BASE,
-    "src.ml_random_forest": _CPU_BASE,
-    "src.ml_baseline": _CPU_BASE,
-    "src.ml_pcr": [
-        *_CPU_BASE,
-        flag("n_components", int, default=5, help="PCA components for PCR"),
-    ],
-    "src.dl_patchts": _DL_BASE,
-    "src.dl_ae_ridge": [
-        *_DL_BASE,
+    "src.ml_baseline": [
+        flag("seed", int, default=42, help="Random seed for deterministic reproduction."),
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
         flag(
-            "n_components",
-            int,
-            default=None,
-            help="autoencoder bottleneck dimension; None = method default",
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
         ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/baseline/run.json"),
+    ],
+    "src.ml_lightgbm": [
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
+        flag(
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
+        ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("refit_frequency", int),
+        flag("exog_cols", str, default=""),
+        flag("seed", int, default=42),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/lgbm/run.json"),
+        flag("params_file", str, default=""),
+    ],
+    "src.ml_pcr": [
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
+        flag(
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
+        ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("n_components", int, default=5),
+        flag("exog_cols", str, default=""),
+        flag("seed", int, default=42),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/pcr/run.json"),
+    ],
+    "src.ml_random_forest": [
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
+        flag(
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
+        ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("refit_frequency", int),
+        flag("exog_cols", str, default=""),
+        flag("seed", int, default=42),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/rf/run.json"),
+        flag("params_file", str, default=""),
+    ],
+    "src.ml_ridge": [
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
+        flag(
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
+        ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("refit_frequency", int),
+        flag("exog_cols", str, default=""),
+        flag("segment", str, default=""),
+        flag("lag_scope", str, default="global"),
+        flag("alpha", float, default=1.0),
+        flag("seed", int, default=42),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/ridge/run.json"),
+        flag("params_file", str, default=""),
+    ],
+    "src.ml_xgboost": [
+        flag("start", int, default=0, help="Window start index/offset (interpretation is executor-specific)."),
+        flag("end", int, default=-1, help="Window end index/offset (-1 = to end)."),
+        flag(
+            "halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set; 0 = whole series)."
+        ),
+        flag("horizon", int, default=1),
+        flag("train_window", int, default=500),
+        flag("refit_frequency", int),
+        flag("exog_cols", str, default=""),
+        flag("seed", int, default=42),
+        flag("data_path", str, default="all30min"),
+        flag("output_file", str, default="results/xgb/run.json"),
+        flag("params_file", str, default=""),
     ],
 }
+# </build:FLAGS>
 
 # ─── Tasks ────────────────────────────────────────────────────────────────
 #
-# Open-loop default: one sanity task. Used when /submit-hpc is invoked
-# without --campaign-id (HPC_CAMPAIGN_ID unset).
+# Open-loop default: 100-chunk walk-forward split. Used when /submit-hpc
+# is invoked without --campaign-id (HPC_CAMPAIGN_ID unset).
 #
 # Closed-loop (campaign): when HPC_CAMPAIGN_ID is set, this module asks
-# Optuna for a batch of `_BATCH` trials per /submit-hpc iteration and
+# Optuna for a batch of trials per /submit-hpc iteration and
 # materializes one JSON params file per trial under
 # `params/<cid>/iter_<N>/`. resolve(task_id) returns the path so the
-# executor receives `--params-file params/.../trial_K.json` — no
-# changes to FLAGS or src/ml_xgboost.py needed. The campaign driver
-# (.hpc/campaigns/<cid>/score_iter.py) reads each iteration's manifest.json
-# and the per-task qlike.json after the array job lands, then calls
-# study.tell() to push results back into the Optuna study.
+# executor receives `--params-file params/.../trial_K.json`. The
+# campaign driver (.hpc/campaigns/<cid>/score_iter.py) reads each
+# iteration's manifest.json and the per-task qlike.json after the array
+# job lands, then calls study.tell() to push results into the study.
 _CAMPAIGN_ID = _os.environ.get("HPC_CAMPAIGN_ID")
 _TUNE_BATCH = 10  # legacy: trials per /submit-hpc iteration for xgb_optuna_2026_05
 _TUNE_BUDGET = 100  # legacy
@@ -145,6 +196,131 @@ _VOL_DEMAND = (
 )
 
 
+# ─── Open-loop backtest chunking ──────────────────────────────────────────
+#
+# When HPC_CAMPAIGN_ID is unset, the walk-forward backtest is split into
+# 100 chunks. Each task carries a SliceSpec triple — `start`, `end`,
+# `halo` (the fields hpc_agent.template's SliceSpec / executor.py's
+# `_backtest_and_save` consume): `[start, end)` is the OOS emit range
+# and `halo` is the warm-up prefix replayed before it, so the executor
+# processes X[start - halo : end] and trains on the first `halo` rows
+# without emitting predictions. Bucket and model are NOT axes here —
+# they're baked into per-(model, bucket) run sidecars at submit time, so
+# 18 array submissions (3 models × 6 buckets) all share this tasks.py.
+#
+# BAKED by .hpc/_build_tasks.py: it probes the post-feature series
+# length (only the pandas pipeline can), runs hpc_agent.template's
+# plan_tasks over the OOS-length span, and shifts each chunk into
+# absolute X coordinates (start/end += overlap, halo = overlap). The
+# halo is a constant 24000 (= default --train-window 500 ×
+# PERIODS_PER_DAY 48). Re-run the builder if the data vintage or
+# HAR-lag set changes. Do not hand-edit between the build markers.
+# <build:TASKS>
+_OPEN_LOOP_TASKS: list[dict] = [
+    {"start": 24000, "end": 26190, "halo": 24000},
+    {"start": 26190, "end": 28380, "halo": 24000},
+    {"start": 28380, "end": 30570, "halo": 24000},
+    {"start": 30570, "end": 32760, "halo": 24000},
+    {"start": 32760, "end": 34950, "halo": 24000},
+    {"start": 34950, "end": 37140, "halo": 24000},
+    {"start": 37140, "end": 39330, "halo": 24000},
+    {"start": 39330, "end": 41520, "halo": 24000},
+    {"start": 41520, "end": 43710, "halo": 24000},
+    {"start": 43710, "end": 45900, "halo": 24000},
+    {"start": 45900, "end": 48090, "halo": 24000},
+    {"start": 48090, "end": 50280, "halo": 24000},
+    {"start": 50280, "end": 52470, "halo": 24000},
+    {"start": 52470, "end": 54660, "halo": 24000},
+    {"start": 54660, "end": 56850, "halo": 24000},
+    {"start": 56850, "end": 59040, "halo": 24000},
+    {"start": 59040, "end": 61230, "halo": 24000},
+    {"start": 61230, "end": 63420, "halo": 24000},
+    {"start": 63420, "end": 65610, "halo": 24000},
+    {"start": 65610, "end": 67800, "halo": 24000},
+    {"start": 67800, "end": 69990, "halo": 24000},
+    {"start": 69990, "end": 72180, "halo": 24000},
+    {"start": 72180, "end": 74370, "halo": 24000},
+    {"start": 74370, "end": 76560, "halo": 24000},
+    {"start": 76560, "end": 78750, "halo": 24000},
+    {"start": 78750, "end": 80940, "halo": 24000},
+    {"start": 80940, "end": 83130, "halo": 24000},
+    {"start": 83130, "end": 85320, "halo": 24000},
+    {"start": 85320, "end": 87510, "halo": 24000},
+    {"start": 87510, "end": 89700, "halo": 24000},
+    {"start": 89700, "end": 91890, "halo": 24000},
+    {"start": 91890, "end": 94080, "halo": 24000},
+    {"start": 94080, "end": 96270, "halo": 24000},
+    {"start": 96270, "end": 98460, "halo": 24000},
+    {"start": 98460, "end": 100649, "halo": 24000},
+    {"start": 100649, "end": 102838, "halo": 24000},
+    {"start": 102838, "end": 105027, "halo": 24000},
+    {"start": 105027, "end": 107216, "halo": 24000},
+    {"start": 107216, "end": 109405, "halo": 24000},
+    {"start": 109405, "end": 111594, "halo": 24000},
+    {"start": 111594, "end": 113783, "halo": 24000},
+    {"start": 113783, "end": 115972, "halo": 24000},
+    {"start": 115972, "end": 118161, "halo": 24000},
+    {"start": 118161, "end": 120350, "halo": 24000},
+    {"start": 120350, "end": 122539, "halo": 24000},
+    {"start": 122539, "end": 124728, "halo": 24000},
+    {"start": 124728, "end": 126917, "halo": 24000},
+    {"start": 126917, "end": 129106, "halo": 24000},
+    {"start": 129106, "end": 131295, "halo": 24000},
+    {"start": 131295, "end": 133484, "halo": 24000},
+    {"start": 133484, "end": 135673, "halo": 24000},
+    {"start": 135673, "end": 137862, "halo": 24000},
+    {"start": 137862, "end": 140051, "halo": 24000},
+    {"start": 140051, "end": 142240, "halo": 24000},
+    {"start": 142240, "end": 144429, "halo": 24000},
+    {"start": 144429, "end": 146618, "halo": 24000},
+    {"start": 146618, "end": 148807, "halo": 24000},
+    {"start": 148807, "end": 150996, "halo": 24000},
+    {"start": 150996, "end": 153185, "halo": 24000},
+    {"start": 153185, "end": 155374, "halo": 24000},
+    {"start": 155374, "end": 157563, "halo": 24000},
+    {"start": 157563, "end": 159752, "halo": 24000},
+    {"start": 159752, "end": 161941, "halo": 24000},
+    {"start": 161941, "end": 164130, "halo": 24000},
+    {"start": 164130, "end": 166319, "halo": 24000},
+    {"start": 166319, "end": 168508, "halo": 24000},
+    {"start": 168508, "end": 170697, "halo": 24000},
+    {"start": 170697, "end": 172886, "halo": 24000},
+    {"start": 172886, "end": 175075, "halo": 24000},
+    {"start": 175075, "end": 177264, "halo": 24000},
+    {"start": 177264, "end": 179453, "halo": 24000},
+    {"start": 179453, "end": 181642, "halo": 24000},
+    {"start": 181642, "end": 183831, "halo": 24000},
+    {"start": 183831, "end": 186020, "halo": 24000},
+    {"start": 186020, "end": 188209, "halo": 24000},
+    {"start": 188209, "end": 190398, "halo": 24000},
+    {"start": 190398, "end": 192587, "halo": 24000},
+    {"start": 192587, "end": 194776, "halo": 24000},
+    {"start": 194776, "end": 196965, "halo": 24000},
+    {"start": 196965, "end": 199154, "halo": 24000},
+    {"start": 199154, "end": 201343, "halo": 24000},
+    {"start": 201343, "end": 203532, "halo": 24000},
+    {"start": 203532, "end": 205721, "halo": 24000},
+    {"start": 205721, "end": 207910, "halo": 24000},
+    {"start": 207910, "end": 210099, "halo": 24000},
+    {"start": 210099, "end": 212288, "halo": 24000},
+    {"start": 212288, "end": 214477, "halo": 24000},
+    {"start": 214477, "end": 216666, "halo": 24000},
+    {"start": 216666, "end": 218855, "halo": 24000},
+    {"start": 218855, "end": 221044, "halo": 24000},
+    {"start": 221044, "end": 223233, "halo": 24000},
+    {"start": 223233, "end": 225422, "halo": 24000},
+    {"start": 225422, "end": 227611, "halo": 24000},
+    {"start": 227611, "end": 229800, "halo": 24000},
+    {"start": 229800, "end": 231989, "halo": 24000},
+    {"start": 231989, "end": 234178, "halo": 24000},
+    {"start": 234178, "end": 236367, "halo": 24000},
+    {"start": 236367, "end": 238556, "halo": 24000},
+    {"start": 238556, "end": 240745, "halo": 24000},
+    {"start": 240745, "end": 242934, "halo": 24000},
+]
+# </build:TASKS>
+
+
 def _build_xgb_optuna_batch() -> list[dict]:
     """Ask Optuna for the next batch of XGB trials (idempotent on disk).
 
@@ -186,44 +362,6 @@ def _build_xgb_optuna_batch() -> list[dict]:
         )
 
     return [{"params_file": (iter_dir / f"trial_{i}.json").as_posix()} for i in range(n_this_iter)]
-
-
-# ─── Open-loop backtest chunking ──────────────────────────────────────────
-#
-# When HPC_CAMPAIGN_ID is unset, split the walk-forward backtest into
-# `_TOTAL_CHUNKS` chunks. Each task gets a (start, end) row-index slice
-# that includes a `_TRAIN_OVERLAP` warm-up prefix plus its share of OOS
-# predictions; the executor trains on the first overlap rows and predicts
-# the rest. Bucket and model are NOT axes here — they're baked into
-# per-(model, bucket) run sidecars at submit time, so 18 array submissions
-# (3 models × 6 buckets) all share this same chunked tasks.py.
-#
-# Constants mirrored from the experiment (cannot be imported because
-# tasks.py runs in the framework env without pandas/numpy):
-#   _TOTAL_ROWS    : src.hpc_backtest_shim.get_total_rows("all30min", 1)
-#   _TRAIN_OVERLAP : default --train-window (500) × src.transforms.PERIODS_PER_DAY (48)
-# Re-probe and update if the data vintage or HAR-lag set changes.
-_TOTAL_ROWS = 242934
-_TRAIN_OVERLAP = 24000
-_TOTAL_CHUNKS = 100
-
-
-def _range_split_overlap(total_rows: int, total_chunks: int, chunk_id: int, overlap: int) -> tuple[int, int]:
-    """Mirror of src.hpc_backtest_shim.range_split_overlap (stdlib-only)."""
-    oos_rows = total_rows - overlap
-    base = oos_rows // total_chunks
-    rem = oos_rows % total_chunks
-    oos_start = overlap + base * chunk_id + min(chunk_id, rem)
-    oos_end = oos_start + base + (1 if chunk_id < rem else 0)
-    return oos_start - overlap, oos_end
-
-
-def _build_chunk_tasks() -> list[dict]:
-    out: list[dict] = []
-    for c in range(_TOTAL_CHUNKS):
-        start, end = _range_split_overlap(_TOTAL_ROWS, _TOTAL_CHUNKS, c, _TRAIN_OVERLAP)
-        out.append({"start": start, "end": end})
-    return out
 
 
 def _parse_tune_campaign(cid: str | None) -> tuple[str, str] | None:
@@ -281,7 +419,7 @@ def _resolve_iter_idx() -> int:
 
 
 def _build_chunked_tune_batch(model: str, bucket: str) -> list[dict]:
-    """K trials × _TOTAL_CHUNKS chunks for one tune_<model>_<bucket> iteration."""
+    """K trials × open-loop chunks for one tune_<model>_<bucket> iteration."""
     n_iter = _resolve_iter_idx()
     n_done_trials = n_iter * _TUNE_BATCH_CHUNKED
     if n_done_trials >= _TUNE_BUDGET_CHUNKED:
@@ -321,14 +459,14 @@ def _build_chunked_tune_batch(model: str, bucket: str) -> list[dict]:
     out: list[dict] = []
     for trial_idx in range(n_this):
         params_file = (iter_dir / f"trial_{trial_idx}.json").as_posix()
-        for chunk_id in range(_TOTAL_CHUNKS):
-            start, end = _range_split_overlap(_TOTAL_ROWS, _TOTAL_CHUNKS, chunk_id, _TRAIN_OVERLAP)
+        for chunk_id, chunk in enumerate(_OPEN_LOOP_TASKS):
             out.append(
                 {
                     "params_file": params_file,
                     "exog_cols": exog_str,
-                    "start": start,
-                    "end": end,
+                    "start": chunk["start"],
+                    "end": chunk["end"],
+                    "halo": chunk["halo"],
                     "trial_idx": trial_idx,
                     "chunk_id": chunk_id,
                     "iter_idx": n_iter,
@@ -344,7 +482,7 @@ elif _CAMPAIGN_ID and _CAMPAIGN_ID.startswith("xgb_optuna"):
     _TASKS = _build_xgb_optuna_batch()  # legacy xgb_optuna_2026_05 path
 else:
     # CAMPAIGN_ID unset OR a pure tracking tag (e.g. exog_buckets_full) — same chunk axis.
-    _TASKS = _build_chunk_tasks()
+    _TASKS = list(_OPEN_LOOP_TASKS)
 
 
 def total() -> int:
@@ -352,4 +490,4 @@ def total() -> int:
 
 
 def resolve(task_id: int) -> dict:
-    return _TASKS[task_id]
+    return dict(_TASKS[task_id])
