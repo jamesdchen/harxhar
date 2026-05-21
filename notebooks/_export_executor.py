@@ -1,18 +1,17 @@
 """Export one executor notebook to ``src/<name>.py``.
 
-Bridges the incremental ``@register_run`` migration (Phase B): a notebook
-that carries a ``@register_run`` entrypoint is exported by the strict-AST
-template exporter (:func:`src._template.export_notebook`); a notebook that
-does not is exported by the legacy ``# export``-marker exporter
-(:mod:`notebooks._exporter`). Once every executor notebook is converted the
-fallback can be dropped and ``make executors-export`` can call the template
-exporter directly.
+A notebook that imports ``hpc_agent.template`` (a ``@register_run``
+experiment) is exported by the upstream strict-AST exporter
+(:func:`hpc_agent.template.export_notebook`) — self-contained output with
+the hpc_agent runtime inlined, so the executor needs no ``hpc_agent``
+import on the cluster. A notebook that does not is exported by the legacy
+``# export``-marker exporter (:mod:`notebooks._exporter`) — this is the
+path for executors not yet migrated to the template (the DL executors).
 
-The strict-AST exporter emits one blank line between every top-level node,
-which is neither ``isort``- nor ``ruff-format``-clean. The export is post-
-processed with ``ruff check --fix`` + ``ruff format`` so the committed
-``src/<name>.py`` survives the repo's ``ruff check .`` / ``ruff format
---check .`` lint gate and ``make export`` stays idempotent.
+The strict-AST exporter is not guaranteed isort-/ruff-format-clean, so the
+output is post-processed with ``ruff check --fix`` + ``ruff format`` to
+keep the committed ``src/<name>.py`` past the repo's ``ruff check .`` /
+``ruff format --check .`` lint gate and ``make export`` idempotent.
 
 Usage:
     python notebooks/_export_executor.py <notebook.ipynb> <out.py>
@@ -20,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +27,20 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "notebooks"))
+
+
+def _is_template_notebook(nb_path: str) -> bool:
+    """True if any code cell imports ``hpc_agent.template`` (a @register_run experiment)."""
+    data = json.loads(Path(nb_path).read_text(encoding="utf-8"))
+    for cell in data.get("cells", []):
+        if cell.get("cell_type") != "code":
+            continue
+        src = cell.get("source", "")
+        if isinstance(src, list):
+            src = "".join(src)
+        if "hpc_agent.template" in src:
+            return True
+    return False
 
 
 def _ruff_normalize(out: str) -> None:
@@ -48,14 +62,13 @@ def main() -> int:
         return 2
     nb, out = sys.argv[1], sys.argv[2]
 
-    from src._template import export_notebook as template_export
+    if _is_template_notebook(nb):
+        from hpc_agent.template import export_notebook
 
-    try:
-        template_export(nb, out)
+        export_notebook(nb, out)
         _ruff_normalize(out)
         print(f"[template] {nb} -> {out}")
-    except ValueError:
-        # No @register_run entrypoint — notebook not yet migrated.
+    else:
         from _exporter import export_notebook as marker_export
 
         marker_export(nb, out)

@@ -23,3 +23,7 @@ pytest>=7.0
 ruff>=0.4
 mypy>=1.0
 pre-commit>=3.0
+
+# Build — used by `make export` only; the template runtime is inlined into
+# the exported executors, so this is not a cluster/runtime dependency.
+hpc-agent @ git+https://github.com/jamesdchen/hpc-agent.git@d141f84
