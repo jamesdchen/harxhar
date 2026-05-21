@@ -56,6 +56,21 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -m "not slow and not gpu" --tb=short -q
 
+  fungibility:
+    # Serial-elision gate: proves each chunk-fungible executor's chunked
+    # walk-forward run equals its serial run (core/tests/test_fungibility.py).
+    # The test is `slow` (real backtests, ~90s) so the `test` job skips it;
+    # this job runs it explicitly. requirements.txt vendors hpc-agent as a
+    # wheel, which the executors' inlined runtime needs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - run: pytest core/tests/test_fungibility.py -m slow --tb=short -q
+
   audit:
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test]

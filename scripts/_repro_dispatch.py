@@ -1,15 +1,23 @@
-"""Minimal stdlib-only dispatcher for `make repro` / CI audit gate.
+"""Minimal dispatcher for `make repro` / the CI audit gate.
 
 Equivalent to ``python -m cli src.ml_<method> ...`` but without depending on
-``claude_hpc.executor_cli`` (which isn't installed in CI). Recreates the CLI
-flag set in ``.hpc/tasks.py`` FLAGS using vanilla argparse, imports the
-named executor module, and calls its ``compute(args)``.
+``claude_hpc.executor_cli`` at *dispatch* time (it isn't installed on a
+stdlib-only cluster). It imports the named executor module and calls its
+injected ``compute(args)``.
 
-Usage:
-    python scripts/_repro_dispatch.py src.ml_ridge --output-file ... [--n-components N]
+Usage::
 
-The flag list mirrors ``_CPU_BASE`` from ``.hpc/tasks.py`` plus the PCR-only
-``--n-components`` extra. If FLAGS in tasks.py change, update this script.
+    python scripts/_repro_dispatch.py src.ml_ridge --output-file ... [--end 1000]
+
+The argparse parser is **derived**, not hand-mirrored: it is built from
+``hpc_agent.template.discover_runs`` over ``notebooks/executors`` — the same
+source of truth ``.hpc/_build_tasks.py`` uses. An *exported* ``src/ml_*.py``
+inlines the runtime and drops the ``hpc_agent.template`` import the
+decorator-resolver keys off, so ``discover_runs('src')`` finds nothing; the
+notebooks are scanned instead. On top of each executor's signature flags the
+parser adds the framework slice flags ``--start`` / ``--end`` / ``--halo``,
+which the injected ``compute`` reads off ``args`` to build the active
+``SliceSpec``.
 """
 
 from __future__ import annotations
@@ -17,35 +25,89 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_NOTEBOOK_DIR = _REPO_ROOT / "notebooks" / "executors"
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser()
-    p.add_argument("module", help="Importable module path, e.g. src.ml_ridge")
-    # Mirrors `_CPU_BASE` in .hpc/tasks.py.
-    p.add_argument("--output-file", required=True)
-    p.add_argument("--data-path", default="all30min")
-    p.add_argument("--start", type=int, default=0)
-    p.add_argument("--end", type=int, default=-1)
-    p.add_argument("--horizon", type=int, default=1)
-    p.add_argument("--train-window", type=int, default=500, help="training window in days")
-    p.add_argument("--refit-frequency", type=int, default=None)
-    p.add_argument("--exog-cols", default=None, help="pipe-separated exog column names")
-    p.add_argument("--params-file", default=None)
-    p.add_argument(
-        "--segment",
-        default=None,
-        choices=("all", "morning", "midday", "closing", "overnight"),
-    )
-    p.add_argument("--lag-scope", default="global", choices=("global", "intra"))
-    p.add_argument("--seed", type=int, default=42)
-    # PCR-only extras.
-    p.add_argument("--n-components", type=int, default=5)
+def _flags_by_module() -> dict[str, list]:
+    """Return ``{module_path: [Flag, ...]}`` for every ``@register_run`` executor.
+
+    Mirrors ``.hpc/_build_tasks.py``: scan ``notebooks/executors`` (the
+    exported ``src/ml_*.py`` drop the ``hpc_agent.template`` import the
+    AST decorator-resolver needs, so the notebook is the source of truth).
+    Each module's signature flags are augmented with the framework slice
+    flags ``--start`` / ``--end`` / ``--halo``.
+    """
+    from hpc_agent.executor_cli import flag
+    from hpc_agent.template import discover_runs
+
+    runs = discover_runs(_NOTEBOOK_DIR)
+    if not runs:
+        raise SystemExit(f"discover_runs found no @register_run executors under {_NOTEBOOK_DIR}")
+
+    slice_flags = [
+        flag("start", int, default=0, help="Emit-range start index (planner-set)."),
+        flag("end", int, default=-1, help="Emit-range end index (-1 = to end)."),
+        flag("halo", int, default=0, help="Warm-up rows replayed before the emit range (planner-set)."),
+    ]
+
+    out: dict[str, list] = {}
+    for run in runs:
+        module = f"src.{run.path.stem}"
+        sig_names = {f.name for f in run.flags}
+        extras = [f for f in slice_flags if f.name not in sig_names]
+        out[module] = list(run.flags) + extras
+    return out
+
+
+def _add_flag(p: argparse.ArgumentParser, f: object) -> None:
+    """Register one ``hpc_agent`` ``Flag`` on the argparse parser."""
+    cli_name = "--" + f.name.replace("_", "-")  # type: ignore[attr-defined]
+    kwargs: dict = {}
+    if f.action is not None:  # type: ignore[attr-defined]
+        kwargs["action"] = f.action  # type: ignore[attr-defined]
+    else:
+        if f.type is not None:  # type: ignore[attr-defined]
+            kwargs["type"] = f.type  # type: ignore[attr-defined]
+        if f.nargs is not None:  # type: ignore[attr-defined]
+            kwargs["nargs"] = f.nargs  # type: ignore[attr-defined]
+    if f.required:  # type: ignore[attr-defined]
+        kwargs["required"] = True
+    else:
+        kwargs["default"] = f.default  # type: ignore[attr-defined]
+    if f.choices is not None:  # type: ignore[attr-defined]
+        kwargs["choices"] = f.choices  # type: ignore[attr-defined]
+    if f.help:  # type: ignore[attr-defined]
+        kwargs["help"] = f.help  # type: ignore[attr-defined]
+    p.add_argument(cli_name, **kwargs)
+
+
+def _build_parser(flags_by_module: dict[str, list]) -> argparse.ArgumentParser:
+    """Build the dispatcher parser.
+
+    ``module`` is positional; ``--output-file`` and the per-executor flags
+    are the union across every discovered executor (the chosen module only
+    consumes the ones it declares — argparse tolerates the unused rest at
+    their defaults).
+    """
+    p = argparse.ArgumentParser(description="Dispatch a harxhar executor's compute(args).")
+    p.add_argument("module", choices=sorted(flags_by_module), help="Executor module, e.g. src.ml_ridge")
+
+    seen: set[str] = set()
+    for flags in flags_by_module.values():
+        for f in flags:
+            if f.name in seen:
+                continue
+            seen.add(f.name)
+            _add_flag(p, f)
     return p
 
 
 def main() -> int:
-    args = _build_parser().parse_args()
+    flags_by_module = _flags_by_module()
+    args = _build_parser(flags_by_module).parse_args()
     module = importlib.import_module(args.module)
     if not hasattr(module, "compute"):
         print(f"ERROR: module {args.module} has no `compute(args)` function", file=sys.stderr)

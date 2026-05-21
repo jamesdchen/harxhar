@@ -47,108 +47,6 @@ from src.transforms import (
 FitPredict = Callable[[np.ndarray, np.ndarray, int, dict], np.ndarray]
 
 
-from dataclasses import dataclass  # noqa: E402
-
-
-@dataclass(frozen=True)
-class ExecutorConfig:
-    """Per-method backtest invariants. Drift here was the proximate cause
-    of the 2026-04-23 alignment audit (intersection-N regression). Each
-    per-method module (``src/ml_<method>.py``) defines its own
-    ``CONFIG = ExecutorConfig(...)`` constant; the CONFIGS registry
-    below imports them at runtime for the drift-check inside
-    ``run_executor``.
-    """
-
-    method: str
-    add_calendar: bool
-    target_use_diurnal: bool
-    target_winsor_window: int | None
-    dropna_with_exog: bool
-    refit_frequency: int
-
-    def as_data_prep_kwargs(self) -> dict:
-        return {
-            "add_calendar": self.add_calendar,
-            "target_use_diurnal": self.target_use_diurnal,
-            "target_winsor_window": self.target_winsor_window,
-            "dropna_with_exog": self.dropna_with_exog,
-        }
-
-
-def _load_configs() -> dict[str, ExecutorConfig]:
-    """Lazy registry — imports CONFIG from each method module so per-method
-    specs live next to per-method model code (not centralized here).
-
-    Lazy because of the circular import: ``src.ml_<method>`` imports
-    ``ExecutorConfig`` from this module, so we can't import them at
-    module-import time. ``run_executor`` calls this once when needed.
-
-    Tolerant by design: a method module migrated to the ``@register_run``
-    experiment template no longer defines ``CONFIG`` (its data-prep
-    invariants are inline). Such modules are skipped so the registry — and
-    the drift-check it backs — keeps working through an incremental
-    migration.
-
-    Excluded by design: dl_ae_ridge, dl_patchts (separate config shape);
-    tune_tree (no run_executor call); ml_baseline (no exog path).
-    """
-    import importlib
-
-    out: dict[str, ExecutorConfig] = {}
-    for modname in (
-        "src.ml_ridge",
-        "src.ml_xgboost",
-        "src.ml_lightgbm",
-        "src.ml_random_forest",
-        "src.ml_pcr",
-    ):
-        try:
-            cfg = importlib.import_module(modname).CONFIG
-        except (ImportError, AttributeError):
-            continue
-        out[cfg.method] = cfg
-    return out
-
-
-# Lazy singleton — populated on first access via _get_configs(); CONFIGS
-# is exported as a module-level name so existing call sites that import
-# CONFIGS keep working unchanged.
-_CONFIGS_CACHE: dict[str, ExecutorConfig] | None = None
-
-
-def _get_configs() -> dict[str, ExecutorConfig]:
-    global _CONFIGS_CACHE
-    if _CONFIGS_CACHE is None:
-        _CONFIGS_CACHE = _load_configs()
-    return _CONFIGS_CACHE
-
-
-class _ConfigsProxy:
-    """Dict-like proxy that delegates to the lazy-loaded registry."""
-
-    def __getitem__(self, k):
-        return _get_configs()[k]
-
-    def __contains__(self, k):
-        return k in _get_configs()
-
-    def __iter__(self):
-        return iter(_get_configs())
-
-    def keys(self):
-        return _get_configs().keys()
-
-    def items(self):
-        return _get_configs().items()
-
-    def values(self):
-        return _get_configs().values()
-
-
-CONFIGS = _ConfigsProxy()
-
-
 def _backtest_and_save(
     df: pd.DataFrame,
     feature_names: list[str],
@@ -396,20 +294,11 @@ def run_executor(
     * ``prescale`` is True only for the linear methods (Ridge): it
       rolling-robust-scales the feature matrix whole-series so a chunked
       backtest needs only a train-window halo. Tree methods leave it False.
-    * ``method_name`` is informational — used in log lines only.
+    * ``method_name`` is informational — used in log lines only. The
+      per-method data-prep invariants it once keyed a drift-check on are
+      now inline literals in each executor's ``run()`` (B2).
     """
     del seed  # reserved; per-method scripts can wire seed into model_fn directly
-
-    if method_name in CONFIGS:
-        expected = CONFIGS[method_name].as_data_prep_kwargs()
-        actual = {
-            "add_calendar": add_calendar,
-            "target_use_diurnal": target_use_diurnal,
-            "target_winsor_window": target_winsor_window,
-            "dropna_with_exog": dropna_with_exog,
-        }
-        if actual != expected:
-            raise ValueError(f"data-prep drift for {method_name}: {actual} != {expected}")
 
     df, adj_exog_cols = load_and_transform(
         data_path,
