@@ -286,9 +286,12 @@ def fit_predict_ridge(
 ) -> np.ndarray:
     """Walk-forward backtest with Ridge. Returns OOS predictions.
 
-    Wraps :func:`src.scaling.run_backtest` with the Ridge-specific settings
-    (``use_scaling=True`` -- linear models need feature standardization;
-    refit cadence from ``hyperparams['_refit_frequency']``).
+    Wraps :func:`src.scaling.run_backtest` with ``use_scaling=False``: the
+    feature matrix is rolling-robust-scaled *whole-series* upstream (the
+    shared scaffold calls ``rolling_robust_scale`` when ``prescale=True``),
+    so the scaler's look-back is absorbed into data prep and the chunked
+    walk-forward stays fungible with a single ``train_win`` halo. Refit
+    cadence comes from ``hyperparams['_refit_frequency']``.
 
     Ridge's default solver is closed-form, so ``random_state`` is irrelevant
     for reproducibility. Internal control keys (``_*``) are stripped before
@@ -306,7 +309,7 @@ def fit_predict_ridge(
         y_chunk,
         train_win=train_win_periods,
         refit_frequency=refit_frequency,
-        use_scaling=True,
+        use_scaling=False,
     )
 
 
@@ -323,8 +326,6 @@ def run(
     data_path: str = "all30min",
     output_file: str = "results/ridge/run.json",
     params_file: str = "",
-    start: int = 0,
-    end: int = -1,
 ) -> dict:
     """Ridge regression walk-forward volatility backtest -- one task.
 
@@ -332,10 +333,16 @@ def run(
     across chunks). The per-row prediction table is written next to
     ``output_file`` as ``results.csv`` by the shared backtest scaffold.
 
+    The data slice is supplied by the framework: ``current_slice()`` is the
+    active ``SliceSpec`` (whole-series ``0/-1/0`` outside a chunked task),
+    not a ``run()`` parameter.
+
     Ridge data-prep invariants are inline here (Ridge-specific constants,
     formerly ``ExecutorConfig``): calendar features on, diurnal-adjusted RV
-    target winsorized at a 240-period window, and a leading-edge NaN drop
-    (the closed-form solver rejects NaN).
+    target winsorized at a 240-period window, a leading-edge NaN drop (the
+    closed-form solver rejects NaN), and ``prescale=True`` — the feature
+    matrix is rolling-robust-scaled whole-series so the chunked backtest is
+    fungible with a single train-window halo.
     """
     if segment:
         raise NotImplementedError("ridge run(): segmented backtests are a pending follow-up; pass segment=''")
@@ -346,6 +353,7 @@ def run(
             hyperparams.update(json.load(fh))
     hyperparams["_refit_frequency"] = refit_frequency if refit_frequency is not None else 1
 
+    sl = current_slice() or SliceSpec()
     results_csv = str(Path(output_file).with_name("results.csv"))
     run_executor(
         method_name="ridge",
@@ -355,8 +363,9 @@ def run(
         output_file=results_csv,
         horizon=horizon,
         train_window=train_window,
-        start=start,
-        end=end,
+        start=sl.start,
+        end=sl.end,
+        halo=sl.halo,
         exog_cols=parse_exog_cols(exog_cols or None),
         segment=None,
         lag_scope=lag_scope,
@@ -364,6 +373,7 @@ def run(
         target_use_diurnal=True,
         target_winsor_window=240,
         dropna_with_exog=True,
+        prescale=True,
         seed=seed,
     )
     metrics = calculate_metrics(pd.read_csv(results_csv))

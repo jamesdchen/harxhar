@@ -345,19 +345,28 @@ def _run_backtest_and_save(
     horizon: int,
     start: int,
     end: int,
+    halo: int,
     output_file: str,
     n_components: int = 5,
     random_state: int = 42,
 ) -> None:
-    """Run PCR backtest on a prepared DataFrame and save results.csv."""
+    """Run PCR backtest on a prepared DataFrame and save results.csv.
+
+    ``start`` / ``end`` / ``halo`` are the fields of the framework
+    ``SliceSpec`` in post-feature row space: ``[start, end)`` is the emit
+    range and ``halo`` the warm-up rows replayed before it, so the chunk
+    processed is ``df[start - halo : end]``. ``end < 0`` means "to the
+    end"; a whole-series run is ``start=0, end=-1, halo=0``.
+    """
     max_lag = resolve_pca_lags()[-1]
 
     df["target"] = df["adj_RV"].shift(-horizon)
     df = df.iloc[max_lag:].reset_index(drop=True)
     df = df.dropna(subset=["target"] + feature_names).reset_index(drop=True)
 
-    actual_end = len(df) if end == -1 else end
-    df_chunk = df.iloc[start:actual_end].reset_index(drop=True)
+    load_start = max(0, start - halo)
+    actual_end = len(df) if end < 0 else end
+    df_chunk = df.iloc[load_start:actual_end].reset_index(drop=True)
 
     X = df_chunk[feature_names].values.astype(np.float64)
     y = df_chunk["target"].values.astype(np.float64)
@@ -406,14 +415,14 @@ def run(
     seed: int = 42,
     data_path: str = "all30min",
     output_file: str = "results/pcr/run.json",
-    start: int = 0,
-    end: int = -1,
 ) -> dict:
     """PCA + Ridge (PCR) walk-forward volatility backtest -- one task.
 
     Returns a metrics dict; writes the per-row ``results.csv`` next to
-    ``output_file``. Data-prep invariants (formerly ``ExecutorConfig``):
-    diurnal-adjusted RV target with no winsorization, leading-edge NaN drop.
+    ``output_file``. The data slice is supplied by the framework via
+    ``current_slice()``, not a ``run()`` parameter. Data-prep invariants
+    (formerly ``ExecutorConfig``): diurnal-adjusted RV target with no
+    winsorization, leading-edge NaN drop.
     """
     df, adj_exog_cols = load_and_transform(
         data_path,
@@ -424,14 +433,16 @@ def run(
     )
     df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
 
+    sl = current_slice() or SliceSpec()
     results_csv = str(Path(output_file).with_name("results.csv"))
     _run_backtest_and_save(
         df,
         feature_names,
         train_window * PERIODS_PER_DAY,
         horizon,
-        start,
-        end,
+        sl.start,
+        sl.end,
+        sl.halo,
         results_csv,
         n_components,
         random_state=seed,

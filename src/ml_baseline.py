@@ -285,14 +285,13 @@ def run(
     train_window: int = 500,
     data_path: str = "all30min",
     output_file: str = "results/baseline/run.json",
-    start: int = 0,
-    end: int = -1,
 ) -> dict:
     """Naive HAR-MA(125) baseline volatility forecast -- one task.
 
     The forecast is just the 125-period moving-average HAR feature; there is
     no fitted model, so no seed. Returns a metrics dict; writes the per-row
-    ``results.csv`` next to ``output_file``.
+    ``results.csv`` next to ``output_file``. The data slice is supplied by
+    the framework via ``current_slice()``, not a ``run()`` parameter.
     """
     train_win_periods = train_window * PERIODS_PER_DAY
 
@@ -314,11 +313,13 @@ def run(
 
     X, y, dates, baselines = apply_horizon_shift(X, y, dates, baselines, horizon)
 
-    actual_end = len(X) if end == -1 else end
-    X_chunk = X[start:actual_end]
-    y_chunk = y[start:actual_end]
-    dates_chunk = dates.iloc[start:actual_end].reset_index(drop=True)
-    baselines_chunk = baselines[start:actual_end]
+    sl = current_slice() or SliceSpec()
+    load_start = max(0, sl.start - sl.halo)
+    actual_end = len(X) if sl.end < 0 else sl.end
+    X_chunk = X[load_start:actual_end]
+    y_chunk = y[load_start:actual_end]
+    dates_chunk = dates.iloc[load_start:actual_end].reset_index(drop=True)
+    baselines_chunk = baselines[load_start:actual_end]
 
     if train_win_periods >= len(X_chunk):
         raise ValueError(f"train_window ({train_win_periods} periods) >= chunk size ({len(X_chunk)})")

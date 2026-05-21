@@ -322,8 +322,6 @@ def run(
     data_path: str = "all30min",
     output_file: str = "results/rf/run.json",
     params_file: str = "",
-    start: int = 0,
-    end: int = -1,
 ) -> dict:
     """# Random Forest Volatility Backtest
 
@@ -332,8 +330,9 @@ def run(
 
         Returns a metrics dict (the run's value; the coordinator reduces it across
         chunks). The per-row prediction table is written next to ``output_file`` as
-        ``results.csv`` by the shared backtest scaffold. Data-prep invariants
-        (formerly ``ExecutorConfig``) are inline literals below.
+        ``results.csv`` by the shared backtest scaffold. The data slice is supplied
+        by the framework via ``current_slice()``, not a ``run()`` parameter.
+        Data-prep invariants (formerly ``ExecutorConfig``) are inline literals below.
     """
     hyperparams: dict = dict(DEFAULT_RF_PARAMS)
     if params_file:
@@ -342,6 +341,7 @@ def run(
     hyperparams.setdefault("random_state", seed)
     hyperparams["_refit_frequency"] = refit_frequency if refit_frequency is not None else 5
 
+    sl = current_slice() or SliceSpec()
     results_csv = str(Path(output_file).with_name("results.csv"))
     run_executor(
         method_name="random_forest",
@@ -351,8 +351,9 @@ def run(
         output_file=results_csv,
         horizon=horizon,
         train_window=train_window,
-        start=start,
-        end=end,
+        start=sl.start,
+        end=sl.end,
+        halo=sl.halo,
         exog_cols=parse_exog_cols(exog_cols or None),
         segment=None,
         lag_scope="global",
