@@ -1,38 +1,20 @@
-# Auto-generated from notebooks/ml_random_forest.ipynb. Do not edit by hand.
-
-"""Random Forest volatility backtest executor.
-
-Method-specific glue around the shared scaffold in :mod:`src.executor`.
-Only the model factory + default hyperparams + ``main()`` wrapper live
-here; everything else (CLI parsing, loading, features, backtest loop,
-smearing, reduce JSON) is owned by ``src.executor``.
-"""
+# Auto-generated from ml_random_forest.ipynb. Do not edit by hand.
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
-from src.executor import ExecutorConfig, run_executor
+from src._template import register_run
+from src.evaluation import calculate_metrics
+from src.executor import run_executor
 from src.loading import parse_exog_cols
 from src.scaling import run_backtest
 
-# Method-specific data-prep config. Lives here (not in src.executor)
-# so the random_forest spec sits next to the random_forest model code.
-# src.executor.CONFIGS imports this at runtime for the drift-check registry.
-CONFIG = ExecutorConfig(
-    method="random_forest",
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=240,
-    dropna_with_exog=True,
-    refit_frequency=5,
-)
-
-# Per-method default hyperparams. Tuned overrides from --params-file are
-# merged on top via dict.update().
 DEFAULT_RF_PARAMS: dict = dict(
     n_estimators=500,
     max_depth=10,
@@ -47,15 +29,13 @@ def fit_predict_rf(
     train_win_periods: int,
     hyperparams: dict,
 ) -> np.ndarray:
-    """Walk-forward backtest with RandomForest. Returns OOS predictions.
+    """Walk-forward backtest with RandomForestRegressor. Returns OOS predictions.
 
-    Wraps :func:`src.scaling.run_backtest` with the RF-specific settings
-    (``use_scaling=False``; refit frequency from
-    ``hyperparams['_refit_frequency']``). ``random_state`` defaults to
-    42 and can be overridden via ``hyperparams['random_state']``.
+    Wraps :func:`src.scaling.run_backtest` (no feature scaling;
+    refit cadence from ``hyperparams['_refit_frequency']``). Internal control
+    keys (``_*``) are stripped before forwarding to the model constructor.
     """
-    refit_frequency = int(hyperparams.get("_refit_frequency", CONFIG.refit_frequency))
-    # Strip our internal control key before passing to RandomForestRegressor.
+    refit_frequency = int(hyperparams.get("_refit_frequency", 5))
     model_kwargs = {k: v for k, v in hyperparams.items() if not k.startswith("_")}
     model_kwargs.setdefault("random_state", 42)
 
@@ -72,35 +52,55 @@ def fit_predict_rf(
     )
 
 
-def compute(args) -> None:
-    tuned_params: dict = {}
-    if args.params_file:
-        with open(args.params_file) as f:
-            tuned_params = json.load(f)
+@register_run
+def run(
+    horizon: int = 1,
+    train_window: int = 500,
+    refit_frequency: int | None = None,
+    exog_cols: str = "",
+    seed: int = 42,
+    data_path: str = "all30min",
+    output_file: str = "results/rf/run.json",
+    params_file: str = "",
+    start: int = 0,
+    end: int = -1,
+) -> dict:
+    """# Random Forest Volatility Backtest
 
-    # Method defaults <- tuned overrides; refit-frequency from CLI sentinel.
-    hyperparams = dict(DEFAULT_RF_PARAMS)
-    hyperparams.update(tuned_params)
-    # Wire seed through to RandomForestRegressor's random_state.
-    hyperparams.setdefault("random_state", args.seed)
-    refit_frequency = args.refit_frequency if args.refit_frequency is not None else CONFIG.refit_frequency
-    hyperparams["_refit_frequency"] = refit_frequency
+    Walk-forward volatility backtest with a Random Forest. Defined as a single
+    `@register_run def run()` experiment entrypoint. -- one task.
 
-    exog_cols = parse_exog_cols(args.exog_cols)
+        Returns a metrics dict (the run's value; the coordinator reduces it across
+        chunks). The per-row prediction table is written next to ``output_file`` as
+        ``results.csv`` by the shared backtest scaffold. Data-prep invariants
+        (formerly ``ExecutorConfig``) are inline literals below.
+    """
+    hyperparams: dict = dict(DEFAULT_RF_PARAMS)
+    if params_file:
+        with open(params_file) as fh:
+            hyperparams.update(json.load(fh))
+    hyperparams.setdefault("random_state", seed)
+    hyperparams["_refit_frequency"] = refit_frequency if refit_frequency is not None else 5
 
+    results_csv = str(Path(output_file).with_name("results.csv"))
     run_executor(
         method_name="random_forest",
         fit_predict=fit_predict_rf,
         hyperparams=hyperparams,
-        data_path=args.data_path,
-        output_file=args.output_file,
-        horizon=args.horizon,
-        train_window=args.train_window,
-        start=args.start,
-        end=args.end,
-        exog_cols=exog_cols,
-        segment=args.segment,
-        lag_scope=args.lag_scope,
-        **CONFIG.as_data_prep_kwargs(),
-        seed=args.seed,
+        data_path=data_path,
+        output_file=results_csv,
+        horizon=horizon,
+        train_window=train_window,
+        start=start,
+        end=end,
+        exog_cols=parse_exog_cols(exog_cols or None),
+        segment=None,
+        lag_scope="global",
+        add_calendar=True,
+        target_use_diurnal=True,
+        target_winsor_window=240,
+        dropna_with_exog=True,
+        seed=seed,
     )
+    metrics = calculate_metrics(pd.read_csv(results_csv))
+    return {k: (float(v) if hasattr(v, "__float__") else v) for k, v in metrics.items()}

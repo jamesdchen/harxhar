@@ -1,8 +1,9 @@
-# Auto-generated from notebooks/ml_pcr.ipynb. Do not edit by hand.
+# Auto-generated from ml_pcr.ipynb. Do not edit by hand.
 
-"""PCA + Ridge (PCR) walk-forward backtest for volatility forecasting."""
+from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -10,27 +11,14 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
-from src.executor import ExecutorConfig, load_and_transform
+from src._template import register_run
+from src.evaluation import calculate_metrics
+from src.executor import load_and_transform
 from src.loading import parse_exog_cols
 from src.scaling import RollingRobustScaler
-from src.transforms import (
-    PERIODS_PER_DAY,
-    SEGMENT_DEFINITIONS,
-    compute_segment_train_window,
-    generate_raw_lag_features,
-    resolve_pca_lags,
-    slice_to_segment,
-)
+from src.transforms import PERIODS_PER_DAY, generate_raw_lag_features, resolve_pca_lags
 
-# Method-specific data-prep config (see comment in src.executor.CONFIGS).
-CONFIG = ExecutorConfig(
-    method="pcr",
-    add_calendar=True,
-    target_use_diurnal=True,
-    target_winsor_window=None,
-    dropna_with_exog=True,
-    refit_frequency=240,
-)
+PCR_REFIT_FREQUENCY: int = 240
 
 
 class PCATransform:
@@ -101,7 +89,7 @@ def _run_backtest_and_save(
     n_components: int = 5,
     random_state: int = 42,
 ) -> None:
-    """Run PCR backtest on a prepared DataFrame and save results."""
+    """Run PCR backtest on a prepared DataFrame and save results.csv."""
     max_lag = resolve_pca_lags()[-1]
 
     df["target"] = df["adj_RV"].shift(-horizon)
@@ -121,7 +109,7 @@ def _run_backtest_and_save(
         y,
         train_window=train_window,
         n_components=n_components,
-        refit_frequency=CONFIG.refit_frequency,
+        refit_frequency=PCR_REFIT_FREQUENCY,
         random_state=random_state,
     )
 
@@ -149,65 +137,44 @@ def _run_backtest_and_save(
     print(f"Saved {len(results)} rows to {output_file}")
 
 
-def compute(args) -> None:
-    exog_cols = parse_exog_cols(args.exog_cols)
+@register_run
+def run(
+    horizon: int = 1,
+    train_window: int = 500,
+    n_components: int = 5,
+    exog_cols: str = "",
+    seed: int = 42,
+    data_path: str = "all30min",
+    output_file: str = "results/pcr/run.json",
+    start: int = 0,
+    end: int = -1,
+) -> dict:
+    """PCA + Ridge (PCR) walk-forward volatility backtest -- one task.
 
-    # --- Load and transform (shared with executor.run_executor) ---
+    Returns a metrics dict; writes the per-row ``results.csv`` next to
+    ``output_file``. Data-prep invariants (formerly ``ExecutorConfig``):
+    diurnal-adjusted RV target with no winsorization, leading-edge NaN drop.
+    """
     df, adj_exog_cols = load_and_transform(
-        args.data_path,
-        exog_cols,
-        target_use_diurnal=CONFIG.target_use_diurnal,
-        target_winsor_window=CONFIG.target_winsor_window,
-        dropna_with_exog=CONFIG.dropna_with_exog,
+        data_path,
+        parse_exog_cols(exog_cols or None),
+        target_use_diurnal=True,
+        target_winsor_window=None,
+        dropna_with_exog=True,
     )
+    df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
 
-    # --- No segment: global backtest ---
-    if args.segment is None:
-        train_window = args.train_window * PERIODS_PER_DAY
-        df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-        _run_backtest_and_save(
-            df,
-            feature_names,
-            train_window,
-            args.horizon,
-            args.start,
-            args.end,
-            args.output_file,
-            args.n_components,
-            random_state=args.seed,
-        )
-        return
-
-    # --- Segmented backtest ---
-    segments = list(SEGMENT_DEFINITIONS) if args.segment == "all" else [args.segment]
-
-    if args.lag_scope == "global":
-        df, feature_names = generate_raw_lag_features(df, target_col="adj_RV", exog_cols=adj_exog_cols)
-
-    for seg_name in segments:
-        seg_df = slice_to_segment(df, seg_name)
-        if seg_df.empty:
-            print(f"No data for segment '{seg_name}'. Skipping.")
-            continue
-
-        if args.lag_scope == "intra":
-            seg_df, feature_names = generate_raw_lag_features(seg_df, target_col="adj_RV", exog_cols=adj_exog_cols)
-
-        train_window = compute_segment_train_window(seg_df["t"], args.train_window)
-
-        base, ext = os.path.splitext(args.output_file)
-        seg_output = f"{base}_{seg_name}{ext}"
-
-        print(f"{'=' * 20} SEGMENT: {seg_name.upper()} {'=' * 20}")
-        print(f"Window: {train_window} periods ({args.train_window} days)")
-        _run_backtest_and_save(
-            seg_df,
-            feature_names,
-            train_window,
-            args.horizon,
-            args.start,
-            args.end,
-            seg_output,
-            args.n_components,
-            random_state=args.seed,
-        )
+    results_csv = str(Path(output_file).with_name("results.csv"))
+    _run_backtest_and_save(
+        df,
+        feature_names,
+        train_window * PERIODS_PER_DAY,
+        horizon,
+        start,
+        end,
+        results_csv,
+        n_components,
+        random_state=seed,
+    )
+    metrics = calculate_metrics(pd.read_csv(results_csv))
+    return {k: (float(v) if hasattr(v, "__float__") else v) for k, v in metrics.items()}
