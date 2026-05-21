@@ -60,8 +60,7 @@ executors-export:  ## Re-export every notebook in notebooks/executors/ to src/.
 	@for nb in notebooks/executors/*.ipynb; do \
 		name=$$(basename $$nb .ipynb); \
 		out=src/$$name.py; \
-		echo "exporting $$nb -> $$out"; \
-		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
+		PYTHONUTF8=1 $(PYTHON) notebooks/_export_executor.py $$nb $$out; \
 	done
 
 export: pipeline-export executors-export scripts-export  ## Re-export every notebook in the project.
@@ -88,13 +87,26 @@ clean-cache:  ## Remove __pycache__/, .pytest_cache/, .mypy_cache/, .ruff_cache/
 
 repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -> table -> audit. Required: RUN, METHOD. Optional: REPRO_ARGS.
 	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
-	$(PYTHON) -c "from src.executor import CONFIGS; assert '$(METHOD)' in CONFIGS, 'unknown method: $(METHOD) (registered: ' + ','.join(CONFIGS) + ')'"
+	@test -f src/ml_$(METHOD).py || { echo "unknown method: $(METHOD) (no src/ml_$(METHOD).py)"; exit 1; }
 	@mkdir -p results/$(RUN)
 	# Per-method scripts (src/ml_*.py) expose a `compute(args)` function, no
 	# `__main__`. Use the stdlib-only dispatcher so CI (no claude_hpc) can run
 	# this; production HPC uses the equivalent `python -m cli ...` dispatcher
 	# via .hpc/cli.py (which depends on claude_hpc).
-	PYTHONPATH=. $(PYTHON) scripts/_repro_dispatch.py src.ml_$(METHOD) --output-file results/$(RUN)/results.csv $(REPRO_ARGS)
+	#
+	# A converted (@register_run) executor returns a metrics dict that the
+	# injected compute() writes to --output-file, and writes the per-row
+	# results.csv alongside; a legacy executor writes results.csv directly to
+	# --output-file. Pick --output-file accordingly so finalize_run always
+	# finds results/$(RUN)/results.csv. (Migration scaffolding — drops out in
+	# B6 once every executor is converted.)
+	@if grep -q '@register_run' src/ml_$(METHOD).py; then \
+		out=results/$(RUN)/run_metrics.json; \
+	else \
+		out=results/$(RUN)/results.csv; \
+	fi; \
+	echo "executor output -> $$out"; \
+	PYTHONPATH=. $(PYTHON) scripts/_repro_dispatch.py src.ml_$(METHOD) --output-file $$out $(REPRO_ARGS)
 	PYTHONPATH=. $(PYTHON) scripts/finalize_run.py --run-dir results/$(RUN) --method $(METHOD) --update-manifest results/MANIFEST.json
 	$(MAKE) table
 	$(MAKE) audit

@@ -83,16 +83,31 @@ def _load_configs() -> dict[str, ExecutorConfig]:
     ``ExecutorConfig`` from this module, so we can't import them at
     module-import time. ``run_executor`` calls this once when needed.
 
+    Tolerant by design: a method module migrated to the ``@register_run``
+    experiment template no longer defines ``CONFIG`` (its data-prep
+    invariants are inline). Such modules are skipped so the registry — and
+    the drift-check it backs — keeps working through an incremental
+    migration.
+
     Excluded by design: dl_ae_ridge, dl_patchts (separate config shape);
     tune_tree (no run_executor call); ml_baseline (no exog path).
     """
-    from src.ml_lightgbm import CONFIG as _lgbm
-    from src.ml_pcr import CONFIG as _pcr
-    from src.ml_random_forest import CONFIG as _rf
-    from src.ml_ridge import CONFIG as _ridge
-    from src.ml_xgboost import CONFIG as _xgb
+    import importlib
 
-    return {c.method: c for c in (_ridge, _xgb, _lgbm, _rf, _pcr)}
+    out: dict[str, ExecutorConfig] = {}
+    for modname in (
+        "src.ml_ridge",
+        "src.ml_xgboost",
+        "src.ml_lightgbm",
+        "src.ml_random_forest",
+        "src.ml_pcr",
+    ):
+        try:
+            cfg = importlib.import_module(modname).CONFIG
+        except (ImportError, AttributeError):
+            continue
+        out[cfg.method] = cfg
+    return out
 
 
 # Lazy singleton — populated on first access via _get_configs(); CONFIGS
