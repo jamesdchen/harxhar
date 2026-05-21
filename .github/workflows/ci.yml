@@ -26,7 +26,7 @@ jobs:
           python-version: "3.10"
       # `make export` template-exports converted (@register_run) executors via
       # hpc_agent and normalizes the output with ruff.
-      - run: pip install ruff "hpc-agent @ git+https://github.com/jamesdchen/hpc-agent.git@d141f84"
+      - run: pip install ruff ./vendor/hpc_agent-0.3.0-py3-none-any.whl
       - name: Re-export every notebook
         run: make export
       - name: Fail if any exported .py drifted from its notebook

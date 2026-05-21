@@ -26,4 +26,6 @@ pre-commit>=3.0
 
 # Build — used by `make export` only; the template runtime is inlined into
 # the exported executors, so this is not a cluster/runtime dependency.
-hpc-agent @ git+https://github.com/jamesdchen/hpc-agent.git@d141f84
+# Vendored as a pinned wheel (hpc-agent is a private repo; CI cannot clone
+# it). Rebuild with `uv build --wheel --out-dir vendor ../hpc-agent`.
+./vendor/hpc_agent-0.3.0-py3-none-any.whl
