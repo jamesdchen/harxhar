@@ -113,7 +113,7 @@ def gpu_args() -> list[Flag]:
 _GPU_NAMES = frozenset({"gpu_count", "epochs", "batch_size", "learning_rate"})
 _GENERIC_NAMES = frozenset(f.name for f in generic_args())
 
-_UNION_ORIGINS = {typing.Union}
+_UNION_ORIGINS: set[Any] = {typing.Union}
 if hasattr(types, "UnionType"):  # py3.10+: `X | None`
     _UNION_ORIGINS.add(types.UnionType)
 
@@ -261,7 +261,8 @@ def register_run(fn: Callable | None = None, *, gpu: bool = False):
     mod = inspect.getmodule(fn)
     modname = getattr(mod, "__name__", "__main__")
     if mod is not None:
-        mod.compute = compute  # satisfies hpc-agent's `compute(args)` contract
+        # satisfies hpc-agent's `compute(args)` contract
+        mod.compute = compute  # type: ignore[attr-defined]
     _RUNS[modname] = RunSpec(modname, fn.__name__, all_flags, is_gpu)
 
     # Attach for testing / introspection without going through sys.modules.
@@ -342,14 +343,14 @@ def _is_register_run(node: ast.AST, aliases: set[str]) -> bool:
     return any(_decorator_name(d) in aliases for d in node.decorator_list)
 
 
-def _node_source(src: str, node: ast.AST) -> str | None:
+def _node_source(src: str, node: ast.stmt) -> str | None:
     """Source for a top-level node, INCLUDING decorators.
 
     ast.get_source_segment omits decorator lines because a decorated
     FunctionDef/ClassDef reports `lineno` at the `def`/`class` keyword; we
     extend the span back to the first decorator.
     """
-    if node.lineno is None or node.end_lineno is None:
+    if node.end_lineno is None:
         return None
     start = node.lineno
     deco = getattr(node, "decorator_list", None)
@@ -491,6 +492,7 @@ def discover_runs(src_dir: str | Path) -> dict[str, RunSpec]:
         for node in tree.body:
             if not _is_register_run(node, aliases):
                 continue
+            assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             modname = f"{src_dir.name}.{py.stem}"
             sig_flags = _ast_function_to_flags(node)
             names = {a.arg for a in node.args.args}
