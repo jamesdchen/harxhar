@@ -5,6 +5,12 @@ on:
     branches: [main, master]
   pull_request:
 
+# src/ is a generated build artifact (not committed). Every job that touches it
+# builds it first via notebooks/_build_package.py — the convention-driven local
+# stand-in for hpc-agent's `export-package` primitive. The old `notebook-sync`
+# drift gate is gone: there is no committed copy to drift from, and a failed
+# export now fails the build step directly.
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -13,28 +19,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: pip install ruff
+      - run: pip install ruff ./vendor/hpc_agent-0.3.0-py3-none-any.whl
+      - name: Build the generated src/ package
+        run: python notebooks/_build_package.py
       - run: ruff check .
       - run: ruff format --check .
-
-  notebook-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      # `make export` template-exports converted (@register_run) executors via
-      # hpc_agent and normalizes the output with ruff.
-      - run: pip install ruff ./vendor/hpc_agent-0.3.0-py3-none-any.whl
-      - name: Re-export every notebook
-        run: make export
-      - name: Fail if any exported .py drifted from its notebook
-        run: |
-          if ! git diff --exit-code -- src/ scripts/; then
-            echo "::error::Exported .py files drifted from notebooks/. Run 'make export' locally and commit the result."
-            exit 1
-          fi
 
   typecheck:
     runs-on: ubuntu-latest
@@ -43,7 +32,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: pip install mypy
+      - run: pip install mypy ruff ./vendor/hpc_agent-0.3.0-py3-none-any.whl
+      - name: Build the generated src/ package
+        run: python notebooks/_build_package.py
       - run: mypy src/ --ignore-missing-imports
 
   test:
@@ -54,6 +45,8 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
+      - name: Build the generated src/ package
+        run: python notebooks/_build_package.py
       - run: pytest -m "not slow and not gpu" --tb=short -q
 
   fungibility:
@@ -69,6 +62,8 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
+      - name: Build the generated src/ package
+        run: python notebooks/_build_package.py
       - run: pytest core/tests/test_fungibility.py -m slow --tb=short -q
 
   audit:
@@ -80,6 +75,8 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
+      # `make repro-fixture` -> `make repro`, which depends on `export` and
+      # builds the src/ package before running.
       - run: make repro-fixture
       - run: python scripts/audit_check.py --quick
       # validate_strategy_eval.py was removed in 7f8f9a45 (Apr 2026 restructure);

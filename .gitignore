@@ -22,6 +22,12 @@ results/**
 dist/
 build/
 
+# Generated package — src/ is built from notebooks/ by notebooks/_build_package.py
+# (convention-driven; local stand-in for `hpc-agent export-package`). Not
+# committed; rebuilt on demand by conftest.py / `make export` / CI.
+src/
+.hpc/.build-cache.json
+
 # Virtual environments
 .venv/
 venv/

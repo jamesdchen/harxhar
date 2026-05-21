@@ -10,7 +10,7 @@ PYTHON ?= python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help table diagnostics diagnostics-quick audit pipeline-export scripts-export executors-export export strategy-eval lint type test clean-cache repro repro-fixture new-experiment
+.PHONY: help table diagnostics diagnostics-quick audit export strategy-eval lint type test clean-cache repro repro-fixture new-experiment
 
 help:  ## Show available targets.
 	@echo "harxhar Makefile — available targets:"
@@ -30,49 +30,23 @@ diagnostics-quick:  ## Regenerate diagnostics, skipping bundles that already exi
 audit:  ## Run the audit gate.
 	$(PYTHON) scripts/audit_check.py --quick || echo "audit_check.py not yet built"
 
-pipeline-export:  ## Export every notebooks/pipeline/*.ipynb to its src/ module.
-	@for nb in notebooks/pipeline/*.ipynb; do \
-		name=$$(basename $$nb .ipynb); \
-		case "$$name" in \
-			01_loading)    out=src/loading.py ;; \
-			02_transforms) out=src/transforms.py ;; \
-			03_evaluation) out=src/evaluation.py ;; \
-			04_scaling)    out=src/scaling.py ;; \
-			05_executor)   out=src/executor.py ;; \
-			05b_dl_executor) out=src/dl_executor.py ;; \
-			06_strategy_eval) out=src/strategy_eval.py ;; \
-			07_tune_tree) out=src/tune_tree.py ;; \
-			*) echo "no mapping for $$name; skipping"; continue ;; \
-		esac; \
-		echo "exporting $$nb -> $$out"; \
-		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
-	done
-
-scripts-export:  ## Re-export every notebook in notebooks/scripts/ to scripts/.
-	@for nb in notebooks/scripts/*.ipynb; do \
-		name=$$(basename $$nb .ipynb); \
-		out=scripts/$$name.py; \
-		echo "exporting $$nb -> $$out"; \
-		PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py $$nb $$out; \
-	done
-
-executors-export:  ## Re-export every notebook in notebooks/executors/ to src/.
-	@for nb in notebooks/executors/*.ipynb; do \
-		name=$$(basename $$nb .ipynb); \
-		out=src/$$name.py; \
-		PYTHONUTF8=1 $(PYTHON) notebooks/_export_executor.py $$nb $$out; \
-	done
-
-export: pipeline-export executors-export scripts-export  ## Re-export every notebook in the project.
+# `export` builds the generated src/ package from notebooks/. src/ is a build
+# artifact — not committed (see .gitignore). notebooks/_build_package.py is a
+# convention-driven local stand-in for hpc-agent's `export-package` primitive;
+# when that ships, this target swaps to `hpc-agent export-package`. The
+# assemble step rebuilds the strategy_eval notebook from fragments first.
+export:  ## Build the generated src/ package from notebooks/ (convention-driven).
+	$(PYTHON) scripts/_assemble_strategy_eval_nb.py
+	PYTHONUTF8=1 $(PYTHON) notebooks/_build_package.py
 
 strategy-eval:  ## Assemble and export the strategy_eval pipeline.
 	$(PYTHON) scripts/_assemble_strategy_eval_nb.py
 	PYTHONUTF8=1 $(PYTHON) notebooks/_exporter.py notebooks/pipeline/06_strategy_eval.ipynb src/strategy_eval.py
 
-lint:  ## Run ruff check --fix and ruff format on scripts/ and src/.
+lint: export  ## Run ruff check --fix and ruff format on scripts/ and src/.
 	ruff check --fix scripts/ src/ && ruff format scripts/ src/
 
-type:  ## Run mypy on scripts/ and src/.
+type: export  ## Run mypy on scripts/ and src/.
 	mypy --ignore-missing-imports scripts/ src/
 
 test:  ## Run pytest in quiet mode.
@@ -85,7 +59,7 @@ clean-cache:  ## Remove __pycache__/, .pytest_cache/, .mypy_cache/, .ruff_cache/
 	@find . -type d -name .ruff_cache -prune -exec rm -rf {} +
 	@echo "cache directories removed."
 
-repro:  ## Reproduce a run end-to-end (local sequential): executor -> finalize -> table -> audit. Required: RUN, METHOD. Optional: REPRO_ARGS.
+repro: export  ## Reproduce a run end-to-end (local sequential): executor -> finalize -> table -> audit. Required: RUN, METHOD. Optional: REPRO_ARGS.
 	@: $${RUN:?must set RUN=<name>} $${METHOD:?must set METHOD=<name>}
 	@test -f src/ml_$(METHOD).py || { echo "unknown method: $(METHOD) (no src/ml_$(METHOD).py)"; exit 1; }
 	@mkdir -p results/$(RUN)
