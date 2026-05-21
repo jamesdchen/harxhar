@@ -2,19 +2,27 @@
 
 """Optuna helpers for tree-model hyperparameter tuning.
 
-Library module — used by .hpc/tasks.py inside a /campaign-hpc-style
-closed loop. The CLI subcommands (suggest/evaluate/score) that this
-module used to ship were retired 2026-05-02; their orchestration role
-now lives in /campaign-hpc + a campaign-aware tasks.py that reads
-prior(experiment_dir, campaign_id) to drive Optuna ask/tell.
+Library module — used by .hpc/tasks.py and .hpc/campaigns/ inside a
+closed-loop tune campaign. A ``tune_<model>_<bucket>`` campaign is a
+Sequential axis over Optuna trials (ask -> submit -> score -> tell);
+this module supplies the ask (``_get_search_space`` / study mgmt) and
+the per-trial reduce + tell (``_compute_trial_qlike`` / ``score_trials``).
+The CLI subcommands (suggest/evaluate/score) that this module used to
+ship were retired 2026-05-02.
 
 Public surface:
     suggest_batch(model, batch_size, ...)        — Optuna ask + persist trials
     score_trials(model, storage_path, ...)        — read per-trial outputs, tell()
     _get_search_space(model)                       — TPE search-space dict
     _compute_qlike(df)                             — QLIKE on a one-trial result frame
+    _compute_trial_qlike(trial_dir, ...)           — monoid-fold per-chunk partials
     reduce_trials(...)                             — aggregate per-trial QLIKEs
     _make_storage / _study_name / _load_or_create_study  — Optuna study mgmt
+
+The per-trial chunk reduce is an `Associative` monoid fold: QLIKE is a
+mean of per-row terms, so each chunk emits a ``(qlike_count, qlike_sum)``
+partial and ``_compute_trial_qlike`` folds them with the additive monoid
+(``hpc_agent.template.reduce_monoid``) — the fold equals a serial run.
 
 A campaign-aware tasks.py example for tuning ml_xgboost over 100 trials
 in batches of 10:
@@ -295,22 +303,60 @@ def score_trials(
     return dict(best.params)
 
 
+# ── Per-trial QLIKE reduce ───────────────────────────────────────────────────
+#
+# A tune campaign's series (time) axis is partitioned into ~100 chunks per
+# trial (the open-loop split baked into .hpc/tasks.py). QLIKE is a mean of
+# per-row terms, so the chunk axis is `Associative`: each chunk emits the
+# partial `(qlike_count, qlike_sum)` and the trial scalar is recovered by
+# folding the partials with the additive monoid, then dividing. This is the
+# Blelloch-scan / sufficient-statistics case from hpc_agent.template — the
+# fold order is irrelevant, so the result equals a single serial run.
+
+# (count, sum) monoid: identity is (0, 0.0); combine adds elementwise. QLIKE
+# only needs the first two `Moments` fields, so a 2-tuple is the minimal
+# carrier rather than the full (n, total, sumsq) `Moments`.
+_QLIKE_PARTIAL_MONOID = None  # lazily built — keeps hpc_agent import optional
+
+
+def _qlike_monoid():
+    """The additive `(count, sum)` monoid for the QLIKE chunk reduce.
+
+    Built lazily so importing this module on a venv without hpc_agent
+    installed (e.g. the legacy CSV-concat fallback path) still works.
+    """
+    global _QLIKE_PARTIAL_MONOID
+    if _QLIKE_PARTIAL_MONOID is None:
+        from hpc_agent.template import Monoid
+
+        _QLIKE_PARTIAL_MONOID = Monoid(
+            identity=(0, 0.0),
+            combine=lambda a, b: (a[0] + b[0], a[1] + b[1]),
+        )
+    return _QLIKE_PARTIAL_MONOID
+
+
 def _compute_trial_qlike(trial_dir: str, require_chunks: int | None = None) -> float | None:
     """Trial QLIKE from per-chunk partial reduce JSONs; fall back to CSV concat.
 
     Executors write ``*_reduce.json`` next to each chunk CSV via
-    ``evaluation.save_chunk_reduce``. Aggregating the partials is O(chunks) of
-    tiny JSON reads vs O(chunks * rows) for CSV parsing.
+    ``evaluation.save_chunk_reduce`` — each holds the chunk's
+    ``(qlike_count, qlike_sum)`` partial. The trial scalar is an
+    `Associative` monoid reduce: fold the partials with the additive
+    ``(count, sum)`` monoid (``hpc_agent.template.reduce_monoid``), then
+    divide. Aggregating partials is O(chunks) tiny JSON reads vs
+    O(chunks * rows) for CSV parsing.
     """
     partials = sorted(Path(trial_dir).glob("*_reduce.json"))
     if partials and (require_chunks is None or len(partials) >= require_chunks):
-        total_count = 0
-        total_sum = 0.0
+        from hpc_agent.template import reduce_monoid
+
+        elements = []
         for p in partials:
             with open(p) as f:
                 d = json.load(f)
-            total_count += d["qlike_count"]
-            total_sum += d["qlike_sum"]
+            elements.append((int(d["qlike_count"]), float(d["qlike_sum"])))
+        total_count, total_sum = reduce_monoid(elements, _qlike_monoid())
         if total_count == 0:
             return None
         return total_sum / total_count
