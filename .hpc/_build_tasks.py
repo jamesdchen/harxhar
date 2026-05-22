@@ -15,8 +15,11 @@ submit/scaffold time, and baked into ``tasks.py`` as plain literals:
 2. **The open-loop ``_TASKS`` literal** — the 100-chunk walk-forward
    split. Built with :func:`hpc_agent.template.plan_tasks` over the
    *OOS-length* span, then shifted into absolute X coordinates. The
-   series length is the post-feature row count, which only the pandas
-   pipeline can produce — so it is probed here, not in ``tasks.py``.
+   series ``DataAxis`` (a bounded-halo look-back) is the
+   interview-classified axis in ``.hpc/axes.yaml`` — read here via
+   :func:`load_data_axis`, not hard-coded. The series length is the
+   post-feature row count, which only the pandas pipeline can produce —
+   so it is probed here.
 
 Run from the repo root after the data vintage, the HAR-lag set, or any
 ``run()`` signature changes::
@@ -32,17 +35,21 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hpc_agent.template.axis import DataAxis
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TASKS_PY = _REPO_ROOT / ".hpc" / "tasks.py"
 _NOTEBOOK_DIR = _REPO_ROOT / "notebooks" / "executors"
 
-# Open-loop chunking constants. The executor's warm-up prefix is
-# ``train_window`` days × ``PERIODS_PER_DAY`` (48) = 24000 rows; every
-# OOS chunk replays exactly that many rows as halo.
+# Open-loop chunking constants. The series DataAxis — a bounded look-back
+# halo — is NOT hard-coded here: it is the interview-classified axis in
+# .hpc/axes.yaml (executors.run.data_axis), loaded by load_data_axis().
+# _TRAIN_WINDOW_DAYS is the experiment's default train window — the sweep
+# point the halo expression is evaluated at — not the axis itself.
 _TRAIN_WINDOW_DAYS = 500
-_PERIODS_PER_DAY = 48
-_OVERLAP = _TRAIN_WINDOW_DAYS * _PERIODS_PER_DAY
 _TOTAL_CHUNKS = 100
 
 
@@ -168,6 +175,28 @@ def _flag_repr(f: object) -> str:
 # ── open-loop task plan ──────────────────────────────────────────────────────
 
 
+def load_data_axis() -> DataAxis:
+    """Load the interview-classified series ``DataAxis`` from ``.hpc/axes.yaml``.
+
+    The axis — a bounded look-back halo of ``train_window`` days × 48
+    periods/day — is recorded in ``axes.yaml``'s ``executors.run`` block
+    (all six ``ml_*`` executors share one ``@register_run def run`` axis),
+    not hard-coded here. See hpc-agent's ``classify-axis`` primitive and
+    :mod:`hpc_agent.template.axis_config`.
+    """
+    from hpc_agent.planning.axes import read_axes
+    from hpc_agent.template.axis_config import data_axis_from_config
+
+    cfg = read_axes(_REPO_ROOT)
+    executors = (cfg or {}).get("executors") or {}
+    if "run" not in executors:
+        raise SystemExit(
+            f"no classified DataAxis for run() in {_REPO_ROOT / '.hpc' / 'axes.yaml'} "
+            "— record it with `hpc-agent classify-axis`"
+        )
+    return data_axis_from_config(executors["run"]["data_axis"])
+
+
 def build_open_loop_tasks_source(total_rows: int) -> str:
     """Return the ``_OPEN_LOOP_TASKS = [...]`` literal as Python source.
 
@@ -178,22 +207,34 @@ def build_open_loop_tasks_source(total_rows: int) -> str:
     coordinates: ``start/end += overlap``, ``halo = overlap`` (constant —
     plan_tasks's clamped halo is wrong here because our chunked series is
     a suffix of X, not the whole of it).
+
+    ``overlap`` is the classified halo evaluated at the default train
+    window — the ``DataAxis`` comes from ``axes.yaml`` (see
+    :func:`load_data_axis`), not a hard-coded constant.
     """
     from hpc_agent.template import BoundedHalo, plan_tasks
 
+    data_axis = load_data_axis()
+    if not isinstance(data_axis, BoundedHalo):
+        raise SystemExit(
+            "open-loop chunking expects a bounded_halo DataAxis; "
+            f".hpc/axes.yaml classifies run() as {type(data_axis).__name__}"
+        )
+    overlap = data_axis.halo_fn({"train_window": _TRAIN_WINDOW_DAYS})
+
     plan = plan_tasks(
         [{"train_window": _TRAIN_WINDOW_DAYS}],
-        BoundedHalo(lambda p: p["train_window"] * _PERIODS_PER_DAY),
+        data_axis,
         chunks=_TOTAL_CHUNKS,
-        series_length=total_rows - _OVERLAP,
+        series_length=total_rows - overlap,
     )
 
     lines: list[str] = []
     for i in range(plan.total()):
         t = plan.resolve(i)
-        start = t["start"] + _OVERLAP
-        end = t["end"] + _OVERLAP
-        lines.append(f'    {{"start": {start}, "end": {end}, "halo": {_OVERLAP}}},')
+        start = t["start"] + overlap
+        end = t["end"] + overlap
+        lines.append(f'    {{"start": {start}, "end": {end}, "halo": {overlap}}},')
 
     return "_OPEN_LOOP_TASKS: list[dict] = [\n" + "\n".join(lines) + "\n]"
 

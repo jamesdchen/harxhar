@@ -1,0 +1,20 @@
+# Interview-classified series DataAxis for the @register_run executors.
+#
+# All six ml_* executors are `@register_run def run(...)` and share one
+# series axis: a bounded look-back of `train_window` days x 48 periods/day.
+# .hpc/_build_tasks.py reads this instead of hard-coding the halo.
+#
+# hpc-agent's `executors` block is keyed by the @register_run function
+# name (`run`) — all six ml_* executors map to this single entry.
+# run_signature_sha is ml_ridge's run(), representative; the six runs
+# have distinct signatures but the classified axis is the same for all.
+axes_schema_version: 2
+executors:
+  run:
+    run_signature_sha: "67f72cf55a19c8de541b5b26dc115a9fdaa55a606fb8005487aa87dbf3d7118d"
+    data_axis:
+      kind: bounded_halo
+      halo:
+        expr: "train_window * 48"
+    classified_by: manual
+    classified_at: "2026-05-21T00:00:00+00:00"
